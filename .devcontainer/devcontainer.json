@@ -14,16 +14,20 @@
   ],
   "workspaceFolder": "/workspace",
   "remoteUser": "developer",
-  "settings": {
-    "terminal.integrated.shell.linux": "/bin/bash",
-    "terminal.integrated.defaultProfile.linux": "bash"
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-vscode.vscode-node-azure-pack",
+        "ms-vscode.vscode-typescript-next"
+      ]
+    }
   },
-  "extensions": [
-    "esbenp.prettier-vscode",
-    "dbaeumer.vscode-eslint",
-    "ms-vscode.vscode-node-azure-pack",
-    "ms-vscode.vscode-typescript-next"
-  ],
   "postCreateCommand": "pnpm install || npm install",
   "overrideCommand": false
 }

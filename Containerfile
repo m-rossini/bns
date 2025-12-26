@@ -1,6 +1,6 @@
 FROM fedora:latest
 
-LABEL maintainer="GitHub Copilot <copilot@example.com>"
+LABEL maintainer="Marcos Rossini <mrpt68@gmail.com>"
 ARG NODE_MAJOR=20
 ENV NODE_MAJOR=${NODE_MAJOR}
 
@@ -17,7 +17,10 @@ ARG UID=1000
 ARG GID=1000
 RUN groupadd -g ${GID} ${USER} || true && \
     useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER} || true && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER}
+    usermod -p '' ${USER} || true && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER} && \
+    chmod 0440 /etc/sudoers.d/${USER} && \
+    chown root:root /etc/sudoers.d/${USER}
 
 # Install global node tools useful for development
 RUN npm install -g pnpm typescript ts-node @types/node
@@ -26,7 +29,7 @@ WORKDIR /workspace
 
 # Add entrypoint which will handle UID/GID mapping and dropping to the developer user
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
 USER ${USER}
 ENV PATH=/home/${USER}/.local/bin:$PATH

@@ -1,0 +1,34 @@
+FROM fedora:latest
+
+LABEL maintainer="GitHub Copilot <copilot@example.com>"
+ARG NODE_MAJOR=20
+ENV NODE_MAJOR=${NODE_MAJOR}
+
+# Install essentials and Node.js via NodeSource (reliable up-to-date Node)
+RUN dnf -y update && \
+    dnf -y install curl sudo which && \
+    curl -fsSL https://rpm.nodesource.com/setup_${NODE_MAJOR}.x | bash - && \
+    dnf -y install nodejs gcc-c++ make python3 git openssl-devel && \
+    dnf clean all && rm -rf /var/cache/dnf
+
+# Create a default developer user (UID 1000) — entrypoint can override at runtime
+ARG USER=developer
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} ${USER} || true && \
+    useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER} || true && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER}
+
+# Install global node tools useful for development
+RUN npm install -g pnpm typescript ts-node @types/node
+
+WORKDIR /workspace
+
+# Add entrypoint which will handle UID/GID mapping and dropping to the developer user
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER ${USER}
+ENV PATH=/home/${USER}/.local/bin:$PATH
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD [ "bash" ]

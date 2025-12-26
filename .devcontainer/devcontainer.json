@@ -1,0 +1,29 @@
+{
+  "name": "bns - Fedora TypeScript Dev",
+  "build": {
+    "dockerfile": "../Containerfile",
+    "context": "..",
+    "args": {
+      "NODE_MAJOR": "20"
+    }
+  },
+  "runArgs": [
+    "-v", "${localWorkspaceFolder}:/workspace:Z",
+    "-e", "LOCAL_UID=${localEnv:UID}",
+    "-e", "LOCAL_GID=${localEnv:GID}"
+  ],
+  "workspaceFolder": "/workspace",
+  "remoteUser": "developer",
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash",
+    "terminal.integrated.defaultProfile.linux": "bash"
+  },
+  "extensions": [
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "ms-vscode.vscode-node-azure-pack",
+    "ms-vscode.vscode-typescript-next"
+  ],
+  "postCreateCommand": "pnpm install || npm install",
+  "overrideCommand": false
+}

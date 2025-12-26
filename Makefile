@@ -8,11 +8,15 @@ build-container:
 	podman build --tag $(IMAGE_NAME) --build-arg NODE_MAJOR=$(NODE_VERSION) -f Containerfile .
 
 run-container:
-	podman run --rm -it \
+	podman run \
+		--rm -it -d \
 		-v $(PWD):/workspace:Z \
 		-w /workspace \
+		--userns=keep-id \
+		--cap-add=NET_RAW \
 		-p 3000:3000 \
 		-e LOCAL_GID=$(shell id -g) \
+		--user $(shell id -u):$(shell id -g) \
 		--hostname 'host_'$(CONTAINER_NAME) \
 		--name $(CONTAINER_NAME) \
 		$(IMAGE_NAME)

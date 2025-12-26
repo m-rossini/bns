@@ -1,7 +1,7 @@
 FROM fedora:latest
 
 LABEL maintainer="Marcos Rossini <mrpt68@gmail.com>"
-ARG NODE_MAJOR=20
+ARG NODE_MAJOR=24
 ENV NODE_MAJOR=${NODE_MAJOR}
 
 # Install essentials and Node.js via NodeSource (reliable up-to-date Node)
@@ -31,7 +31,6 @@ WORKDIR /workspace
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
-USER ${USER}
 ENV PATH=/home/${USER}/.local/bin:$PATH
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD [ "bash" ]

@@ -6,4 +6,7 @@ export default defineConfig({
   server: {
     open: true,
   },
+  optimizeDeps: {
+    exclude: ['phaser'],
+  },
 });

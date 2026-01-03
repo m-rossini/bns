@@ -11,7 +11,12 @@ function setContainerWidths() {
   const optionsFrame = document.getElementById('optionsFrame');
   if (mainContainer) mainContainer.style.width = graphicsConfig.canvasWidth + 'px';
   if (appDiv) appDiv.style.width = graphicsConfig.canvasWidth + 'px';
-  if (optionsFrame) optionsFrame.style.width = graphicsConfig.canvasWidth + 'px';
+  if (optionsFrame) {
+    optionsFrame.style.width = graphicsConfig.canvasWidth + 'px';
+    if (graphicsConfig.optionsFrameBackgroundColor) {
+      optionsFrame.style.background = graphicsConfig.optionsFrameBackgroundColor;
+    }
+  }
 }
 setContainerWidths();
 
@@ -19,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: graphicsConfig.canvasWidth,
   height: graphicsConfig.canvasHeight,
-  backgroundColor: graphicsConfig.backgroundColor,
+  backgroundColor: graphicsConfig.canvasBackgroundColor,
   parent: 'app',
   scene: {
     create() {
@@ -35,8 +40,10 @@ const config: Phaser.Types.Core.GameConfig = {
 function drawGrid(gridGraphics: Phaser.GameObjects.Graphics, show: boolean) {
   gridGraphics.clear();
   if (!show) return;
-  gridGraphics.lineStyle(1, Phaser.Display.Color.HexStringToColor(graphicsConfig.gridColor).color, 0.7);
-  const step = 40;
+  const thickness = graphicsConfig.gridLineThickness ?? 1;
+  const alpha = graphicsConfig.gridLineAlpha ?? 0.7;
+  gridGraphics.lineStyle(thickness, Phaser.Display.Color.HexStringToColor(graphicsConfig.gridColor).color, alpha);
+  const step = graphicsConfig.gridStep ?? 40;
   for (let x = 0; x <= graphicsConfig.canvasWidth; x += step) {
     gridGraphics.lineBetween(x, 0, x, graphicsConfig.canvasHeight);
   }
@@ -51,6 +58,7 @@ function setupGridToggle(drawGridFn: (show: boolean) => void) {
     const btn = document.getElementById('toggleGridBtn');
     if (btn) {
       btn.textContent = graphicsConfig.showGrid ? 'Hide Grid' : 'Show Grid';
+      btn.style.fontFamily = graphicsConfig.defaultFontFamily ?? 'Arial';
       btn.onclick = () => {
         graphicsConfig.showGrid = !graphicsConfig.showGrid;
         btn.textContent = graphicsConfig.showGrid ? 'Hide Grid' : 'Show Grid';
@@ -61,11 +69,25 @@ function setupGridToggle(drawGridFn: (show: boolean) => void) {
 }
 
 function renderTitle(scene: Phaser.Scene) {
+  // Use config for position or center by default
+  const fontSize = graphicsConfig.titleFontSize ?? 32;
+  const fontFamily = graphicsConfig.defaultFontFamily ?? 'Arial';
+  const fontColor = graphicsConfig.titleFontColor ?? '#fff';
+  const titleText = 'Bean World Startup';
+  let x: number, y: number;
+  if (graphicsConfig.titlePosition) {
+    x = graphicsConfig.titlePosition.x;
+    y = graphicsConfig.titlePosition.y;
+  } else {
+    // Center by default, estimate width
+    x = graphicsConfig.canvasWidth / 2 - (titleText.length * fontSize * 0.3);
+    y = graphicsConfig.canvasHeight / 2 - fontSize;
+  }
   scene.add.text(
-    graphicsConfig.canvasWidth / 2 - 100,
-    graphicsConfig.canvasHeight / 2 - 50,
-    'Bean World Startup',
-    { font: '32px Arial', color: '#fff' }
+    x,
+    y,
+    titleText,
+    { font: `${fontSize}px ${fontFamily}`, color: fontColor }
   );
 }
 

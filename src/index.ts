@@ -11,12 +11,7 @@ function setContainerWidths() {
   const optionsFrame = document.getElementById('optionsFrame');
   if (mainContainer) mainContainer.style.width = graphicsConfig.canvasWidth + 'px';
   if (appDiv) appDiv.style.width = graphicsConfig.canvasWidth + 'px';
-  if (optionsFrame) {
-    optionsFrame.style.width = graphicsConfig.canvasWidth + 'px';
-    if (graphicsConfig.optionsFrameBackgroundColor) {
-      optionsFrame.style.background = graphicsConfig.optionsFrameBackgroundColor;
-    }
-  }
+  if (optionsFrame) optionsFrame.style.width = graphicsConfig.canvasWidth + 'px';
 }
 setContainerWidths();
 
@@ -32,7 +27,6 @@ const config: Phaser.Types.Core.GameConfig = {
       const drawGridFn = (show: boolean) => drawGrid(gridGraphics, show);
       drawGridFn(graphicsConfig.showGrid);
       setupGridToggle(drawGridFn);
-      renderTitle(this);
     }
   }
 };
@@ -68,27 +62,6 @@ function setupGridToggle(drawGridFn: (show: boolean) => void) {
   }, 100);
 }
 
-function renderTitle(scene: Phaser.Scene) {
-  // Use config for position or center by default
-  const fontSize = graphicsConfig.titleFontSize ?? 32;
-  const fontFamily = graphicsConfig.defaultFontFamily ?? 'Arial';
-  const fontColor = graphicsConfig.titleFontColor ?? '#fff';
-  const titleText = 'Bean World Startup';
-  let x: number, y: number;
-  if (graphicsConfig.titlePosition) {
-    x = graphicsConfig.titlePosition.x;
-    y = graphicsConfig.titlePosition.y;
-  } else {
-    // Center by default, estimate width
-    x = graphicsConfig.canvasWidth / 2 - (titleText.length * fontSize * 0.3);
-    y = graphicsConfig.canvasHeight / 2 - fontSize;
-  }
-  scene.add.text(
-    x,
-    y,
-    titleText,
-    { font: `${fontSize}px ${fontFamily}`, color: fontColor }
-  );
-}
+
 
 new Phaser.Game(config);

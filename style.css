@@ -1,0 +1,61 @@
+:root {
+  --default-font-family: Arial, sans-serif;
+  --ui-font-size: 18px;
+  --title-font-size: 2.5rem;
+  --title-font-family: 'Arial Black', Arial, sans-serif;
+  --title-font-color: #0000007f;
+  --title-margin: 32px 0 16px 0;
+}
+
+.main-title {
+  font-size: var(--title-font-size);
+  font-family: var(--title-font-family);
+  color: var(--title-font-color);
+  text-align: center;
+  margin: var(--title-margin);
+  letter-spacing: 2px;
+  font-weight: bold;
+}
+/* Theming variables */
+:root {
+  --default-font-family: Arial, sans-serif;
+  --ui-font-size: 18px;
+}
+
+#mainContainer {
+  margin: 0 auto;
+}
+
+#app {
+  display: block;
+}
+
+.options-frame {
+  width: 100%;
+  border: 3px solid #888;
+  border-radius: 12px;
+  background: #222;
+  padding: 20px 0;
+  text-align: center;
+  box-shadow: 0 2px 8px #0002;
+  margin-top: 16px;
+  font-family: var(--default-font-family);
+  font-size: var(--ui-font-size);
+}
+
+#toggleGridBtn {
+  padding: 8px 24px;
+  border: 2px solid #5cad15;
+  background: #333;
+  color: #fff;
+  font-size: var(--ui-font-size);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--default-font-family);
+}
+
+canvas {
+  display: block;
+  background: var(--canvas-background-color, #c81e1e);
+  margin: 0 auto;
+}

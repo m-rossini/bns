@@ -6,7 +6,15 @@
   <title>Bean World Startup</title>
 </head>
 <body>
-  <div id="app"></div>
+  <link rel="stylesheet" href="./style.css" />
+  <div id="mainContainer">
+    <h1 id="mainTitle" class="main-title">Bean World Simulator</h1>
+    <div id="app"></div>
+    <div id="optionsFrame" class="options-frame">
+      <button id="toggleGridBtn">Hide Grid</button>
+      <!-- Future options will be added here -->
+    </div>
+  </div>
   <script type="module" src="/src/index.ts"></script>
 </body>
 </html>

@@ -2,6 +2,8 @@
 // Extend this interface to add world, beans, and environment settings
 
 
+export type GridDrawMode = 'lines' | 'rects';
+
 export interface SimulationGraphicsConfig {
   canvasWidth: number;
   canvasHeight: number;
@@ -12,6 +14,7 @@ export interface SimulationGraphicsConfig {
   gridLineThickness?: number; // Grid line thickness
   gridLineAlpha?: number; // Grid line alpha
   defaultFontFamily?: string;
+  gridDrawMode?: GridDrawMode;
   // Future: Add more graphical properties here
 }
 
@@ -21,11 +24,12 @@ export const graphicsConfig: SimulationGraphicsConfig = {
   canvasHeight: 800,
   canvasBackgroundColor: '#d7ffec',
   showGrid: true, // Default: grid is shown
-  gridColor: '#393a3aff',
+  gridColor: '#393a3a',
   gridStep: 20, // Default grid step
   gridLineThickness: 1,
   gridLineAlpha: 0.7,
   defaultFontFamily: 'Arial',
+  gridDrawMode: 'rects', // 'lines' or 'rects'
 };
 
 // Future: Add world, beans, and environment config sections

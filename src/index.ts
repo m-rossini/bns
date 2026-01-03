@@ -34,10 +34,30 @@ const config: Phaser.Types.Core.GameConfig = {
 function drawGrid(gridGraphics: Phaser.GameObjects.Graphics, show: boolean) {
   gridGraphics.clear();
   if (!show) return;
+  const step = graphicsConfig.gridStep ?? 40;
+  if (graphicsConfig.gridDrawMode === 'rects') {
+    drawGridRects(gridGraphics, step);
+  } else {
+    drawGridLines(gridGraphics, step);
+  }
+}
+
+function drawGridRects(gridGraphics: Phaser.GameObjects.Graphics, step: number) {
+  // TODO We should fill rectangles based on season of the year and temperature of the environment
+  for (let x = 0; x < graphicsConfig.canvasWidth; x += step) {
+    for (let y = 0; y < graphicsConfig.canvasHeight; y += step) {
+      // Generate a random color for each square
+      const color = Phaser.Display.Color.RandomRGB();
+      gridGraphics.fillStyle(color.color, 0.8);
+      gridGraphics.fillRect(x, y, step, step);
+    }
+  }
+}
+
+function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number) {
   const thickness = graphicsConfig.gridLineThickness ?? 1;
   const alpha = graphicsConfig.gridLineAlpha ?? 0.7;
   gridGraphics.lineStyle(thickness, Phaser.Display.Color.HexStringToColor(graphicsConfig.gridColor).color, alpha);
-  const step = graphicsConfig.gridStep ?? 40;
   for (let x = 0; x <= graphicsConfig.canvasWidth; x += step) {
     gridGraphics.lineBetween(x, 0, x, graphicsConfig.canvasHeight);
   }

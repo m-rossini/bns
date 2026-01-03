@@ -13,7 +13,7 @@ export interface SimulationGraphicsConfig {
 
 
 export const graphicsConfig: SimulationGraphicsConfig = {
-  canvasWidth: 800,
+  canvasWidth: 1400,
   canvasHeight: 800,
   backgroundColor: '#c81e1e',
   showGrid: true, // Default: grid is shown

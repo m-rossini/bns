@@ -6,7 +6,13 @@
   <title>Bean World Startup</title>
 </head>
 <body>
-  <div id="app"></div>
+  <div id="mainContainer" style="width: 800px; margin: 0 auto; display: block;">
+    <div id="app" style="width: 800px;"></div>
+    <div id="optionsFrame" style="width: 800px; border: 3px solid #888; border-radius: 12px; background: #222; padding: 20px 0; text-align: center; box-shadow: 0 2px 8px #0002; margin-top: 16px;">
+      <button id="toggleGridBtn" style="padding: 8px 24px; border: 2px solid #5cad15; background: #333; color: #fff; font-size: 18px; border-radius: 8px; cursor: pointer;">Hide Grid</button>
+      <!-- Future options will be added here -->
+    </div>
+  </div>
   <script type="module" src="/src/index.ts"></script>
 </body>
 </html>

@@ -5,11 +5,13 @@ applyTo: '**'
 # General Contribution Instructions
 
 ## Designing Guidelines
-- All new features and significant changes MUST be discussed via an issue or discussion before implementation.
+- All new features and any changes MUST be discussed before implementation.
 - Configuration MUST NOT BE CHANGED, they are ALWAYS read only.
 
-## Development Guidelines
+## Pre Work Guidelines
 - Development MUST be done in other branch than `main`.
+
+## Development Guidelines
 - Development MUST be done in TDD style.
 
 ## Testing Guidelines

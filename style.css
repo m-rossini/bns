@@ -1,3 +1,4 @@
+
 :root {
   --default-font-family: Arial, sans-serif;
   --ui-font-size: 18px;
@@ -15,11 +16,6 @@
   margin: var(--title-margin);
   letter-spacing: 2px;
   font-weight: bold;
-}
-/* Theming variables */
-:root {
-  --default-font-family: Arial, sans-serif;
-  --ui-font-size: 18px;
 }
 
 #mainContainer {

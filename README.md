@@ -1,3 +1,21 @@
+# Running Tests
+
+This project uses [Vitest](https://vitest.dev/) for testing.
+
+To run all tests:
+
+```
+npm install
+npm test
+```
+
+Or, if you want to run tests with Vitest directly:
+
+```
+npx vitest run
+```
+
+All test files are located in the `tests/` directory.
 # bns — Fedora TypeScript Development Container
 
 This repository contains a Fedora-based development container for TypeScript development, designed to be built and run with Podman.

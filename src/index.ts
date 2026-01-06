@@ -1,6 +1,10 @@
 
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
+import { SimulationStatsDashboard } from './SimulationStatsDashboard';
+import { StatsDashboard } from './StatsDashboard';
+import { DynamicConfigDashboard } from './DynamicConfigDashboard';
+import { CommandsDashboard } from './CommandsDashboard';
 
 
 
@@ -26,13 +30,26 @@ const config: Phaser.Types.Core.GameConfig = {
       const gridGraphics = this.add.graphics();
       const drawGridFn = (show: boolean) => drawGrid(gridGraphics, show);
       drawGridFn(worldWindow.state.showGrid);
-      setupGridToggle(
-        () => worldWindow.state.showGrid,
-        (newShowGrid: boolean) => {
-          worldWindow.state.showGrid = newShowGrid;
-          drawGridFn(worldWindow.state.showGrid);
-        }
-      );
+
+      // Dashboard containers
+      const mainContainer = document.getElementById('mainContainer')!;
+      const optionsFrame = document.getElementById('optionsFrame')!;
+
+      // Instantiate dashboards
+      const simStatsDashboard = new SimulationStatsDashboard(mainContainer);
+      simStatsDashboard.render();
+
+      const statsDashboard = new StatsDashboard(mainContainer);
+      statsDashboard.render();
+
+      const dynamicConfigDashboard = new DynamicConfigDashboard(mainContainer);
+      dynamicConfigDashboard.render();
+
+      const commandsDashboard = new CommandsDashboard(optionsFrame, worldWindow.state.showGrid, (newShowGrid: boolean) => {
+        worldWindow.state.showGrid = newShowGrid;
+        drawGridFn(worldWindow.state.showGrid);
+      });
+      commandsDashboard.render();
     },
     update(time: number, delta: number) {
       worldWindow.update(time, delta);
@@ -78,30 +95,7 @@ function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number) 
 
 
 
-function setupGridToggle(getShowGrid: () => boolean, setShowGrid: (show: boolean) => void) {
-  function initGridUI() {
-    setContainerWidths();
-    setupGridButton(getShowGrid, setShowGrid);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initGridUI);
-  } else {
-    initGridUI();
-  }
-}
 
-function setupGridButton(getShowGrid: () => boolean, setShowGrid: (show: boolean) => void) {
-  const btn = document.getElementById('toggleGridBtn');
-  if (btn) {
-    btn.textContent = getShowGrid() ? 'Hide Grid' : 'Show Grid';
-    btn.style.fontFamily = worldWindow.config.defaultFontFamily ?? 'Arial';
-    btn.onclick = () => {
-      const newShowGrid = !getShowGrid();
-      btn.textContent = newShowGrid ? 'Hide Grid' : 'Show Grid';
-      setShowGrid(newShowGrid);
-    };
-  }
-}
 
 
 

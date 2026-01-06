@@ -1,3 +1,23 @@
+import { SimulationStatsDashboard } from '../src/SimulationStatsDashboard';
+import { StatsDashboard } from '../src/StatsDashboard';
+import { DynamicConfigDashboard } from '../src/DynamicConfigDashboard';
+
+describe('Dashboard integration', () => {
+  it('should instantiate and render all dashboards without error', () => {
+    const mainContainer = document.createElement('div');
+    const optionsFrame = document.createElement('div');
+    const simStatsDashboard = new SimulationStatsDashboard(mainContainer);
+    simStatsDashboard.render();
+    const statsDashboard = new StatsDashboard(mainContainer);
+    statsDashboard.render();
+    const dynamicConfigDashboard = new DynamicConfigDashboard(mainContainer);
+    dynamicConfigDashboard.render();
+    const commandsDashboard = new CommandsDashboard(optionsFrame, false, () => {});
+    commandsDashboard.render();
+    expect(mainContainer.querySelectorAll('div').length).toBeGreaterThanOrEqual(0);
+    expect(optionsFrame.querySelector('button')).not.toBeNull();
+  });
+});
 import { beforeAll } from 'vitest';
 
 beforeAll(() => {

@@ -93,10 +93,4 @@ function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number) 
   }
 }
 
-
-
-
-
-
-
 new Phaser.Game(config);

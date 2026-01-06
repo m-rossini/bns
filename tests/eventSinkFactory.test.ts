@@ -1,18 +1,42 @@
-// eventSinkFactory.test.ts
-// TDD: EventSink factory tests
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { EventType } from '../src/config';
 import { createEventSink } from '../src/eventSinkFactory';
+import { EventSink } from '../src/eventSink';
 
-describe('createEventSink', () => {
-  it('should create OpenObserveSink for ux', () => {
+describe('EventSinkFactory', () => {
+  const OLD_ENV = process.env;
+  beforeEach(() => {
+    process.env = { ...OLD_ENV };
     process.env.UX_EVENT_SINK_TYPE = 'openobserve';
-    process.env.UX_EVENT_SINK_URL = 'http://fake-url';
-    process.env.UX_EVENT_SINK_API_KEY = 'fake-key';
-    const sink = createEventSink('ux');
-    expect(sink).toBeDefined();
+    process.env.UX_EVENT_SINK_URL = 'http://localhost:5080';
+    process.env.UX_EVENT_SINK_API_KEY = 'test-key';
+    process.env.SIM_EVENT_SINK_TYPE = 'openobserve';
+    process.env.SIM_EVENT_SINK_URL = 'http://localhost:5081';
+    process.env.SIM_EVENT_SINK_API_KEY = 'sim-key';
   });
-  it('should throw for unknown sink type', () => {
-    process.env.UX_EVENT_SINK_TYPE = 'unknown';
-    expect(() => createEventSink('ux')).toThrow();
+  afterEach(() => {
+    process.env = OLD_ENV;
+  });
+
+  it('creates a UX event sink with correct config', () => {
+    const sink: EventSink = createEventSink(EventType.UX_ACTION);
+    expect(sink).toBeInstanceOf(Object);
+    expect(sink.constructor.name).toBe('OpenObserveSink');
+  });
+
+  it('creates a SIM event sink with correct config', () => {
+    const sink: EventSink = createEventSink(EventType.SIMULATION_EVENT);
+    expect(sink).toBeInstanceOf(Object);
+    expect(sink.constructor.name).toBe('OpenObserveSink');
+  });
+
+  it('throws if env is missing', () => {
+    delete process.env.UX_EVENT_SINK_URL;
+    expect(() => createEventSink(EventType.UX_ACTION)).toThrow();
+  });
+
+  it('throws for unknown event type', () => {
+    // @ts-expect-error
+    expect(() => createEventSink('not_a_type')).toThrow();
   });
 });

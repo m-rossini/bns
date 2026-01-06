@@ -5,6 +5,22 @@ export interface Dimensions {
 
 
 // Utility to deeply freeze an object (for immutability)
+// EventType enum and Event interface for event tracking system
+export enum EventType {
+  UX_ACTION = "ux_action",
+  SIMULATION_EVENT = "simulation_event"
+}
+
+export interface Event {
+  id: string; // UUID
+  timestamp: string; // ISO string
+  eventType: EventType;
+  userId?: string;
+  sessionId?: string;
+  payload: Record<string, unknown>;
+}
+
+// Utility to deeply freeze an object (for immutability)
 function deepFreeze<T>(obj: T): T {
   Object.freeze(obj);
   Object.getOwnPropertyNames(obj).forEach((prop) => {
@@ -23,7 +39,7 @@ export interface WorldConfig {
   // Add more world/business logic config here
 }
 
-export interface WorldWindowConfig {
+export interface WorldWindowConfig { 
   readonly canvasWidth: number;
   readonly canvasHeight: number;
   readonly canvasBackgroundColor: string;

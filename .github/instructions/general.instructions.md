@@ -9,7 +9,7 @@ applyTo: '**'
 - Configuration MUST NOT BE CHANGED, they are ALWAYS read only.
 
 ## Pre Work Guidelines
-- Development MUST be done in other branch than `main`.
+- Development MUST be done in other branch than `main`, implying NEVER , EVER make changes in main
 
 ## Development Guidelines
 - Development MUST be done in TDD style.
@@ -19,3 +19,4 @@ applyTo: '**'
 - Tests MUST be written using the testing framework specified in the project
 - All tests MUST pass before submitting a pull request.
 - Tests MUST be significant, and MUST NOT access internal state via spies or mocks or dubs.
+- All test files MUST be placed in the `tests/` directory, not mixed with production code.

@@ -61,10 +61,10 @@ export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({
   canvasHeight: 800,
   canvasBackgroundColor: '#d7ffec',
   gridColor: '#393a3a',
-  gridLineThickness: 1,
+  gridLineThickness: 0.5,
   gridLineAlpha: 0.7,
   defaultFontFamily: 'Arial',
   cellSize: 20,
-  gridDrawMode: 'rects',
+  gridDrawMode: 'lines',
   // Add more drawing/presentation config here
 });

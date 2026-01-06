@@ -1,3 +1,18 @@
+# Environment Variables
+
+Create a `.env` file in the project root (see `.env.example` for all required keys):
+
+```
+UX_EVENT_SINK_TYPE=openobserve
+UX_EVENT_SINK_URL=https://your-openobserve-instance/api/events
+UX_EVENT_SINK_API_KEY=your-ux-api-key
+
+SIM_EVENT_SINK_TYPE=openobserve
+SIM_EVENT_SINK_URL=https://your-openobserve-instance/api/sim-events
+SIM_EVENT_SINK_API_KEY=your-sim-api-key
+```
+
+These variables control the event sink type, endpoint, and authentication for both UX and simulation events.
 # Running Tests
 
 This project uses [Vitest](https://vitest.dev/) for testing.

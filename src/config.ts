@@ -23,7 +23,7 @@ export interface WorldConfig {
   // Add more world/business logic config here
 }
 
-export interface WorldWindowConfig {
+export interface WorldWindowConfig { 
   readonly canvasWidth: number;
   readonly canvasHeight: number;
   readonly canvasBackgroundColor: string;

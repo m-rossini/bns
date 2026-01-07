@@ -59,8 +59,8 @@ export const worldConfig: Readonly<WorldConfig> = deepFreeze({
 export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({
   canvasWidth: 1200,
   canvasHeight: 800,
-  canvasBackgroundColor: '#d7ffec',
-  gridColor: '#393a3a',
+  canvasBackgroundColor: '#e45a96',
+  gridColor: '#efde74',
   gridLineThickness: 0.5,
   gridLineAlpha: 0.7,
   defaultFontFamily: 'Arial',

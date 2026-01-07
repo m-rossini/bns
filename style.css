@@ -42,7 +42,6 @@ body {
 #app {
   width: var(--app-width, 1200px);
   height: var(--app-height, 800px);
-  background: #d7ffec;
   position: relative;
   overflow: hidden;
   flex-shrink: 0;

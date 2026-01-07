@@ -1,6 +1,7 @@
 // DynamicConfigDashboard module
 export class DynamicConfigDashboard {
   private configDiv: HTMLDivElement;
+  public speed: number = 5;
 
   constructor() {
     const configFrame = document.getElementById('configFrame');
@@ -11,11 +12,17 @@ export class DynamicConfigDashboard {
 
   render(): void {
     this.configDiv.innerHTML = `
-      <h2>Config (UI Test)</h2>
-      <div>Speed: <input type='range' min='1' max='10' value='5' /></div>
-      <div>Mode: <select><option>Normal</option><option>Fast</option></select></div>
-      <div>Theme: <select><option>Light</option><option>Dark</option></select></div>
+      <h2>Config</h2>
+      <div class='slider-container-bordered'>
+        <span>Speed:</span> <input id='simSpeedSlider' type='range' min='1' max='10' value='5' />
+      </div>
     `;
+    const slider = this.configDiv.querySelector('#simSpeedSlider') as HTMLInputElement;
+    if (slider) {
+      slider.addEventListener('input', (e) => {
+        this.speed = Number(slider.value);
+      });
+    }
   }
 
   collapse(): void {

@@ -1,7 +1,6 @@
 
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
-import { SimulationStatsDashboard } from './dashboards/SimulationStatsDashboard';
 import { StatsDashboard } from './dashboards/StatsDashboard';
 import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
 import { CommandsDashboard } from './dashboards/CommandsDashboard';
@@ -19,6 +18,10 @@ function setContainerWidths() {
   if (optionsFrame) optionsFrame.style.width = width + 'px';
 }
 
+let statsDashboard: StatsDashboard;
+let dynamicConfigDashboard: DynamicConfigDashboard;
+let commandsDashboard: CommandsDashboard;
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: worldWindow.config.canvasWidth,
@@ -32,15 +35,14 @@ const config: Phaser.Types.Core.GameConfig = {
       drawGridFn(worldWindow.state.showGrid);
 
       // Instantiate dashboards in new layout
-
-      const statsDashboard = new StatsDashboard();
+      statsDashboard = new StatsDashboard();
       statsDashboard.render();
 
-      const dynamicConfigDashboard = new DynamicConfigDashboard();
+      dynamicConfigDashboard = new DynamicConfigDashboard();
       dynamicConfigDashboard.render();
 
       const actionsFrame = document.getElementById('actionsFrame');
-      const commandsDashboard = new CommandsDashboard(
+      commandsDashboard = new CommandsDashboard(
         actionsFrame!,
         worldWindow.state.showGrid,
         (newShowGrid: boolean) => {
@@ -51,7 +53,12 @@ const config: Phaser.Types.Core.GameConfig = {
       commandsDashboard.render();
     },
     update(time: number, delta: number) {
-      worldWindow.update(time, delta);
+      // Use speed from dynamicConfigDashboard to scale delta
+      const speed = dynamicConfigDashboard?.speed ?? 1;
+      worldWindow.update(time, delta * speed);
+      if (statsDashboard) {
+        statsDashboard.render();
+      }
     }
   }
 };

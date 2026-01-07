@@ -2,110 +2,85 @@
   --primary-green: #5cad15;
   --bg-dark: #121212;
   --frame-bg: #222;
+  --ui-font-size: 14px;
 }
 
 body {
-  background-color: var(--bg-dark);
+  background: var(--bg-dark);
   color: #fff;
-  font-family: sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 20px;
 }
 
-/* --- 1. Top Section --- */
-.main-title {
-  color: var(--primary-green);
-  margin-bottom: 10px;
-}
-
-#statsFrame {
-  width: 100%;
-  max-width: 1840px;
-  margin-bottom: 20px;
-}
-
-/* --- 2. The 3-Column Layout --- */
-.dashboard-row {
+#mainContainer, .dashboard-row {
   display: flex;
-  flex-direction: row;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 20px;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
-/* --- 3. THE FRAME LOGIC (Fixed for Actions Frame) --- */
-/* We apply the style to the ID'd containers in HTML... */
-#actionsFrame, #statsFrame, #configFrame {
+.main-title { color: var(--primary-green); margin-bottom: 15px; font-size: 2rem; }
+
+/* Dashboard Grouping */
+#actionsFrame, #statsFrame, #configFrame, #app {
   background: var(--frame-bg);
   border: 3px solid #888;
   border-radius: 12px;
-  padding: 16px;
   box-sizing: border-box;
 }
 
-/* ...BUT we remove the border/bg from any nested dashboard-frame 
-   to stop the "Double Border" in Stats and Config */
-#statsFrame .dashboard-frame, 
-#configFrame .dashboard-frame {
-  border: none !important;
-  background: transparent !important;
-  padding: 0 !important;
+#statsFrame { width: 100%; max-width: 1840px; margin-bottom: 20px; padding: 16px; }
+
+.dashboard-row { flex-direction: row; justify-content: center; align-items: flex-start; gap: 20px; }
+
+/* Sidebar & Simulation Sizes */
+.actions-frame, .config-frame { width: 300px; height: 800px; padding: 16px; }
+#app { width: 1200px; height: 800px; background: #d7ffec; position: relative; overflow: hidden; flex-shrink: 0; }
+
+/* Remove nesting artifacts */
+#statsFrame .dashboard-frame, #configFrame .dashboard-frame {
+  border: none !important; background: transparent !important; padding: 0 !important;
 }
 
-/* Column Sizes */
-.actions-frame, .config-frame {
-  width: 300px;
-  height: 800px;
-}
+#app canvas { display: block; width: 100% !important; height: 100% !important; }
+#canvasFrame { display: none; }
 
-/* --- 4. The Simulation & Grid --- */
-#app {
-  width: 1200px;
-  height: 800px;
-  background: #d7ffec;
-  border: 3px solid #888;
-  border-radius: 12px;
-  position: relative;
-  overflow: hidden;
-}
-
-#app canvas {
-  display: block;
-}
-
-/* Hide the unused div */
-#canvasFrame {
-  display: none;
-}
-
-/* --- 5. UI Elements (Slider & Button) --- */
-#toggleGridBtn {
-  width: 100%;
-  padding: 12px;
-  background: #b5e7a0;
-  border: 2px solid var(--primary-green);
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: bold;
-  font-size: 1.1em;
-}
+/* Controls & Slider */
+.slider-container-bordered { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 0; }
+.slider-container-bordered span { white-space: nowrap; font-weight: bold; font-size: var(--ui-font-size); }
 
 input[type="range"] {
-  -webkit-appearance: none;
-  width: 100%;
-  height: 12px;
-  background: #333;
-  border: 2px solid var(--primary-green);
-  border-radius: 8px;
-  margin: 15px 0;
-  outline: none;
+  -webkit-appearance: none; appearance: none;
+  flex-grow: 1; max-width: 180px; height: 8px;
+  background: #333; border: 1px solid var(--primary-green);
+  border-radius: 10px; outline: none; cursor: pointer;
 }
 
+/* Shared Thumb Style */
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 22px;
-  height: 22px;
-  background: var(--primary-green);
-  border-radius: 50%;
+  -webkit-appearance: none; width: 20px; height: 20px;
+  background: var(--primary-green); border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,0.5);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 20px; height: 20px; background: var(--primary-green);
+  border-radius: 50%; border: none;
+}
+
+#toggleGridBtn {
+  width: 100%; padding: 12px; background: #b5e7a0;
+  border: 2px solid var(--primary-green); border-radius: 8px;
+  font-weight: bold; color: #121212; transition: filter 0.2s;
+}
+#toggleGridBtn:hover { filter: brightness(1.1); }
+
+.context-area {
+  width: 100%; min-height: 100px; background: #111;
+  border: 1px solid #444; color: var(--primary-green);
+  padding: 10px; border-radius: 8px; font-family: monospace;
+  margin-top: 10px; resize: vertical;
+}

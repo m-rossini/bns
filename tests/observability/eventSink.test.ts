@@ -1,10 +1,7 @@
-// eventSink.test.ts
-// TDD: EventSink abstraction tests
 import { describe, it, expect } from 'vitest';
-import { EventType, Event } from '../src/config';
-import { EventSink } from '../src/eventSink';
+import { EventType, Event } from '../../src/config';
+import { EventSink } from '../../src/observability/eventSink';
 
-// Example mock sink for testing
 describe('EventSink', () => {
   it('should implement sendEvent(event)', async () => {
     class MockSink implements EventSink {

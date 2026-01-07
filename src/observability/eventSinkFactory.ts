@@ -1,8 +1,7 @@
-
 import { EventSink } from "./eventSink";
 import { OpenObserveSink } from "./openObserveSink";
 import { logInfo, logError } from "./logger";
-import { EventType } from "./config";
+import { EventType } from "../config";
 
 function requireEnv(key: string): string {
   const value = process.env[key];

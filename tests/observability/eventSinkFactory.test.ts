@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { EventType } from '../src/config';
-import { createEventSink } from '../src/eventSinkFactory';
-import { EventSink } from '../src/eventSink';
+import { EventType } from '../../src/config';
+import { createEventSink } from '../../src/observability/eventSinkFactory';
+import { EventSink } from '../../src/observability/eventSink';
 
 describe('EventSinkFactory', () => {
   const OLD_ENV = process.env;

@@ -1,7 +1,7 @@
-// logger.test.ts
-// TDD: Logger utility tests
+// Moved from tests/logger.test.ts
+// Updated imports to reflect new file paths
 import { describe, it, expect } from 'vitest';
-import { logInfo, logError } from '../src/logger';
+import { logInfo, logError } from '../../src/observability/logger';
 
 describe('Logger', () => {
   it('should log info without throwing', () => {

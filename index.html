@@ -9,10 +9,13 @@
   <link rel="stylesheet" href="./style.css" />
   <div id="mainContainer">
     <h1 id="mainTitle" class="main-title">Bean World Simulator</h1>
-    <div id="app"></div>
-    <div id="optionsFrame" class="options-frame">
-      <button id="toggleGridBtn">Hide Grid</button>
-      <!-- Future options will be added here -->
+    <div id="statsFrame" class="dashboard-frame stats-frame"></div>
+    <div class="dashboard-row">
+      <div id="actionsFrame" class="dashboard-frame actions-frame"></div>
+      <div id="app">
+        <div id="canvasFrame"></div>
+      </div>
+      <div id="configFrame" class="dashboard-frame config-frame"></div>
     </div>
   </div>
   <script type="module" src="/src/index.ts"></script>

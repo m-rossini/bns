@@ -1,6 +1,8 @@
-
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
+import { StatsDashboard } from './dashboards/StatsDashboard';
+import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
+import { CommandsDashboard } from './dashboards/CommandsDashboard';
 
 
 
@@ -15,6 +17,18 @@ function setContainerWidths() {
   if (optionsFrame) optionsFrame.style.width = width + 'px';
 }
 
+function setSimulationCanvasSize() {
+  const appDiv = document.getElementById('app');
+  if (appDiv) {
+    appDiv.style.setProperty('--app-width', `${worldWindow.config.canvasWidth}px`);
+    appDiv.style.setProperty('--app-height', `${worldWindow.config.canvasHeight}px`);
+  }
+}
+
+let statsDashboard: StatsDashboard;
+let dynamicConfigDashboard: DynamicConfigDashboard;
+let commandsDashboard: CommandsDashboard;
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: worldWindow.config.canvasWidth,
@@ -26,16 +40,32 @@ const config: Phaser.Types.Core.GameConfig = {
       const gridGraphics = this.add.graphics();
       const drawGridFn = (show: boolean) => drawGrid(gridGraphics, show);
       drawGridFn(worldWindow.state.showGrid);
-      setupGridToggle(
-        () => worldWindow.state.showGrid,
+
+      // Instantiate dashboards in new layout
+      statsDashboard = new StatsDashboard();
+      statsDashboard.render();
+
+      dynamicConfigDashboard = new DynamicConfigDashboard();
+      dynamicConfigDashboard.render();
+
+      const actionsFrame = document.getElementById('actionsFrame');
+      commandsDashboard = new CommandsDashboard(
+        actionsFrame!,
+        worldWindow.state.showGrid,
         (newShowGrid: boolean) => {
           worldWindow.state.showGrid = newShowGrid;
           drawGridFn(worldWindow.state.showGrid);
         }
       );
+      commandsDashboard.render();
     },
     update(time: number, delta: number) {
-      worldWindow.update(time, delta);
+      // Use speed from dynamicConfigDashboard to scale delta
+      const speed = dynamicConfigDashboard?.speed ?? 1;
+      worldWindow.update(time, delta * speed);
+      if (statsDashboard) {
+        statsDashboard.render();
+      }
     }
   }
 };
@@ -43,30 +73,29 @@ const config: Phaser.Types.Core.GameConfig = {
 function drawGrid(gridGraphics: Phaser.GameObjects.Graphics, showGrid: boolean) {
   gridGraphics.clear();
   const step = worldWindow.config.cellSize ?? 40;
+  const alpha = worldWindow.config.gridLineAlpha ?? 0.7;
+  if (!showGrid) return;
   if (worldWindow.config.gridDrawMode === 'rects') {
-    drawGridRects(gridGraphics, step);
+    drawGridRects(gridGraphics, step, alpha);
   } else {
-    if (showGrid) {
-      drawGridLines(gridGraphics, step);
-    }
+    drawGridLines(gridGraphics, step, alpha);
   }
 }
 
-function drawGridRects(gridGraphics: Phaser.GameObjects.Graphics, step: number) {
+function drawGridRects(gridGraphics: Phaser.GameObjects.Graphics, step: number, alpha: number) {
   // TODO We should fill rectangles based on season of the year and temperature of the environment
   for (let x = 0; x < worldWindow.config.canvasWidth; x += step) {
     for (let y = 0; y < worldWindow.config.canvasHeight; y += step) {
       // Generate a random color for each square
       const color = Phaser.Display.Color.RandomRGB();
-      gridGraphics.fillStyle(color.color, 0.8);
+      gridGraphics.fillStyle(color.color, alpha);
       gridGraphics.fillRect(x, y, step, step);
     }
   }
 }
 
-function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number) {
+function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number, alpha: number) {
   const thickness = worldWindow.config.gridLineThickness ?? 1;
-  const alpha = worldWindow.config.gridLineAlpha ?? 0.7;
   gridGraphics.lineStyle(thickness, Phaser.Display.Color.HexStringToColor(worldWindow.config.gridColor).color, alpha);
   for (let x = 0; x <= worldWindow.config.canvasWidth; x += step) {
     gridGraphics.lineBetween(x, 0, x, worldWindow.config.canvasHeight);
@@ -76,33 +105,7 @@ function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number) 
   }
 }
 
-
-
-function setupGridToggle(getShowGrid: () => boolean, setShowGrid: (show: boolean) => void) {
-  function initGridUI() {
-    setContainerWidths();
-    setupGridButton(getShowGrid, setShowGrid);
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initGridUI);
-  } else {
-    initGridUI();
-  }
-}
-
-function setupGridButton(getShowGrid: () => boolean, setShowGrid: (show: boolean) => void) {
-  const btn = document.getElementById('toggleGridBtn');
-  if (btn) {
-    btn.textContent = getShowGrid() ? 'Hide Grid' : 'Show Grid';
-    btn.style.fontFamily = worldWindow.config.defaultFontFamily ?? 'Arial';
-    btn.onclick = () => {
-      const newShowGrid = !getShowGrid();
-      btn.textContent = newShowGrid ? 'Hide Grid' : 'Show Grid';
-      setShowGrid(newShowGrid);
-    };
-  }
-}
-
-
+// Call this function before initializing Phaser
+setSimulationCanvasSize();
 
 new Phaser.Game(config);

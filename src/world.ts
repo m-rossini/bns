@@ -22,7 +22,7 @@ export class World {
     console.log('>>> dimensions', dimensions);
   }
   step(time: number, delta: number) {
-    this.state.tick += delta;
+    this.state.tick += 1;
     this.state.totalTime += delta;
     this.state.timer = time;
     return this.state;

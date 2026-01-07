@@ -1,7 +1,7 @@
 // DynamicConfigDashboard module
 export class DynamicConfigDashboard {
   private configDiv: HTMLDivElement;
-  public speed: number = 5;
+  public speed: number = 1; // Set the initial speed to the minimum value
 
   constructor() {
     const configFrame = document.getElementById('configFrame');
@@ -14,7 +14,7 @@ export class DynamicConfigDashboard {
     this.configDiv.innerHTML = `
       <h2>Config</h2>
       <div class='slider-container-bordered'>
-        <span>Speed:</span> <input id='simSpeedSlider' type='range' min='1' max='10' value='5' />
+        <span>Speed:</span> <input id='simSpeedSlider' type='range' min='1' max='10' value='1' /> <!-- Default value updated to minimum -->
       </div>
     `;
     const slider = this.configDiv.querySelector('#simSpeedSlider') as HTMLInputElement;

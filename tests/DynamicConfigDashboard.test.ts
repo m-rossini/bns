@@ -7,7 +7,7 @@ beforeAll(() => {
   }
 });
 import { describe, it, expect } from 'vitest';
-import { DynamicConfigDashboard } from '../src/DynamicConfigDashboard';
+import { DynamicConfigDashboard } from '../src/dashboards/DynamicConfigDashboard';
 
 describe('DynamicConfigDashboard', () => {
   it('should instantiate without error', () => {

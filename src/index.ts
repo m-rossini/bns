@@ -1,10 +1,10 @@
 
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
-import { SimulationStatsDashboard } from './SimulationStatsDashboard';
-import { StatsDashboard } from './StatsDashboard';
-import { DynamicConfigDashboard } from './DynamicConfigDashboard';
-import { CommandsDashboard } from './CommandsDashboard';
+import { SimulationStatsDashboard } from './dashboards/SimulationStatsDashboard';
+import { StatsDashboard } from './dashboards/StatsDashboard';
+import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
+import { CommandsDashboard } from './dashboards/CommandsDashboard';
 
 
 
@@ -39,10 +39,15 @@ const config: Phaser.Types.Core.GameConfig = {
       const dynamicConfigDashboard = new DynamicConfigDashboard();
       dynamicConfigDashboard.render();
 
-      const commandsDashboard = new CommandsDashboard(worldWindow.state.showGrid, (newShowGrid: boolean) => {
-        worldWindow.state.showGrid = newShowGrid;
-        drawGridFn(worldWindow.state.showGrid);
-      });
+      const actionsFrame = document.getElementById('actionsFrame');
+      const commandsDashboard = new CommandsDashboard(
+        actionsFrame!,
+        worldWindow.state.showGrid,
+        (newShowGrid: boolean) => {
+          worldWindow.state.showGrid = newShowGrid;
+          drawGridFn(worldWindow.state.showGrid);
+        }
+      );
       commandsDashboard.render();
     },
     update(time: number, delta: number) {

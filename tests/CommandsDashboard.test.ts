@@ -1,6 +1,6 @@
-import { SimulationStatsDashboard } from '../src/SimulationStatsDashboard';
-import { StatsDashboard } from '../src/StatsDashboard';
-import { DynamicConfigDashboard } from '../src/DynamicConfigDashboard';
+import { SimulationStatsDashboard } from '../src/dashboards/SimulationStatsDashboard';
+import { StatsDashboard } from '../src/dashboards/StatsDashboard';
+import { DynamicConfigDashboard } from '../src/dashboards/DynamicConfigDashboard';
 
 describe('Dashboard integration', () => {
   it('should instantiate and render all dashboards without error', () => {
@@ -27,7 +27,7 @@ beforeAll(() => {
   }
 });
 import { describe, it, expect } from 'vitest';
-import { CommandsDashboard } from '../src/CommandsDashboard';
+import { CommandsDashboard } from '../src/dashboards/CommandsDashboard';
 
 describe('CommandsDashboard', () => {
   it('should instantiate without error', () => {

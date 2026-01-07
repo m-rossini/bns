@@ -12,16 +12,7 @@ export class SimulationStatsDashboard {
   render(): void {
     this.statsDiv.innerHTML = `
       <h2>Simulation Stats</h2>
-      <div>Ticks: <span id="sim-tick">0</span></div>
-      <div>Total Time: <span id="sim-totalTime">0</span></div>
+      <div>Grid lines: enabled</div>
     `;
-  }
-
-  collapse(): void {
-    this.statsDiv.style.display = 'none';
-  }
-
-  expand(): void {
-    this.statsDiv.style.display = '';
   }
 }

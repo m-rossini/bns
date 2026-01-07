@@ -5,17 +5,13 @@ export class CommandsDashboard {
   private onToggleGrid: (visible: boolean) => void;
   private container: HTMLElement;
 
-  constructor(initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
-    const actionsFrame = document.getElementById('actionsFrame');
-    this.container = actionsFrame!;
+  constructor(container: HTMLElement, initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
+    this.container = container;
     this.isGridVisible = initialGridState;
     this.onToggleGrid = onToggleGrid;
-    this.gridToggleButton = document.getElementById('toggleGridBtn') as HTMLButtonElement;
-    if (!this.gridToggleButton) {
-      this.gridToggleButton = document.createElement('button');
-      this.gridToggleButton.id = 'toggleGridBtn';
-      this.container.appendChild(this.gridToggleButton);
-    }
+    this.gridToggleButton = document.createElement('button');
+    this.gridToggleButton.id = 'toggleGridBtn';
+    this.container.appendChild(this.gridToggleButton);
   }
 
   render(): void {
@@ -25,6 +21,5 @@ export class CommandsDashboard {
       this.gridToggleButton.textContent = this.isGridVisible ? 'Hide Grid' : 'Show Grid';
       this.onToggleGrid(this.isGridVisible);
     };
-    // Only append if we created a new button (handled above)
   }
 }

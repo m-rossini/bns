@@ -12,10 +12,10 @@ export class StatsDashboard {
 
   render(): void {
     const { tick, totalTime } = worldWindow.world.state;
+    const totalSeconds = Math.floor(totalTime / 1000);
     this.statsDiv.innerHTML = `
-      <h2>Simulation Stats</h2>
       <div>Total Ticks: <span id="stat-tick">${tick}</span></div>
-      <div>Total Time: <span id="stat-totalTime">${totalTime}</span></div>
+      <div>Total Time: <span id="stat-totalTime">${totalSeconds} s</span></div>
     `;
   }
 }

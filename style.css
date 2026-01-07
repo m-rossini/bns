@@ -30,7 +30,7 @@ I think a new field is needed such as context
   justify-content: center;
   align-items: center;
   width: 100vw;
-  gap: 0;
+  gap: clamp(16px, 2vw, 48px);
 }
 
 .dashboard-frame {

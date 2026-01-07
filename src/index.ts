@@ -1,4 +1,3 @@
-
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
 import { StatsDashboard } from './dashboards/StatsDashboard';
@@ -16,6 +15,14 @@ function setContainerWidths() {
   if (mainContainer) mainContainer.style.width = width + 'px';
   if (appDiv) appDiv.style.width = width + 'px';
   if (optionsFrame) optionsFrame.style.width = width + 'px';
+}
+
+function setSimulationCanvasSize() {
+  const appDiv = document.getElementById('app');
+  if (appDiv) {
+    appDiv.style.setProperty('--app-width', `${worldWindow.config.canvasWidth}px`);
+    appDiv.style.setProperty('--app-height', `${worldWindow.config.canvasHeight}px`);
+  }
 }
 
 let statsDashboard: StatsDashboard;
@@ -97,5 +104,8 @@ function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number, 
     gridGraphics.lineBetween(0, y, worldWindow.config.canvasWidth, y);
   }
 }
+
+// Call this function before initializing Phaser
+setSimulationCanvasSize();
 
 new Phaser.Game(config);

@@ -5,11 +5,11 @@ export class CommandsDashboard {
   private onToggleGrid: (visible: boolean) => void;
   private container: HTMLElement;
 
-  constructor(container: HTMLElement, initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
-    this.container = container;
+  constructor(initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
+    const actionsFrame = document.getElementById('actionsFrame');
+    this.container = actionsFrame!;
     this.isGridVisible = initialGridState;
     this.onToggleGrid = onToggleGrid;
-    // Use the existing button if present
     this.gridToggleButton = document.getElementById('toggleGridBtn') as HTMLButtonElement;
     if (!this.gridToggleButton) {
       this.gridToggleButton = document.createElement('button');

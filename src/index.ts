@@ -31,21 +31,15 @@ const config: Phaser.Types.Core.GameConfig = {
       const drawGridFn = (show: boolean) => drawGrid(gridGraphics, show);
       drawGridFn(worldWindow.state.showGrid);
 
-      // Dashboard containers
-      const mainContainer = document.getElementById('mainContainer')!;
-      const optionsFrame = document.getElementById('optionsFrame')!;
+      // Instantiate dashboards in new layout
 
-      // Instantiate dashboards
-      const simStatsDashboard = new SimulationStatsDashboard(mainContainer);
-      simStatsDashboard.render();
-
-      const statsDashboard = new StatsDashboard(mainContainer);
+      const statsDashboard = new StatsDashboard();
       statsDashboard.render();
 
-      const dynamicConfigDashboard = new DynamicConfigDashboard(mainContainer);
+      const dynamicConfigDashboard = new DynamicConfigDashboard();
       dynamicConfigDashboard.render();
 
-      const commandsDashboard = new CommandsDashboard(optionsFrame, worldWindow.state.showGrid, (newShowGrid: boolean) => {
+      const commandsDashboard = new CommandsDashboard(worldWindow.state.showGrid, (newShowGrid: boolean) => {
         worldWindow.state.showGrid = newShowGrid;
         drawGridFn(worldWindow.state.showGrid);
       });

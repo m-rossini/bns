@@ -34,9 +34,9 @@ export class CommandsDashboard {
     this.container.appendChild(expandButton);
   }
 
-  private expand(): void {
+  expand(): void {
     this.container.style.height = '';
     this.container.style.overflow = '';
-    this.render(); // Re-render to show grid toggle button
+    this.render(); // Re-render the dashboard content
   }
 }

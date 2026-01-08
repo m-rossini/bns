@@ -37,6 +37,11 @@ export class CommandsDashboard {
   expand(): void {
     this.container.style.height = '';
     this.container.style.overflow = '';
+    // Remove expand button if present
+    const expandBtn = this.container.querySelector('.dashboard-expand-button');
+    if (expandBtn) {
+      expandBtn.remove();
+    }
     this.render(); // Re-render the dashboard content
   }
 }

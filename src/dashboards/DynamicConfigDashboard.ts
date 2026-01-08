@@ -26,10 +26,18 @@ export class DynamicConfigDashboard {
   }
 
   collapse(): void {
-    this.configDiv.style.display = 'none';
+    this.configDiv.style.height = '20px';
+    this.configDiv.style.overflow = 'hidden';
+    this.configDiv.innerHTML = ''; // Clear content
+    const expandButton = document.createElement('button');
+    expandButton.textContent = '+';
+    expandButton.className = 'dashboard-expand-button';
+    expandButton.onclick = () => this.expand();
+    this.configDiv.appendChild(expandButton);
   }
 
   expand(): void {
-    this.configDiv.style.display = '';
+    this.configDiv.style.height = '';
+    this.configDiv.style.overflow = '';
   }
 }

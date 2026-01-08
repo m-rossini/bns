@@ -22,4 +22,21 @@ export class CommandsDashboard {
       this.onToggleGrid(this.isGridVisible);
     };
   }
+
+  collapse(): void {
+    this.container.style.height = '20px';
+    this.container.style.overflow = 'hidden';
+    this.container.innerHTML = ''; // Clear content
+    const expandButton = document.createElement('button');
+    expandButton.textContent = '+';
+    expandButton.className = 'dashboard-expand-button';
+    expandButton.onclick = () => this.expand();
+    this.container.appendChild(expandButton);
+  }
+
+  private expand(): void {
+    this.container.style.height = '';
+    this.container.style.overflow = '';
+    this.render(); // Re-render to show grid toggle button
+  }
 }

@@ -3,6 +3,7 @@ import { worldWindow } from './worldWindow';
 import { StatsDashboard } from './dashboards/StatsDashboard';
 import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
 import { CommandsDashboard } from './dashboards/CommandsDashboard';
+import { drawGrid } from './grid';
 
 
 
@@ -28,6 +29,8 @@ function setSimulationCanvasSize() {
 let statsDashboard: StatsDashboard;
 let dynamicConfigDashboard: DynamicConfigDashboard;
 let commandsDashboard: CommandsDashboard;
+let isPaused = false;
+let drawGridFn: ((showGrid: boolean) => void) | undefined;
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -38,7 +41,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: {
     create() {
       const gridGraphics = this.add.graphics();
-      const drawGridFn = (show: boolean) => drawGrid(gridGraphics, show);
+      drawGridFn = (show: boolean) => drawGrid(gridGraphics, show, worldWindow.config);
       drawGridFn(worldWindow.state.showGrid);
 
       // Instantiate dashboards in new layout
@@ -54,7 +57,10 @@ const config: Phaser.Types.Core.GameConfig = {
         worldWindow.state.showGrid,
         (newShowGrid: boolean) => {
           worldWindow.state.showGrid = newShowGrid;
-          drawGridFn(worldWindow.state.showGrid);
+          drawGridFn?.(worldWindow.state.showGrid);
+        },
+        (paused: boolean) => {
+          isPaused = paused;
         }
       );
       commandsDashboard.render();
@@ -62,48 +68,17 @@ const config: Phaser.Types.Core.GameConfig = {
     update(time: number, delta: number) {
       // Use speed from dynamicConfigDashboard to scale delta
       const speed = dynamicConfigDashboard?.speed ?? 1;
-      worldWindow.update(time, delta * speed);
+      if (!isPaused) {
+        worldWindow.update(time, delta * speed);
+      }
+      // Always update grid visibility in case it was toggled
+      drawGridFn?.(worldWindow.state.showGrid);
       if (statsDashboard) {
         statsDashboard.render();
       }
     }
   }
 };
-
-function drawGrid(gridGraphics: Phaser.GameObjects.Graphics, showGrid: boolean) {
-  gridGraphics.clear();
-  const step = worldWindow.config.cellSize ?? 40;
-  const alpha = worldWindow.config.gridLineAlpha ?? 0.7;
-  if (!showGrid) return;
-  if (worldWindow.config.gridDrawMode === 'rects') {
-    drawGridRects(gridGraphics, step, alpha);
-  } else {
-    drawGridLines(gridGraphics, step, alpha);
-  }
-}
-
-function drawGridRects(gridGraphics: Phaser.GameObjects.Graphics, step: number, alpha: number) {
-  // TODO We should fill rectangles based on season of the year and temperature of the environment
-  for (let x = 0; x < worldWindow.config.canvasWidth; x += step) {
-    for (let y = 0; y < worldWindow.config.canvasHeight; y += step) {
-      // Generate a random color for each square
-      const color = Phaser.Display.Color.RandomRGB();
-      gridGraphics.fillStyle(color.color, alpha);
-      gridGraphics.fillRect(x, y, step, step);
-    }
-  }
-}
-
-function drawGridLines(gridGraphics: Phaser.GameObjects.Graphics, step: number, alpha: number) {
-  const thickness = worldWindow.config.gridLineThickness ?? 1;
-  gridGraphics.lineStyle(thickness, Phaser.Display.Color.HexStringToColor(worldWindow.config.gridColor).color, alpha);
-  for (let x = 0; x <= worldWindow.config.canvasWidth; x += step) {
-    gridGraphics.lineBetween(x, 0, x, worldWindow.config.canvasHeight);
-  }
-  for (let y = 0; y <= worldWindow.config.canvasHeight; y += step) {
-    gridGraphics.lineBetween(0, y, worldWindow.config.canvasWidth, y);
-  }
-}
 
 // Call this function before initializing Phaser
 setSimulationCanvasSize();

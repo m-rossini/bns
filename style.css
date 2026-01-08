@@ -162,20 +162,28 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-#toggleGridBtn {
-  width: 100%; 
-  padding: 12px; 
+.dashboard-action-btn {
+  width: 100%;
+  padding: 12px;
   background: #b5e7a0;
-  border: 2px solid var(--primary-green); 
+  border: 2px solid var(--primary-green);
   border-radius: 8px;
-  font-weight: bold; 
-  color: #121212; 
+  font-weight: bold;
+  color: #121212;
   transition: filter 0.2s;
   cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
 }
 
-#toggleGridBtn:hover { 
-  filter: brightness(1.1); 
+.dashboard-action-btn + .dashboard-action-btn {
+  margin-top: 10px;
+}
+
+.dashboard-action-btn:hover {
+  filter: brightness(1.1);
 }
 
 .context-area {

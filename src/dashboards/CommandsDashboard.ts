@@ -14,14 +14,11 @@ export class CommandsDashboard {
     
     // Create header with collapse button
     this.header = document.createElement('div');
-    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-direction: column;';
+    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;';
     
     const title = document.createElement('h2');
     title.textContent = 'Commands';
     title.style.margin = '0';
-    title.style.writingMode = 'vertical-rl';
-    title.style.transform = 'rotate(180deg)';
-    title.style.display = 'none'; // Hidden initially
     
     this.collapseButton = document.createElement('button');
     this.collapseButton.textContent = '▶';
@@ -31,6 +28,16 @@ export class CommandsDashboard {
     this.header.appendChild(title);
     this.header.appendChild(this.collapseButton);
     this.container.appendChild(this.header);
+    
+    // Create vertical title for collapsed state
+    const verticalTitle = document.createElement('h2');
+    verticalTitle.textContent = 'Commands';
+    verticalTitle.style.margin = '0';
+    verticalTitle.style.writingMode = 'vertical-rl';
+    verticalTitle.style.transform = 'rotate(180deg)';
+    verticalTitle.style.display = 'none';
+    verticalTitle.className = 'vertical-title';
+    this.header.appendChild(verticalTitle);
     
     // Create content wrapper
     this.contentWrapper = document.createElement('div');
@@ -57,10 +64,15 @@ export class CommandsDashboard {
     // Collapse horizontally
     this.container.style.width = '50px';
     this.container.style.padding = '16px 8px';
-    this.header.style.height = '100%';
-    this.header.style.justifyContent = 'center';
-    const title = this.header.querySelector('h2');
-    if (title) (title as HTMLElement).style.display = 'block';
+    this.header.style.flexDirection = 'column';
+    this.header.style.alignItems = 'center';
+    this.header.style.justifyContent = 'flex-start';
+    
+    // Hide horizontal title, show vertical title
+    const regularTitle = this.header.querySelector('h2:not(.vertical-title)');
+    const verticalTitle = this.header.querySelector('.vertical-title');
+    if (regularTitle) (regularTitle as HTMLElement).style.display = 'none';
+    if (verticalTitle) (verticalTitle as HTMLElement).style.display = 'block';
   }
 
   expand(): void {
@@ -70,9 +82,14 @@ export class CommandsDashboard {
     // Restore original width
     this.container.style.width = '';
     this.container.style.padding = '';
-    this.header.style.height = '';
+    this.header.style.flexDirection = '';
+    this.header.style.alignItems = '';
     this.header.style.justifyContent = '';
-    const title = this.header.querySelector('h2');
-    if (title) (title as HTMLElement).style.display = 'none';
+    
+    // Show horizontal title, hide vertical title
+    const regularTitle = this.header.querySelector('h2:not(.vertical-title)');
+    const verticalTitle = this.header.querySelector('.vertical-title');
+    if (regularTitle) (regularTitle as HTMLElement).style.display = 'block';
+    if (verticalTitle) (verticalTitle as HTMLElement).style.display = 'none';
   }
 }

@@ -10,7 +10,7 @@ export class DynamicConfigDashboard {
     
     // Create header with collapse button
     this.header = document.createElement('div');
-    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-direction: column;';
+    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;';
     
     const title = document.createElement('h2');
     title.textContent = 'Config';
@@ -55,8 +55,9 @@ export class DynamicConfigDashboard {
     // Collapse horizontally
     this.container.style.width = '50px';
     this.container.style.padding = '16px 8px';
-    this.header.style.height = '100%';
-    this.header.style.justifyContent = 'center';
+    this.header.style.flexDirection = 'column';
+    this.header.style.alignItems = 'center';
+    this.header.style.justifyContent = 'flex-start';
     const title = this.header.querySelector('h2');
     if (title) (title as HTMLElement).style.display = 'block';
   }
@@ -68,7 +69,8 @@ export class DynamicConfigDashboard {
     // Restore original width
     this.container.style.width = '';
     this.container.style.padding = '';
-    this.header.style.height = '';
+    this.header.style.flexDirection = '';
+    this.header.style.alignItems = '';
     this.header.style.justifyContent = '';
     const title = this.header.querySelector('h2');
     if (title) (title as HTMLElement).style.display = 'none';

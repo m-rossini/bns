@@ -39,5 +39,6 @@ export class DynamicConfigDashboard {
   expand(): void {
     this.configDiv.style.height = '';
     this.configDiv.style.overflow = '';
+    this.render(); // Re-render the dashboard content
   }
 }

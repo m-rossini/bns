@@ -90,3 +90,19 @@ input[type="range"]::-moz-range-thumb {
   padding: 10px; border-radius: 8px; font-family: monospace;
   margin-top: 10px; resize: vertical;
 }
+
+.dashboard-collapsed {
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+}
+
+.dashboard-expand-button {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+}

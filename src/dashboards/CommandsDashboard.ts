@@ -1,16 +1,26 @@
 export class CommandsDashboard {
   private gridToggleButton: HTMLButtonElement;
+  private pauseButton: HTMLButtonElement;
   private collapseButton: HTMLButtonElement;
   private isGridVisible: boolean;
+  private isPaused: boolean;
   private onToggleGrid: (visible: boolean) => void;
+  private onTogglePause: (paused: boolean) => void;
   private container: HTMLElement;
   private contentWrapper: HTMLDivElement;
   private header: HTMLDivElement;
 
-  constructor(container: HTMLElement, initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
+  constructor(
+    container: HTMLElement,
+    initialGridState: boolean,
+    onToggleGrid: (visible: boolean) => void,
+    onTogglePause?: (paused: boolean) => void
+  ) {
     this.container = container;
     this.isGridVisible = initialGridState;
+    this.isPaused = false;
     this.onToggleGrid = onToggleGrid;
+    this.onTogglePause = onTogglePause || (() => {});
     
     // Create header with collapse button
     this.header = document.createElement('div');
@@ -48,6 +58,11 @@ export class CommandsDashboard {
     this.gridToggleButton = document.createElement('button');
     this.gridToggleButton.id = 'toggleGridBtn';
     this.contentWrapper.appendChild(this.gridToggleButton);
+    
+    this.pauseButton = document.createElement('button');
+    this.pauseButton.id = 'togglePauseBtn';
+    this.pauseButton.style.marginLeft = '10px';
+    this.contentWrapper.appendChild(this.pauseButton);
   }
 
   render(): void {
@@ -56,6 +71,13 @@ export class CommandsDashboard {
       this.isGridVisible = !this.isGridVisible;
       this.gridToggleButton.textContent = this.isGridVisible ? 'Hide Grid' : 'Show Grid';
       this.onToggleGrid(this.isGridVisible);
+    };
+    
+    this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
+    this.pauseButton.onclick = () => {
+      this.isPaused = !this.isPaused;
+      this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
+      this.onTogglePause(this.isPaused);
     };
   }
 

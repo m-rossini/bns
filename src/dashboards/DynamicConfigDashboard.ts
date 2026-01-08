@@ -18,6 +18,7 @@ export class DynamicConfigDashboard {
     title.style.writingMode = 'vertical-rl';
     title.style.transform = 'rotate(180deg)';
     title.style.display = 'none'; // Hidden initially
+    title.style.marginTop = '20px'; // Space below button when collapsed
     
     this.collapseButton = document.createElement('button');
     this.collapseButton.textContent = '◀';
@@ -58,8 +59,15 @@ export class DynamicConfigDashboard {
     this.header.style.flexDirection = 'column';
     this.header.style.alignItems = 'center';
     this.header.style.justifyContent = 'flex-start';
+    this.header.style.height = '100%';
     const title = this.header.querySelector('h2');
-    if (title) (title as HTMLElement).style.display = 'block';
+    if (title) {
+      (title as HTMLElement).style.display = 'block';
+      (title as HTMLElement).style.flex = '1';
+      (title as HTMLElement).style.display = 'flex';
+      (title as HTMLElement).style.alignItems = 'center';
+      (title as HTMLElement).style.justifyContent = 'center';
+    }
   }
 
   expand(): void {
@@ -72,8 +80,14 @@ export class DynamicConfigDashboard {
     this.header.style.flexDirection = '';
     this.header.style.alignItems = '';
     this.header.style.justifyContent = '';
+    this.header.style.height = '';
     const title = this.header.querySelector('h2');
-    if (title) (title as HTMLElement).style.display = 'none';
+    if (title) {
+      (title as HTMLElement).style.display = 'none';
+      (title as HTMLElement).style.flex = '';
+      (title as HTMLElement).style.alignItems = '';
+      (title as HTMLElement).style.justifyContent = '';
+    }
     this.render();
   }
 }

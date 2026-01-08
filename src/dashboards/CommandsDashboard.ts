@@ -27,7 +27,6 @@ export class CommandsDashboard {
     
     this.header.appendChild(title);
     this.header.appendChild(this.collapseButton);
-    this.container.appendChild(this.header);
     
     // Create vertical title for collapsed state
     const verticalTitle = document.createElement('h2');
@@ -36,8 +35,11 @@ export class CommandsDashboard {
     verticalTitle.style.writingMode = 'vertical-rl';
     verticalTitle.style.transform = 'rotate(180deg)';
     verticalTitle.style.display = 'none';
+    verticalTitle.style.marginTop = '20px';
     verticalTitle.className = 'vertical-title';
     this.header.appendChild(verticalTitle);
+    
+    this.container.appendChild(this.header);
     
     // Create content wrapper
     this.contentWrapper = document.createElement('div');
@@ -67,12 +69,18 @@ export class CommandsDashboard {
     this.header.style.flexDirection = 'column';
     this.header.style.alignItems = 'center';
     this.header.style.justifyContent = 'flex-start';
+    this.header.style.height = '100%';
     
     // Hide horizontal title, show vertical title
     const regularTitle = this.header.querySelector('h2:not(.vertical-title)');
     const verticalTitle = this.header.querySelector('.vertical-title');
     if (regularTitle) (regularTitle as HTMLElement).style.display = 'none';
-    if (verticalTitle) (verticalTitle as HTMLElement).style.display = 'block';
+    if (verticalTitle) {
+      (verticalTitle as HTMLElement).style.display = 'flex';
+      (verticalTitle as HTMLElement).style.flex = '1';
+      (verticalTitle as HTMLElement).style.alignItems = 'center';
+      (verticalTitle as HTMLElement).style.justifyContent = 'center';
+    }
   }
 
   expand(): void {
@@ -85,11 +93,17 @@ export class CommandsDashboard {
     this.header.style.flexDirection = '';
     this.header.style.alignItems = '';
     this.header.style.justifyContent = '';
+    this.header.style.height = '';
     
     // Show horizontal title, hide vertical title
     const regularTitle = this.header.querySelector('h2:not(.vertical-title)');
     const verticalTitle = this.header.querySelector('.vertical-title');
     if (regularTitle) (regularTitle as HTMLElement).style.display = 'block';
-    if (verticalTitle) (verticalTitle as HTMLElement).style.display = 'none';
+    if (verticalTitle) {
+      (verticalTitle as HTMLElement).style.display = 'none';
+      (verticalTitle as HTMLElement).style.flex = '';
+      (verticalTitle as HTMLElement).style.alignItems = '';
+      (verticalTitle as HTMLElement).style.justifyContent = '';
+    }
   }
 }

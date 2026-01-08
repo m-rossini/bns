@@ -57,11 +57,12 @@ export class CommandsDashboard {
     
     this.gridToggleButton = document.createElement('button');
     this.gridToggleButton.id = 'toggleGridBtn';
+    this.gridToggleButton.classList.add('dashboard-action-btn');
     this.contentWrapper.appendChild(this.gridToggleButton);
     
     this.pauseButton = document.createElement('button');
     this.pauseButton.id = 'togglePauseBtn';
-    this.pauseButton.style.marginLeft = '10px';
+    this.pauseButton.classList.add('dashboard-action-btn');
     this.contentWrapper.appendChild(this.pauseButton);
   }
 

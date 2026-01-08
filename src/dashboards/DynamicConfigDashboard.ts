@@ -1,23 +1,42 @@
-// DynamicConfigDashboard module
 export class DynamicConfigDashboard {
-  private configDiv: HTMLDivElement;
-  public speed: number = 1; // Set the initial speed to the minimum value
+  private container: HTMLElement;
+  private collapseButton: HTMLButtonElement;
+  private contentWrapper: HTMLDivElement;
+  private header: HTMLDivElement;
+  public speed: number = 1;
 
   constructor() {
-    const configFrame = document.getElementById('configFrame');
-    this.configDiv = document.createElement('div');
-    this.configDiv.className = 'dashboard-frame config-frame';
-    configFrame?.appendChild(this.configDiv);
+    this.container = document.getElementById('configFrame')!;
+    
+    // Create header with collapse button
+    this.header = document.createElement('div');
+    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+    
+    const title = document.createElement('h2');
+    title.textContent = 'Config';
+    title.style.margin = '0';
+    
+    this.collapseButton = document.createElement('button');
+    this.collapseButton.textContent = '−';
+    this.collapseButton.className = 'dashboard-collapse-btn';
+    this.collapseButton.onclick = () => this.collapse();
+    
+    this.header.appendChild(title);
+    this.header.appendChild(this.collapseButton);
+    this.container.appendChild(this.header);
+    
+    // Create content wrapper
+    this.contentWrapper = document.createElement('div');
+    this.container.appendChild(this.contentWrapper);
   }
 
   render(): void {
-    this.configDiv.innerHTML = `
-      <h2>Config</h2>
+    this.contentWrapper.innerHTML = `
       <div class='slider-container-bordered'>
-        <span>Speed:</span> <input id='simSpeedSlider' type='range' min='1' max='10' value='1' /> <!-- Default value updated to minimum -->
+        <span>Speed:</span> <input id='simSpeedSlider' type='range' min='1' max='10' value='1' />
       </div>
     `;
-    const slider = this.configDiv.querySelector('#simSpeedSlider') as HTMLInputElement;
+    const slider = this.contentWrapper.querySelector('#simSpeedSlider') as HTMLInputElement;
     if (slider) {
       slider.addEventListener('input', (e) => {
         this.speed = Number(slider.value);
@@ -26,19 +45,21 @@ export class DynamicConfigDashboard {
   }
 
   collapse(): void {
-    this.configDiv.style.height = '20px';
-    this.configDiv.style.overflow = 'hidden';
-    this.configDiv.innerHTML = ''; // Clear content
-    const expandButton = document.createElement('button');
-    expandButton.textContent = '+';
-    expandButton.className = 'dashboard-expand-button';
-    expandButton.onclick = () => this.expand();
-    this.configDiv.appendChild(expandButton);
+    this.contentWrapper.style.display = 'none';
+    this.collapseButton.textContent = '+';
+    this.collapseButton.onclick = () => this.expand();
+    // Collapse the container
+    this.container.style.height = 'auto';
+    this.container.style.minHeight = '0';
   }
 
   expand(): void {
-    this.configDiv.style.height = '';
-    this.configDiv.style.overflow = '';
-    this.render(); // Re-render the dashboard content
+    this.contentWrapper.style.display = 'block';
+    this.collapseButton.textContent = '−';
+    this.collapseButton.onclick = () => this.collapse();
+    // Restore original height
+    this.container.style.height = '';
+    this.container.style.minHeight = '';
+    this.render();
   }
 }

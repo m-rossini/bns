@@ -1,17 +1,41 @@
-// CommandsDashboard module
 export class CommandsDashboard {
   private gridToggleButton: HTMLButtonElement;
+  private collapseButton: HTMLButtonElement;
   private isGridVisible: boolean;
   private onToggleGrid: (visible: boolean) => void;
   private container: HTMLElement;
+  private contentWrapper: HTMLDivElement;
+  private header: HTMLDivElement;
 
   constructor(container: HTMLElement, initialGridState: boolean, onToggleGrid: (visible: boolean) => void) {
     this.container = container;
     this.isGridVisible = initialGridState;
     this.onToggleGrid = onToggleGrid;
+    
+    // Create header with collapse button
+    this.header = document.createElement('div');
+    this.header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+    
+    const title = document.createElement('h2');
+    title.textContent = 'Commands';
+    title.style.margin = '0';
+    
+    this.collapseButton = document.createElement('button');
+    this.collapseButton.textContent = '−';
+    this.collapseButton.className = 'dashboard-collapse-btn';
+    this.collapseButton.onclick = () => this.collapse();
+    
+    this.header.appendChild(title);
+    this.header.appendChild(this.collapseButton);
+    this.container.appendChild(this.header);
+    
+    // Create content wrapper
+    this.contentWrapper = document.createElement('div');
+    this.container.appendChild(this.contentWrapper);
+    
     this.gridToggleButton = document.createElement('button');
     this.gridToggleButton.id = 'toggleGridBtn';
-    this.container.appendChild(this.gridToggleButton);
+    this.contentWrapper.appendChild(this.gridToggleButton);
   }
 
   render(): void {
@@ -24,24 +48,20 @@ export class CommandsDashboard {
   }
 
   collapse(): void {
-    this.container.style.height = '20px';
-    this.container.style.overflow = 'hidden';
-    this.container.innerHTML = ''; // Clear content
-    const expandButton = document.createElement('button');
-    expandButton.textContent = '+';
-    expandButton.className = 'dashboard-expand-button';
-    expandButton.onclick = () => this.expand();
-    this.container.appendChild(expandButton);
+    this.contentWrapper.style.display = 'none';
+    this.collapseButton.textContent = '+';
+    this.collapseButton.onclick = () => this.expand();
+    // Collapse the container
+    this.container.style.height = 'auto';
+    this.container.style.minHeight = '0';
   }
 
   expand(): void {
+    this.contentWrapper.style.display = 'block';
+    this.collapseButton.textContent = '−';
+    this.collapseButton.onclick = () => this.collapse();
+    // Restore original height
     this.container.style.height = '';
-    this.container.style.overflow = '';
-    // Remove expand button if present
-    const expandBtn = this.container.querySelector('.dashboard-expand-button');
-    if (expandBtn) {
-      expandBtn.remove();
-    }
-    this.render(); // Re-render the dashboard content
+    this.container.style.minHeight = '';
   }
 }

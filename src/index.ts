@@ -7,6 +7,7 @@ import { drawGrid } from './grid';
 import { createEventSink } from './observability/eventSinkFactory';
 import { RunContext } from './runContext';
 import { EventType } from './observability/types';
+import { EventSink } from './observability/eventSink';
 import { logWarn } from './observability/logger';
 
 
@@ -37,18 +38,19 @@ let isPaused = false;
 let drawGridFn: ((showGrid: boolean) => void) | undefined;
 
 // Initialize RunContext. If environment variables are missing, fall back to a console sink.
-let runContext: any;
+let runContext: RunContext;
 try {
   const sink = createEventSink(EventType.UX_ACTION);
   runContext = new RunContext(sink);
+  runContext.uxTracker.track('app_startup', { version: '0.1.0' });
 } catch (err) {
   logWarn('Falling back to ConsoleSink due to error creating event sink.Look previous messages for reasons:', err);
-  class ConsoleSink {
-    async sendEvent(_: any): Promise<void> {
-      console.info('UXEvent (console sink):', _);
+  const consoleSink: EventSink = {
+    async sendEvent(event): Promise<void> {
+      console.info('UXEvent (console sink):', event);
     }
-  }
-  runContext = new RunContext(new ConsoleSink());
+  };
+  runContext = new RunContext(consoleSink);
 }
 
 const config: Phaser.Types.Core.GameConfig = {

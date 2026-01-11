@@ -4,7 +4,8 @@ import { logInfo, logError } from "./logger";
 import { EventType } from "./types";
 
 function requireEnv(key: string): string {
-  const value = process.env[key];
+  // @ts-ignore
+  const value = import.meta.env[key];
   if (!value) {
     logError(`Missing required environment variable: ${key}`);
     throw new Error(`Missing required environment variable: ${key}`);
@@ -18,14 +19,14 @@ export function createEventSink(eventType: EventType): EventSink {
 
   switch (eventType) {
     case EventType.UX_ACTION:
-      sinkType = requireEnv('UX_EVENT_SINK_TYPE');
-      url = requireEnv('UX_EVENT_SINK_URL');
-      apiKey = requireEnv('UX_EVENT_SINK_API_KEY');
+      sinkType = requireEnv('VITE_UX_EVENT_SINK_TYPE');
+      url = requireEnv('VITE_UX_EVENT_SINK_URL');
+      apiKey = requireEnv('VITE_UX_EVENT_SINK_API_KEY');
       break;
     case EventType.SIMULATION_EVENT:
-      sinkType = requireEnv('SIM_EVENT_SINK_TYPE');
-      url = requireEnv('SIM_EVENT_SINK_URL');
-      apiKey = requireEnv('SIM_EVENT_SINK_API_KEY');
+      sinkType = requireEnv('VITE_SIM_EVENT_SINK_TYPE');
+      url = requireEnv('VITE_SIM_EVENT_SINK_URL');
+      apiKey = requireEnv('VITE_SIM_EVENT_SINK_API_KEY');
       break;
     default:
       logError(`Unknown event type: ${eventType}`);

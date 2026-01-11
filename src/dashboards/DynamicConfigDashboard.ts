@@ -1,12 +1,16 @@
+import { RunContext } from '../runContext';
+
 export class DynamicConfigDashboard {
   private container: HTMLElement;
   private collapseButton: HTMLButtonElement;
   private contentWrapper: HTMLDivElement;
   private header: HTMLDivElement;
   public speed: number = 1;
+  private runContext?: RunContext;
 
-  constructor() {
+  constructor(runContext?: RunContext) {
     this.container = document.getElementById('configFrame')!;
+    this.runContext = runContext;
     
     // Create header with collapse button
     this.header = document.createElement('div');
@@ -45,6 +49,8 @@ export class DynamicConfigDashboard {
     if (slider) {
       slider.addEventListener('input', (e) => {
         this.speed = Number(slider.value);
+        // Debounced: let UXTracker handle debouncing for high-frequency events
+        this.runContext?.uxTracker.track('speed_change', { component: 'DynamicConfigDashboard', speed: this.speed }, true);
       });
     }
   }
@@ -68,6 +74,7 @@ export class DynamicConfigDashboard {
       (title as HTMLElement).style.alignItems = 'center';
       (title as HTMLElement).style.justifyContent = 'center';
     }
+    this.runContext?.uxTracker.track('config_collapse', { component: 'DynamicConfigDashboard' });
   }
 
   expand(): void {
@@ -89,5 +96,6 @@ export class DynamicConfigDashboard {
       (title as HTMLElement).style.justifyContent = '';
     }
     this.render();
+    this.runContext?.uxTracker.track('config_expand', { component: 'DynamicConfigDashboard' });
   }
 }

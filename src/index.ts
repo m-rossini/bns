@@ -4,6 +4,10 @@ import { StatsDashboard } from './dashboards/StatsDashboard';
 import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
 import { CommandsDashboard } from './dashboards/CommandsDashboard';
 import { drawGrid } from './grid';
+import { createEventSink } from './observability/eventSinkFactory';
+import { UXTracker } from './observability/uxTracker';
+import { RunContext } from './runContext';
+import { EventType } from './observability/types';
 
 
 
@@ -32,6 +36,22 @@ let commandsDashboard: CommandsDashboard;
 let isPaused = false;
 let drawGridFn: ((showGrid: boolean) => void) | undefined;
 
+// Initialize RunContext. If environment variables are missing, fall back to a console sink.
+let runContext: any;
+try {
+  const sink = createEventSink(EventType.UX_ACTION);
+  runContext = new RunContext(sink);
+} catch (err) {
+  class ConsoleSink {
+    async sendEvent(_: any): Promise<void> {
+      // Best-effort logging for local development
+      // eslint-disable-next-line no-console
+      console.info('UXEvent (console sink):', _);
+    }
+  }
+  runContext = new RunContext(new ConsoleSink());
+}
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: worldWindow.config.canvasWidth,
@@ -44,11 +64,11 @@ const config: Phaser.Types.Core.GameConfig = {
       drawGridFn = (show: boolean) => drawGrid(gridGraphics, show, worldWindow.config);
       drawGridFn(worldWindow.state.showGrid);
 
-      // Instantiate dashboards in new layout
+      // Instantiate dashboards in new layout with RunContext
       statsDashboard = new StatsDashboard();
       statsDashboard.render();
 
-      dynamicConfigDashboard = new DynamicConfigDashboard();
+      dynamicConfigDashboard = new DynamicConfigDashboard(runContext);
       dynamicConfigDashboard.render();
 
       const actionsFrame = document.getElementById('actionsFrame');
@@ -61,7 +81,8 @@ const config: Phaser.Types.Core.GameConfig = {
         },
         (paused: boolean) => {
           isPaused = paused;
-        }
+        },
+        runContext
       );
       commandsDashboard.render();
     },
@@ -83,4 +104,5 @@ const config: Phaser.Types.Core.GameConfig = {
 // Call this function before initializing Phaser
 setSimulationCanvasSize();
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+runContext.game = game;

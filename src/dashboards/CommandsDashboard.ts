@@ -1,3 +1,5 @@
+import { RunContext } from '../runContext';
+
 export class CommandsDashboard {
   private gridToggleButton: HTMLButtonElement;
   private pauseButton: HTMLButtonElement;
@@ -9,18 +11,21 @@ export class CommandsDashboard {
   private container: HTMLElement;
   private contentWrapper: HTMLDivElement;
   private header: HTMLDivElement;
+  private runContext?: RunContext;
 
   constructor(
     container: HTMLElement,
     initialGridState: boolean,
     onToggleGrid: (visible: boolean) => void,
-    onTogglePause?: (paused: boolean) => void
+    onTogglePause?: (paused: boolean) => void,
+    runContext?: RunContext
   ) {
     this.container = container;
     this.isGridVisible = initialGridState;
     this.isPaused = false;
     this.onToggleGrid = onToggleGrid;
     this.onTogglePause = onTogglePause || (() => {});
+    this.runContext = runContext;
     
     // Create header with collapse button
     this.header = document.createElement('div');
@@ -72,6 +77,7 @@ export class CommandsDashboard {
       this.isGridVisible = !this.isGridVisible;
       this.gridToggleButton.textContent = this.isGridVisible ? 'Hide Grid' : 'Show Grid';
       this.onToggleGrid(this.isGridVisible);
+      this.runContext?.uxTracker.track('toggle_grid', { component: 'CommandsDashboard', visible: this.isGridVisible });
     };
     
     this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
@@ -79,6 +85,7 @@ export class CommandsDashboard {
       this.isPaused = !this.isPaused;
       this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
       this.onTogglePause(this.isPaused);
+      this.runContext?.uxTracker.track(this.isPaused ? 'pause_sim' : 'resume_sim', { component: 'CommandsDashboard', paused: this.isPaused });
     };
   }
 
@@ -104,6 +111,7 @@ export class CommandsDashboard {
       (verticalTitle as HTMLElement).style.alignItems = 'center';
       (verticalTitle as HTMLElement).style.justifyContent = 'center';
     }
+    this.runContext?.uxTracker.track('commands_collapse', { component: 'CommandsDashboard' });
   }
 
   expand(): void {
@@ -128,5 +136,6 @@ export class CommandsDashboard {
       (verticalTitle as HTMLElement).style.alignItems = '';
       (verticalTitle as HTMLElement).style.justifyContent = '';
     }
+    this.runContext?.uxTracker.track('commands_expand', { component: 'CommandsDashboard' });
   }
 }

@@ -1,21 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventType } from '../../src/config';
 import { createEventSink } from '../../src/observability/eventSinkFactory';
 import { EventSink } from '../../src/observability/eventSink';
 
 describe('EventSinkFactory', () => {
-  const OLD_ENV = process.env;
   beforeEach(() => {
-    process.env = { ...OLD_ENV };
-    process.env.UX_EVENT_SINK_TYPE = 'openobserve';
-    process.env.UX_EVENT_SINK_URL = 'http://localhost:5080';
-    process.env.UX_EVENT_SINK_API_KEY = 'test-key';
-    process.env.SIM_EVENT_SINK_TYPE = 'openobserve';
-    process.env.SIM_EVENT_SINK_URL = 'http://localhost:5081';
-    process.env.SIM_EVENT_SINK_API_KEY = 'sim-key';
+    vi.stubEnv('VITE_UX_EVENT_SINK_TYPE', 'openobserve');
+    vi.stubEnv('VITE_UX_EVENT_SINK_URL', 'http://localhost:5080');
+    vi.stubEnv('VITE_UX_EVENT_SINK_API_KEY', 'test-key');
+    vi.stubEnv('VITE_SIM_EVENT_SINK_TYPE', 'openobserve');
+    vi.stubEnv('VITE_SIM_EVENT_SINK_URL', 'http://localhost:5081');
+    vi.stubEnv('VITE_SIM_EVENT_SINK_API_KEY', 'sim-key');
   });
   afterEach(() => {
-    process.env = OLD_ENV;
+    vi.unstubAllEnvs();
   });
 
   it('creates a UX event sink with correct config', () => {
@@ -31,7 +29,7 @@ describe('EventSinkFactory', () => {
   });
 
   it('throws if env is missing', () => {
-    delete process.env.UX_EVENT_SINK_URL;
+    vi.stubEnv('VITE_UX_EVENT_SINK_URL', '');
     expect(() => createEventSink(EventType.UX_ACTION)).toThrow();
   });
 

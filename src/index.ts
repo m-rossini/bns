@@ -5,9 +5,9 @@ import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
 import { CommandsDashboard } from './dashboards/CommandsDashboard';
 import { drawGrid } from './grid';
 import { createEventSink } from './observability/eventSinkFactory';
-import { UXTracker } from './observability/uxTracker';
 import { RunContext } from './runContext';
 import { EventType } from './observability/types';
+import { logWarn } from './observability/logger';
 
 
 
@@ -42,10 +42,9 @@ try {
   const sink = createEventSink(EventType.UX_ACTION);
   runContext = new RunContext(sink);
 } catch (err) {
+  logWarn('Falling back to ConsoleSink due to error creating event sink.Look previous messages for reasons:', err);
   class ConsoleSink {
     async sendEvent(_: any): Promise<void> {
-      // Best-effort logging for local development
-      // eslint-disable-next-line no-console
       console.info('UXEvent (console sink):', _);
     }
   }

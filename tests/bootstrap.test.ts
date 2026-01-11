@@ -5,6 +5,7 @@ import { EventType } from '../src/observability/types';
 
 describe('Bootstrap Logic', () => {
   beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
     vi.stubEnv('VITE_UX_EVENT_SINK_TYPE', 'openobserve');
     vi.stubEnv('VITE_UX_EVENT_SINK_URL', 'http://localhost:5080');
     vi.stubEnv('VITE_UX_EVENT_SINK_API_KEY', 'test-key');

@@ -1,4 +1,5 @@
 import { EventSink } from './eventSink';
+import { logDebug } from './logger';
 import { EventType, Event } from './types';
 
 function uuidv4(): string {
@@ -20,7 +21,7 @@ export class UXTracker {
   constructor(private sink: EventSink, private sessionId: string, private debounceMs = 300) {}
 
   track(action: string, payload: Record<string, unknown> = {}, debounce = false) {
-    console.debug(`>>>UXTracker.track: action=${action}, debounce=${debounce}`, payload);
+    logDebug(`>>>UXTracker.track: action=${action}, debounce=${debounce}`, payload);
     if (!debounce) {
       const ev: Event = {
         id: uuidv4(),

@@ -2,6 +2,7 @@ import { EventSink } from "./eventSink";
 import { OpenObserveSink } from "./openObserveSink";
 import { logInfo, logError } from "./logger";
 import { EventType } from "./types";
+import { logDebug } from '../observability/logger';
 
 function requireEnv(key: string): string {
   // @ts-ignore
@@ -15,7 +16,7 @@ function requireEnv(key: string): string {
 
 export function createEventSink(eventType: EventType): EventSink {
   let sinkType: string, url: string, apiKey: string;
-  console.log(0, `>>>createEventSink: eventType=${eventType}`);
+  logDebug(`>>>createEventSink: eventType=${eventType}`);
 
   switch (eventType) {
     case EventType.UX_ACTION:

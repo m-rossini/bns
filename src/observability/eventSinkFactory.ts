@@ -1,8 +1,6 @@
-import { EventSink } from "./eventSink";
 import { OpenObserveSink } from "./openObserveSink";
-import { logInfo, logError } from "./logger";
-import { EventType } from "./types";
-import { logDebug } from '../observability/logger';
+import { logInfo, logError, logDebug } from "./logger";
+import { EventType, EventSink } from "./types";
 
 function requireEnv(key: string): string {
   // @ts-ignore

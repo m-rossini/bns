@@ -1,5 +1,4 @@
-import { EventSink } from "./eventSink";
-import { Event } from "./types";
+import { Event, EventSink } from "./types";
 import { logInfo, logError, logDebug } from "./logger";
 
 export class OpenObserveSink implements EventSink {

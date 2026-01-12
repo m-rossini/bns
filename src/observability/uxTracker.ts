@@ -1,14 +1,6 @@
-import { EventSink } from './eventSink';
 import { logDebug } from './logger';
-import { EventType, Event } from './types';
-
-function uuidv4(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+import { EventType, Event, EventSink } from './types';
+import { uuidv4 } from '../utils/uuid';
 
 type Pending = {
   timeoutId: ReturnType<typeof setTimeout> | null;
@@ -39,7 +31,7 @@ export class UXTracker {
     if (existing && existing.timeoutId) {
       // update payload and reset timer
       existing.lastPayload = { ...existing.lastPayload, ...payload };
-      clearTimeout(existing.timeoutId as unknown as number);
+      clearTimeout(existing.timeoutId);
       existing.timeoutId = setTimeout(() => this.flush(action), this.debounceMs);
       return;
     }
@@ -59,7 +51,7 @@ export class UXTracker {
       payload: { action, ...p.lastPayload },
     };
     void this.sink.sendEvent(ev);
-    if (p.timeoutId) clearTimeout(p.timeoutId as unknown as number);
+    if (p.timeoutId) clearTimeout(p.timeoutId);
     this.pending.delete(action);
   }
 }

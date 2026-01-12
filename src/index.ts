@@ -6,8 +6,7 @@ import { CommandsDashboard } from './dashboards/CommandsDashboard';
 import { drawGrid } from './grid';
 import { createEventSink } from './observability/eventSinkFactory';
 import { RunContext } from './runContext';
-import { EventType } from './observability/types';
-import { EventSink } from './observability/eventSink';
+import { EventType, EventSink } from './observability/types';
 import { logWarn } from './observability/logger';
 
 

@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { EventType } from '../../src/config';
 import { createEventSink } from '../../src/observability/eventSinkFactory';
-import { EventSink } from '../../src/observability/eventSink';
+import { EventSink, EventType } from '../../src/observability/types';
 
 describe('EventSinkFactory', () => {
   beforeEach(() => {

@@ -1,15 +1,8 @@
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
 import { UXTracker } from './observability/uxTracker';
-import { EventSink } from './observability/eventSink';
-
-function uuidv4(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
+import { EventSink } from './observability/types';
+import { uuidv4 } from './utils/uuid';
 
 export class RunContext {
   public sessionId: string;

@@ -11,3 +11,7 @@ export interface Event {
   sessionId?: string;
   payload: Record<string, unknown>;
 }
+
+export interface EventSink {
+  sendEvent(event: Event): Promise<void>;
+}

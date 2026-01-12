@@ -1,12 +1,12 @@
 import { EventSink } from "./eventSink";
 import { Event } from "./types";
-import { logInfo, logError } from "./logger";
+import { logInfo, logError, logDebug } from "./logger";
 
 export class OpenObserveSink implements EventSink {
   constructor(private url: string, private apiKey: string) {}
 
   async sendEvent(event: Event): Promise<void> {
-    console.debug(`>>>OpenObserveSink.sendEvent: eventType=${event.eventType}`, event);
+    logDebug(`>>>OpenObserveSink.sendEvent: eventType=${event.eventType}`, event);
     try {
       logInfo(`Sending event to OpenObserve: ${event.eventType}`);
       

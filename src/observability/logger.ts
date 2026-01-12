@@ -1,3 +1,14 @@
+export function logDebug(message: string, ...args: unknown[]) {
+  const prefix = `[DEBUG] ${new Date().toISOString()} - ${message}`;
+  if (typeof console !== 'undefined') {
+    if (typeof console.debug === 'function') {
+      console.debug(prefix, ...args);
+    } else if (typeof console.log === 'function') {
+      console.log(prefix, ...args);
+    }
+  }
+}
+
 export function logInfo(message: string, ...args: unknown[]) {
   const prefix = `[INFO] ${new Date().toISOString()} - ${message}`;
   if (typeof console !== 'undefined') {
@@ -8,6 +19,7 @@ export function logInfo(message: string, ...args: unknown[]) {
     }
   }
 }
+
 export function logWarn(message: string, ...args: unknown[]) {
   const prefix = `[WARN] ${new Date().toISOString()} - ${message}`;
   if (typeof console !== 'undefined') {

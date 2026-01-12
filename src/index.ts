@@ -42,7 +42,6 @@ let runContext: RunContext;
 try {
   const sink = createEventSink(EventType.UX_ACTION);
   runContext = new RunContext(sink);
-  runContext.uxTracker.track('app_startup', { version: '0.1.0' });
 } catch (err) {
   logWarn('Falling back to ConsoleSink due to error creating event sink.Look previous messages for reasons:', err);
   const consoleSink: EventSink = {
@@ -52,6 +51,8 @@ try {
   };
   runContext = new RunContext(consoleSink);
 }
+
+runContext.uxTracker.track('app_startup', { version: '0.1.0' });
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

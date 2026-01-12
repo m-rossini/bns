@@ -2,17 +2,33 @@
 
 Create a `.env` file in the project root (see `.env.example` for all required keys):
 
-```
-UX_EVENT_SINK_TYPE=openobserve
-UX_EVENT_SINK_URL=https://your-openobserve-instance/api/events
-UX_EVENT_SINK_API_KEY=your-ux-api-key
+```dotenv
+VITE_UX_EVENT_SINK_TYPE=openobserve
+VITE_UX_EVENT_SINK_URL=http://localhost:5080/api/default/ux_events/_json
+VITE_UX_EVENT_SINK_API_KEY=Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4UGFzcyMxMjM=
 
-SIM_EVENT_SINK_TYPE=openobserve
-SIM_EVENT_SINK_URL=https://your-openobserve-instance/api/sim-events
-SIM_EVENT_SINK_API_KEY=your-sim-api-key
+VITE_SIM_EVENT_SINK_TYPE=openobserve
+VITE_SIM_EVENT_SINK_URL=http://localhost:5080/api/default/sim_events/_json
+VITE_SIM_EVENT_SINK_API_KEY=Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4UGFzcyMxMjM=
 ```
 
 These variables control the event sink type, endpoint, and authentication for both UX and simulation events.
+
+## Observability Infrastructure (Local)
+
+To run a local instance of OpenObserve for development:
+
+```bash
+make ds-up
+```
+
+Infrastructure remains active in the background. To stop it:
+
+```bash
+make ds-down
+```
+
+Data is persisted in a podman volume named `openobserve-data`.
 # Running Tests
 
 This project uses [Vitest](https://vitest.dev/) for testing.

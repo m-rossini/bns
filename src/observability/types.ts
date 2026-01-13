@@ -15,3 +15,7 @@ export interface Event {
 export interface EventSink {
   sendEvent(event: Event): Promise<void>;
 }
+
+export interface Tracker {
+  track(label: string, payload?: Record<string, unknown>, debounce?: boolean): void;
+}

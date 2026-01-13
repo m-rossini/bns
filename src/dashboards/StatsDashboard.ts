@@ -1,5 +1,9 @@
 // StatsDashboard module
-import { worldWindow } from '../worldWindow';
+export interface DashboardStats {
+  tick: number;
+  totalTime: number;
+}
+
 export class StatsDashboard {
   private statsDiv: HTMLDivElement;
 
@@ -10,8 +14,8 @@ export class StatsDashboard {
     target?.appendChild(this.statsDiv);
   }
 
-  render(): void {
-    const { tick, totalTime } = worldWindow.world.state;
+  render(stats: DashboardStats): void {
+    const { tick, totalTime } = stats;
     const totalSeconds = Math.floor(totalTime / 1000);
     this.statsDiv.innerHTML = `
       <div>Total Ticks: <span id="stat-tick">${tick}</span></div>

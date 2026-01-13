@@ -1,20 +1,41 @@
 import Phaser from 'phaser';
 import { UXTracker } from './observability/uxTracker';
 import { SimulationTracker } from './observability/simulationTracker';
-import { EventSink, Tracker } from './observability/types';
+import { EventSink, Tracker, EventType } from './observability/types';
+import { EventSinkMap } from './observability/eventSinkFactory';
 import { uuidv4 } from './utils/uuid';
 
 export class RunContext {
   public sessionId: string;
-  private trackers: Tracker[] = [];
+  private trackers: Tracker[];
   public game?: Phaser.Game;
 
-  // Constructor accepts a sink and optional sessionId. If sessionId is not provided,
-  // it is generated per-load here. Trackers are created inside the context.
-  constructor(sink: EventSink, sessionId?: string, debounceMs = 300) {
+  // Constructor accepts trackers and optional sessionId.
+  // Use RunContext.createTrackers() to instantiate trackers without changing caller code.
+  constructor(trackers: Tracker[], sessionId?: string) {
     this.sessionId = sessionId ?? uuidv4();
-    this.trackers.push(new UXTracker(sink, this.sessionId, debounceMs));
-    this.trackers.push(new SimulationTracker(sink, this.sessionId, 1000)); // Sample every 1s
+    this.trackers = trackers;
+  }
+
+  /**
+   * Static factory method to instantiate all trackers.
+   * Each tracker uses the appropriate sink for its event type.
+   */
+  public static createTrackers(sinks: EventSinkMap, sessionId: string, debounceMs = 300): Tracker[] {
+    const uxSink = sinks[EventType.UX_ACTION];
+    const simSink = sinks[EventType.SIMULATION_EVENT];
+
+    if (!uxSink) {
+      throw new Error('UX_ACTION sink is required');
+    }
+    if (!simSink) {
+      throw new Error('SIMULATION_EVENT sink is required');
+    }
+
+    return [
+      new UXTracker(uxSink, sessionId, debounceMs),
+      new SimulationTracker(simSink, sessionId, 1000) // Sample every 1s
+    ];
   }
 
   public getTracker<T extends Tracker>(type: new (...args: any[]) => T): T {

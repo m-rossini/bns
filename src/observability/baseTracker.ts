@@ -5,6 +5,7 @@ import { logDebug } from './logger';
 export type PendingEvent = {
   timeoutId: ReturnType<typeof setTimeout> | null;
   lastPayload: Record<string, unknown>;
+  count: number;
 };
 
 export abstract class BaseTracker implements Tracker {
@@ -30,13 +31,14 @@ export abstract class BaseTracker implements Tracker {
     const existing = this.pending.get(label);
     if (existing && existing.timeoutId) {
       existing.lastPayload = { ...existing.lastPayload, ...payload };
+      existing.count += 1;
       clearTimeout(existing.timeoutId);
       existing.timeoutId = setTimeout(() => this.flush(label), this.debounceMs);
       return;
     }
 
     const timeoutId = setTimeout(() => this.flush(label), this.debounceMs);
-    this.pending.set(label, { timeoutId, lastPayload: payload });
+    this.pending.set(label, { timeoutId, lastPayload: payload, count: 1 });
   }
 
   protected createEvent(label: string, payload: Record<string, unknown>): Event {
@@ -53,7 +55,7 @@ export abstract class BaseTracker implements Tracker {
     const p = this.pending.get(label);
     if (!p) return;
     
-    const ev = this.createEvent(label, p.lastPayload);
+    const ev = this.createEvent(label, { ...p.lastPayload, debounceCount: p.count });
     void this.sink.sendEvent(ev);
     
     if (p.timeoutId) clearTimeout(p.timeoutId);

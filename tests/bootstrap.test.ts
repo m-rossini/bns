@@ -18,8 +18,19 @@ describe('Bootstrap Logic', () => {
   });
 
   it('should track app_startup when sink is successfully created', async () => {
-    const sink = createEventSink(EventType.UX_ACTION);
-    const runContext = new RunContext(sink);
+    vi.stubEnv('VITE_SIM_EVENT_SINK_TYPE', 'openobserve');
+    vi.stubEnv('VITE_SIM_EVENT_SINK_URL', 'http://localhost:5080');
+    vi.stubEnv('VITE_SIM_EVENT_SINK_API_KEY', 'test-key');
+    
+    const uxSink = createEventSink(EventType.UX_ACTION);
+    const simSink = createEventSink(EventType.SIMULATION_EVENT);
+    const sinks = {
+      [EventType.UX_ACTION]: uxSink,
+      [EventType.SIMULATION_EVENT]: simSink
+    };
+    const sessionId = 'test-session-123';
+    const trackers = RunContext.createTrackers(sinks, sessionId);
+    const runContext = new RunContext(trackers, sessionId);
     const uxTracker = runContext.getTracker(UXTracker);
     
     // Mock the track method
@@ -39,18 +50,30 @@ describe('Bootstrap Logic', () => {
     const logWarnSpy = vi.spyOn(logger, 'logWarn').mockImplementation(() => {});
     
     let runContext: RunContext;
+    const sessionId = 'test-session-456';
     try {
-      const sink = createEventSink(EventType.UX_ACTION);
-      runContext = new RunContext(sink);
+      const uxSink = createEventSink(EventType.UX_ACTION);
+      const simSink = createEventSink(EventType.SIMULATION_EVENT);
+      const sinks = {
+        [EventType.UX_ACTION]: uxSink,
+        [EventType.SIMULATION_EVENT]: simSink
+      };
+      const trackers = RunContext.createTrackers(sinks, sessionId);
+      runContext = new RunContext(trackers, sessionId);
     } catch (err) {
       // Logic copied from index.ts
-      logger.logWarn('Falling back to ConsoleSink due to error creating event sink.Look previous messages for reasons:', err);
+      logger.logWarn('Falling back to ConsoleSink due to error creating event sinks. Look previous messages for reasons:', err);
       const consoleSink: EventSink = {
         async sendEvent(event): Promise<void> {
-          console.info('UXEvent (console sink):', event);
+          console.info('Event (console sink):', event);
         }
       };
-      runContext = new RunContext(consoleSink);
+      const sinks = {
+        [EventType.UX_ACTION]: consoleSink,
+        [EventType.SIMULATION_EVENT]: consoleSink
+      };
+      const trackers = RunContext.createTrackers(sinks, sessionId);
+      runContext = new RunContext(trackers, sessionId);
     }
     
     // Should still be able to track
@@ -62,7 +85,7 @@ describe('Bootstrap Logic', () => {
     );
     
     expect(consoleSpy).toHaveBeenCalledWith(
-      'UXEvent (console sink):',
+      'Event (console sink):',
       expect.objectContaining({
         payload: expect.objectContaining({ action: 'app_startup' })
       })

@@ -2,6 +2,11 @@ import { OpenObserveSink } from "./openObserveSink";
 import { logInfo, logError, logDebug } from "./logger";
 import { EventType, EventSink } from "./types";
 
+export type EventSinkMap = {
+  [EventType.UX_ACTION]?: EventSink;
+  [EventType.SIMULATION_EVENT]?: EventSink;
+};
+
 function requireEnv(key: string): string {
   // @ts-ignore
   const value = import.meta.env[key];
@@ -41,4 +46,27 @@ export function createEventSink(eventType: EventType): EventSink {
       logError(`Unknown sink type: ${sinkType}`);
       throw new Error(`Unknown sink type: ${sinkType}`);
   }
+}
+/**
+ * Creates all required event sinks for the application.
+ * Each event type gets its own sink configured via environment variables.
+ */
+export function createAllEventSinks(): EventSinkMap {
+  const sinks: EventSinkMap = {};
+  
+  try {
+    sinks[EventType.UX_ACTION] = createEventSink(EventType.UX_ACTION);
+  } catch (err) {
+    logError('Failed to create UX_ACTION sink', err);
+    throw err;
+  }
+
+  try {
+    sinks[EventType.SIMULATION_EVENT] = createEventSink(EventType.SIMULATION_EVENT);
+  } catch (err) {
+    logError('Failed to create SIMULATION_EVENT sink', err);
+    throw err;
+  }
+
+  return sinks;
 }

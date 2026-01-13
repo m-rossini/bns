@@ -6,6 +6,7 @@ import { CommandsDashboard } from './dashboards/CommandsDashboard';
 import { drawGrid } from './grid';
 import { createEventSink } from './observability/eventSinkFactory';
 import { RunContext } from './runContext';
+import { UXTracker } from './observability/uxTracker';
 import { EventType, EventSink } from './observability/types';
 import { logWarn } from './observability/logger';
 
@@ -51,7 +52,7 @@ try {
   runContext = new RunContext(consoleSink);
 }
 
-runContext.uxTracker.track('app_startup', { version: '0.1.0' });
+runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,

@@ -1,4 +1,5 @@
 import { RunContext } from '../runContext';
+import { UXTracker } from '../observability/uxTracker';
 
 export class CommandsDashboard {
   private gridToggleButton: HTMLButtonElement;
@@ -77,7 +78,7 @@ export class CommandsDashboard {
       this.isGridVisible = !this.isGridVisible;
       this.gridToggleButton.textContent = this.isGridVisible ? 'Hide Grid' : 'Show Grid';
       this.onToggleGrid(this.isGridVisible);
-      this.runContext?.uxTracker.track('toggle_grid', { component: 'CommandsDashboard', visible: this.isGridVisible });
+      this.runContext?.getTracker(UXTracker).track('toggle_grid', { component: 'CommandsDashboard', visible: this.isGridVisible });
     };
     
     this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
@@ -85,7 +86,7 @@ export class CommandsDashboard {
       this.isPaused = !this.isPaused;
       this.pauseButton.textContent = this.isPaused ? 'Resume' : 'Pause';
       this.onTogglePause(this.isPaused);
-      this.runContext?.uxTracker.track(this.isPaused ? 'pause_sim' : 'resume_sim', { component: 'CommandsDashboard', paused: this.isPaused });
+      this.runContext?.getTracker(UXTracker).track(this.isPaused ? 'pause_sim' : 'resume_sim', { component: 'CommandsDashboard', paused: this.isPaused });
     };
   }
 
@@ -111,7 +112,7 @@ export class CommandsDashboard {
       (verticalTitle as HTMLElement).style.alignItems = 'center';
       (verticalTitle as HTMLElement).style.justifyContent = 'center';
     }
-    this.runContext?.uxTracker.track('commands_collapse', { component: 'CommandsDashboard' });
+    this.runContext?.getTracker(UXTracker).track('commands_collapse', { component: 'CommandsDashboard' });
   }
 
   expand(): void {
@@ -136,6 +137,6 @@ export class CommandsDashboard {
       (verticalTitle as HTMLElement).style.alignItems = '';
       (verticalTitle as HTMLElement).style.justifyContent = '';
     }
-    this.runContext?.uxTracker.track('commands_expand', { component: 'CommandsDashboard' });
+    this.runContext?.getTracker(UXTracker).track('commands_expand', { component: 'CommandsDashboard' });
   }
 }

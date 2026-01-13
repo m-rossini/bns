@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEventSink } from '../src/observability/eventSinkFactory';
 import { RunContext } from '../src/runContext';
+import { UXTracker } from '../src/observability/uxTracker';
 import { EventType, EventSink } from '../src/observability/types';
 import * as logger from '../src/observability/logger';
 
@@ -19,12 +20,13 @@ describe('Bootstrap Logic', () => {
   it('should track app_startup when sink is successfully created', async () => {
     const sink = createEventSink(EventType.UX_ACTION);
     const runContext = new RunContext(sink);
+    const uxTracker = runContext.getTracker(UXTracker);
     
     // Mock the track method
-    const trackSpy = vi.spyOn(runContext.uxTracker, 'track');
+    const trackSpy = vi.spyOn(uxTracker, 'track');
     
     // This is what index.ts will do
-    runContext.uxTracker.track('app_startup', { version: '0.1.0' });
+    uxTracker.track('app_startup', { version: '0.1.0' });
     
     expect(trackSpy).toHaveBeenCalledWith('app_startup', expect.any(Object));
   });
@@ -52,7 +54,7 @@ describe('Bootstrap Logic', () => {
     }
     
     // Should still be able to track
-    await runContext.uxTracker.track('app_startup', { version: '0.1.0' });
+    await runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });
     
     expect(logWarnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Falling back to ConsoleSink'),

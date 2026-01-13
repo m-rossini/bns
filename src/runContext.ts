@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
 import { worldWindow } from './worldWindow';
 import { UXTracker } from './observability/uxTracker';
-import { EventSink } from './observability/types';
+import { EventSink, Tracker } from './observability/types';
 import { uuidv4 } from './utils/uuid';
 
 export class RunContext {
   public sessionId: string;
-  public uxTracker: UXTracker;
+  private trackers: Tracker[] = [];
   public worldWindow = worldWindow;
   public game?: Phaser.Game;
 
@@ -14,6 +14,14 @@ export class RunContext {
   // it is generated per-load here. UXTracker is created inside the context.
   constructor(sink: EventSink, sessionId?: string, debounceMs = 300) {
     this.sessionId = sessionId ?? uuidv4();
-    this.uxTracker = new UXTracker(sink, this.sessionId, debounceMs);
+    this.trackers.push(new UXTracker(sink, this.sessionId, debounceMs));
+  }
+
+  public getTracker<T extends Tracker>(type: new (...args: any[]) => T): T {
+    const tracker = this.trackers.find(t => t instanceof type);
+    if (!tracker) {
+      throw new Error(`Tracker of type ${type.name} not found in RunContext`);
+    }
+    return tracker as T;
   }
 }

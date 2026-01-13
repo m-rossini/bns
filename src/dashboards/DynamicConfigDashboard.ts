@@ -1,4 +1,5 @@
 import { RunContext } from '../runContext';
+import { UXTracker } from '../observability/uxTracker';
 
 export class DynamicConfigDashboard {
   private container: HTMLElement;
@@ -50,7 +51,7 @@ export class DynamicConfigDashboard {
       slider.addEventListener('input', (e) => {
         this.speed = Number(slider.value);
         // Debounced: let UXTracker handle debouncing for high-frequency events
-        this.runContext?.uxTracker.track('speed_change', { component: 'DynamicConfigDashboard', speed: this.speed }, true);
+        this.runContext?.getTracker(UXTracker).track('speed_change', { component: 'DynamicConfigDashboard', speed: this.speed }, true);
       });
     }
   }
@@ -74,7 +75,7 @@ export class DynamicConfigDashboard {
       (title as HTMLElement).style.alignItems = 'center';
       (title as HTMLElement).style.justifyContent = 'center';
     }
-    this.runContext?.uxTracker.track('config_collapse', { component: 'DynamicConfigDashboard' });
+    this.runContext?.getTracker(UXTracker).track('config_collapse', { component: 'DynamicConfigDashboard' });
   }
 
   expand(): void {
@@ -96,6 +97,6 @@ export class DynamicConfigDashboard {
       (title as HTMLElement).style.justifyContent = '';
     }
     this.render();
-    this.runContext?.uxTracker.track('config_expand', { component: 'DynamicConfigDashboard' });
+    this.runContext?.getTracker(UXTracker).track('config_expand', { component: 'DynamicConfigDashboard' });
   }
 }

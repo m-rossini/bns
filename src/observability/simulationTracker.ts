@@ -1,8 +1,8 @@
 import { EventSink, EventType } from './types';
 import { BaseTracker } from './baseTracker';
 
-export class UXTracker extends BaseTracker {
+export class SimulationTracker extends BaseTracker {
   constructor(sink: EventSink, sessionId: string, debounceMs = 300) {
-    super(sink, sessionId, EventType.UX_ACTION, 'action', debounceMs);
+    super(sink, sessionId, EventType.SIMULATION_EVENT, 'event', debounceMs);
   }
 }

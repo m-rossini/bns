@@ -1,39 +1,44 @@
-// worldWindow singleton: manages drawing state and presentation config
-import { worldWindowConfig, Dimensions } from './config';
+import { WorldWindowConfig, Dimensions } from './config';
 import { World } from './world';
+import { SimulationContext } from './simulationContext';
 
 export interface WorldWindowState {
   showGrid: boolean;
 }
 
-class WorldWindow {
-  private static _instance: WorldWindow;
-  public readonly config = worldWindowConfig;
+export class WorldWindow {
   public state: WorldWindowState;
   public readonly world: World;
+  public readonly config: WorldWindowConfig;
 
-  private constructor() {
+  constructor(public readonly context: SimulationContext) {
+    this.config = context.windowConfig;
     this.state = { showGrid: true };
     const physicalWorld: Dimensions = {
-        width : this.config.canvasWidth,
-        height : this.config.canvasHeight
-      }
+      width: this.config.canvasWidth,
+      height: this.config.canvasHeight
+    };
 
-    this.world = new World(physicalWorld);
-  }
-
-  static get instance(): WorldWindow {
-    if (!WorldWindow._instance) {
-      WorldWindow._instance = new WorldWindow();
-    }
-    return WorldWindow._instance;
+    this.world = new World(physicalWorld, context);
+    this.context.tracker.track('simulation_start', {
+      canvasWidth: this.config.canvasWidth,
+      canvasHeight: this.config.canvasHeight
+    });
   }
 
   update(time?: number, delta?: number) {
     this.world.step(time ?? 0, delta ?? 0);
     return this.state;
   }
-
 }
 
-export const worldWindow = WorldWindow.instance;
+/**
+ * Global instance of WorldWindow. 
+ * Must be initialized using SimulationContext during application bootstrap.
+ */
+export let worldWindow: WorldWindow;
+
+export function initWorldWindow(context: SimulationContext): WorldWindow {
+  worldWindow = new WorldWindow(context);
+  return worldWindow;
+}

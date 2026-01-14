@@ -1,26 +1,33 @@
 import Phaser from 'phaser';
-import { worldWindow } from './worldWindow';
+import { initWorldWindow, worldWindow } from './worldWindow';
 import { StatsDashboard } from './dashboards/StatsDashboard';
 import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
 import { CommandsDashboard } from './dashboards/CommandsDashboard';
 import { drawGrid } from './grid';
-import { createEventSink } from './observability/eventSinkFactory';
+import { createEventSink, createAllEventSinks } from './observability/eventSinkFactory';
 import { RunContext } from './runContext';
+import { UXTracker } from './observability/uxTracker';
+import { SimulationTracker } from './observability/simulationTracker';
+import { SimulationContext } from './simulationContext';
 import { EventType, EventSink } from './observability/types';
 import { logWarn } from './observability/logger';
+import { worldConfig, worldWindowConfig } from './config';
+import { uuidv4 } from './utils/uuid';
+import { initializeOpenObserveRum } from './observability/rumInitializer';
 
-
+// Initialize OpenObserve RUM if configured
+initializeOpenObserveRum();
 
 // Dynamically set container widths based on config
-function setContainerWidths() {
-  const width = worldWindow.config.canvasWidth;
-  const mainContainer = document.getElementById('mainContainer');
-  const appDiv = document.getElementById('app');
-  const optionsFrame = document.getElementById('optionsFrame');
-  if (mainContainer) mainContainer.style.width = width + 'px';
-  if (appDiv) appDiv.style.width = width + 'px';
-  if (optionsFrame) optionsFrame.style.width = width + 'px';
-}
+// function setContainerWidths() {
+//   const width = worldWindow.config.canvasWidth;
+//   const mainContainer = document.getElementById('mainContainer');
+//   const appDiv = document.getElementById('app');
+//   const optionsFrame = document.getElementById('optionsFrame');
+//   if (mainContainer) mainContainer.style.width = width + 'px';
+//   if (appDiv) appDiv.style.width = width + 'px';
+//   if (optionsFrame) optionsFrame.style.width = width + 'px';
+// }
 
 function setSimulationCanvasSize() {
   const appDiv = document.getElementById('app');
@@ -36,22 +43,34 @@ let commandsDashboard: CommandsDashboard;
 let isPaused = false;
 let drawGridFn: ((showGrid: boolean) => void) | undefined;
 
-// Initialize RunContext. If environment variables are missing, fall back to a console sink.
+// Initialize RunContext. If environment variables are missing, fall back to console sinks.
 let runContext: RunContext;
+const sessionId = uuidv4();
 try {
-  const sink = createEventSink(EventType.UX_ACTION);
-  runContext = new RunContext(sink);
+  const sinks = createAllEventSinks();
+  const trackers = RunContext.createTrackers(sinks, sessionId);
+  runContext = new RunContext(trackers, sessionId);
 } catch (err) {
-  logWarn('Falling back to ConsoleSink due to error creating event sink.Look previous messages for reasons:', err);
+  logWarn('Falling back to ConsoleSink due to error creating event sinks. Look previous messages for reasons:', err);
   const consoleSink: EventSink = {
     async sendEvent(event): Promise<void> {
-      console.info('UXEvent (console sink):', event);
+      console.info('Event (console sink):', event);
     }
   };
-  runContext = new RunContext(consoleSink);
+  const sinks = {
+    [EventType.UX_ACTION]: consoleSink,
+    [EventType.SIMULATION_EVENT]: consoleSink
+  };
+  const trackers = RunContext.createTrackers(sinks, sessionId);
+  runContext = new RunContext(trackers, sessionId);
 }
 
-runContext.uxTracker.track('app_startup', { version: '0.1.0' });
+// Initialize Simulation with Dependency Injection
+const simTracker = runContext.getTracker(SimulationTracker);
+const simContext = new SimulationContext(simTracker, worldConfig, worldWindowConfig);
+initWorldWindow(simContext);
+
+runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -67,7 +86,7 @@ const config: Phaser.Types.Core.GameConfig = {
 
       // Instantiate dashboards in new layout with RunContext
       statsDashboard = new StatsDashboard();
-      statsDashboard.render();
+      statsDashboard.render(worldWindow.world.state);
 
       dynamicConfigDashboard = new DynamicConfigDashboard(runContext);
       dynamicConfigDashboard.render();
@@ -96,7 +115,7 @@ const config: Phaser.Types.Core.GameConfig = {
       // Always update grid visibility in case it was toggled
       drawGridFn?.(worldWindow.state.showGrid);
       if (statsDashboard) {
-        statsDashboard.render();
+        statsDashboard.render(worldWindow.world.state);
       }
     }
   }

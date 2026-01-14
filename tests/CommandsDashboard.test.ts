@@ -15,7 +15,7 @@ describe('Dashboard integration', () => {
     const simStatsDashboard = new SimulationStatsDashboard();
     simStatsDashboard.render();
     const statsDashboard = new StatsDashboard(mainContainer);
-    statsDashboard.render();
+    statsDashboard.render({ tick: 0, totalTime: 0 });
     // DynamicConfigDashboard requires 'configFrame' element, skip in test
     const commandsDashboard = new CommandsDashboard(optionsFrame, false, () => {}, () => {});
     commandsDashboard.render();

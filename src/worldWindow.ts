@@ -1,4 +1,4 @@
-import { WorldWindowConfig, Dimensions } from './config';
+import { WorldWindowConfig } from './config';
 import { World } from './world';
 import { SimulationContext } from './simulationContext';
 
@@ -14,12 +14,8 @@ export class WorldWindow {
   constructor(public readonly context: SimulationContext) {
     this.config = context.windowConfig;
     this.state = { showGrid: true };
-    const physicalWorld: Dimensions = {
-      width: this.config.canvasWidth,
-      height: this.config.canvasHeight
-    };
 
-    this.world = new World(physicalWorld, context);
+    this.world = new World(context);
     this.context.tracker.track('simulation_start', {
       canvasWidth: this.config.canvasWidth,
       canvasHeight: this.config.canvasHeight

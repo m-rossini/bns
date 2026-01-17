@@ -24,10 +24,9 @@ export interface Dimensions {
 function deepFreeze<T>(obj: T): T {
   Object.freeze(obj);
   Object.getOwnPropertyNames(obj).forEach((prop) => {
-    // @ts-ignore
-    if (obj[prop] && typeof obj[prop] === 'object' && !Object.isFrozen(obj[prop])) {
-      // @ts-ignore
-      deepFreeze(obj[prop]);
+    const value = (obj as any)[prop];
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+      deepFreeze(value);
     }
   });
   return obj;
@@ -36,7 +35,13 @@ function deepFreeze<T>(obj: T): T {
 export type GridDrawMode = 'lines' | 'rects';
 
 export interface WorldConfig {
-  // Add more world/business logic config here
+  readonly time: {
+    readonly provider: string;
+    readonly params: {
+      readonly ticksPerYear: number;
+      readonly initialTicks?: number;
+    };
+  };
 }
 
 export interface WorldWindowConfig { 
@@ -53,7 +58,13 @@ export interface WorldWindowConfig {
 }
 
 export const worldConfig: Readonly<WorldConfig> = deepFreeze({
-  // Add more world/business logic config here
+  time: {
+    provider: 'SequentialTimeKeeper',
+    params: {
+      ticksPerYear: 360,
+      initialTicks: 0
+    }
+  }
 });
 
 export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({

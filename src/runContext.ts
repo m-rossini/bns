@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { UXTracker } from './observability/uxTracker';
 import { SimulationTracker } from './observability/simulationTracker';
-import { EventSink, Tracker, EventType } from './observability/types';
+import { Tracker, EventType } from './observability/types';
 import { EventSinkMap } from './observability/eventSinkFactory';
 import { uuidv4 } from './utils/uuid';
 

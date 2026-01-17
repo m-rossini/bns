@@ -8,8 +8,8 @@ export type EventSinkMap = {
 };
 
 function requireEnv(key: string): string {
-  // @ts-ignore
-  const value = import.meta.env[key];
+  const env = import.meta.env as Record<string, string | undefined>;
+  const value = env[key];
   if (!value) {
     logError(`Missing required environment variable: ${key}`);
     throw new Error(`Missing required environment variable: ${key}`);

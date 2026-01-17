@@ -6,7 +6,7 @@ applyTo: '**'
 
 ## Designing Guidelines
 - All new features and any changes MUST be discussed before implementation.
-- Configuration MUST NOT BE CHANGED, they are ALWAYS read only.
+- Configuration MUST NOT BE CHANGED during runtime, they are ALWAYS read only in runtime, but we can change to add or modify parameters during development.
 
 ## Pre Work Guidelines
 - Development MUST be done in other branch than `main`, implying NEVER , EVER make changes in main

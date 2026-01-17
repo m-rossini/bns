@@ -1,10 +1,15 @@
 import { logInfo, logWarn, logError } from './logger';
 
+declare global {
+  interface Window {
+    OpenObserveRUM?: any;
+    OpenObserveLogs?: any;
+  }
+}
+
 export function initializeOpenObserveRum(): void {
   try {
-    // @ts-ignore - dynamic import, type may not be available
     const openobserveRum = window.OpenObserveRUM;
-    // @ts-ignore - dynamic import, type may not be available
     const openobserveLogs = window.OpenObserveLogs;
     
     if (!openobserveRum || !openobserveLogs) {
@@ -12,14 +17,11 @@ export function initializeOpenObserveRum(): void {
       return;
     }
 
-    // @ts-ignore - Vite env type doesn't support dynamic access
-    const token = import.meta.env.VITE_OPENOBSERVE_TOKEN || '';
-    // @ts-ignore - Vite env type doesn't support dynamic access
-    const site = import.meta.env.VITE_OPENOBSERVE_SITE || 'localhost:5080';
-    // @ts-ignore - Vite env type doesn't support dynamic access
-    const org = import.meta.env.VITE_OPENOBSERVE_ORG || 'default';
-    // @ts-ignore - Vite env type doesn't support dynamic access
-    const appId = import.meta.env.VITE_OPENOBSERVE_APP_ID || 'bns-app';
+    const env = import.meta.env as Record<string, string | undefined>;
+    const token = env.VITE_OPENOBSERVE_TOKEN || '';
+    const site = env.VITE_OPENOBSERVE_SITE || 'localhost:5080';
+    const org = env.VITE_OPENOBSERVE_ORG || 'default';
+    const appId = env.VITE_OPENOBSERVE_APP_ID || 'bns-app';
 
     if (!token) {
       logWarn('OpenObserve RUM token not configured, skipping initialization');

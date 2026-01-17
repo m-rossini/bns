@@ -48,7 +48,7 @@ export class DynamicConfigDashboard {
     `;
     const slider = this.contentWrapper.querySelector('#simSpeedSlider') as HTMLInputElement;
     if (slider) {
-      slider.addEventListener('input', (e) => {
+      slider.addEventListener('input', () => {
         this.speed = Number(slider.value);
         // Debounced: let UXTracker handle debouncing for high-frequency events
         this.runContext?.getTracker(UXTracker).track('speed_change', { component: 'DynamicConfigDashboard', speed: this.speed }, true);

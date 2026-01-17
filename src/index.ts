@@ -158,7 +158,8 @@ async function bootstrap() {
   };
 
   setSimulationCanvasSize();
-  new Phaser.Game(phaserConfig);
+  const game = new Phaser.Game(phaserConfig);
+  logInfo(`Phaser game instance created. Simulation bootstrap complete. Game is Running: ${game.isRunning}`);
 }
 
 // Start the bootstrap process

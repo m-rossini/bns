@@ -5,10 +5,8 @@ export class OpenObserveSink implements EventSink {
   constructor(private url: string, private apiKey: string) {}
 
   async sendEvent(event: Event): Promise<void> {
-    logDebug(`>>>OpenObserveSink.sendEvent: eventType=${event.eventType}`, event);
+    logDebug(`OpenObserveSink.sendEvent: eventType=${event.eventType}`, event);
     try {
-      logInfo(`Sending event to OpenObserve: ${event.eventType}`);
-      
       const response = await fetch(this.url, {
         method: 'POST',
         headers: {
@@ -22,8 +20,6 @@ export class OpenObserveSink implements EventSink {
         const errorText = await response.text().catch(() => 'No error detail');
         throw new Error(`OpenObserve ingestion failed (${response.status}): ${errorText}`);
       }
-
-      logInfo("Event sent successfully");
     } catch (err) {
       logError("Failed to send event", err);
     }

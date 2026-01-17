@@ -20,8 +20,6 @@ export abstract class BaseTracker implements Tracker {
   ) {}
 
   public track(label: string, payload: Record<string, unknown> = {}, debounce: boolean = false): void {
-    logDebug(`>>> ${this.constructor.name}.track: ${this.labelKey}=${label}, debounce=${debounce}`, payload);
-    
     if (!debounce) {
       const ev: Event = this.createEvent(label, payload);
       void this.sink.sendEvent(ev);

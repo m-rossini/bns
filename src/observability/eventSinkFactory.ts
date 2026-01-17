@@ -19,8 +19,6 @@ function requireEnv(key: string): string {
 
 export function createEventSink(eventType: EventType): EventSink {
   let sinkType: string, url: string, apiKey: string;
-  logDebug(`>>>createEventSink: eventType=${eventType}`);
-
   switch (eventType) {
     case EventType.UX_ACTION:
       sinkType = requireEnv('VITE_UX_EVENT_SINK_TYPE');

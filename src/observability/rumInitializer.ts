@@ -1,22 +1,9 @@
+import { openobserveRum } from '@openobserve/browser-rum';
+import { openobserveLogs } from '@openobserve/browser-logs';
 import { logInfo, logWarn, logError } from './logger';
-
-declare global {
-  interface Window {
-    OpenObserveRUM?: any;
-    OpenObserveLogs?: any;
-  }
-}
 
 export function initializeOpenObserveRum(): void {
   try {
-    const openobserveRum = window.OpenObserveRUM;
-    const openobserveLogs = window.OpenObserveLogs;
-    
-    if (!openobserveRum || !openobserveLogs) {
-      logWarn('OpenObserve RUM/Logs not loaded');
-      return;
-    }
-
     const env = import.meta.env as Record<string, string | undefined>;
     const token = env.VITE_OPENOBSERVE_TOKEN || '';
     const site = env.VITE_OPENOBSERVE_SITE || 'localhost:5080';

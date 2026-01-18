@@ -4,10 +4,12 @@ import { SimulationContext } from '@/simulationContext';
 import { SimulationTracker } from '@/observability/simulationTracker';
 import { ITimeKeeper, IEnvironment } from '@/world/simulationTypes';
 import { WorldConfig, WorldWindowConfig } from '@/config';
+import { World } from '@/world/world';
 
 describe('WorldWindow', () => {
   let worldWindow: WorldWindow;
   let gridGraphics: any;
+  let world: World;
 
   const mockTracker = {
     track: vi.fn()
@@ -46,10 +48,11 @@ describe('WorldWindow', () => {
     gridDrawMode: 'lines'
   } as WorldWindowConfig;
 
-  const context = new SimulationContext(mockTracker, mockTimeKeeper, mockEnvironment, mockWorldConfig, mockWindowConfig);
+  const context = new SimulationContext(mockTracker, mockWorldConfig, mockWindowConfig);
 
   beforeEach(() => {
-    worldWindow = new WorldWindow(context);
+    world = new World(context, mockTimeKeeper, mockEnvironment);
+    worldWindow = new WorldWindow(context, world);
     gridGraphics = {
       clear: vi.fn(),
       lineStyle: vi.fn(),
@@ -79,8 +82,9 @@ describe('WorldWindow', () => {
     // We need to change the config, but config is readonly in real app.
     // For test, we can use a new context or just mock the property if possible.
     const rectConfig = { ...mockWindowConfig, gridDrawMode: 'rects' } as WorldWindowConfig;
-    const rectContext = new SimulationContext(mockTracker, mockTimeKeeper, mockEnvironment, mockWorldConfig, rectConfig);
-    const rectWindow = new WorldWindow(rectContext);
+    const rectContext = new SimulationContext(mockTracker, mockWorldConfig, rectConfig);
+    const rectWorld = new World(rectContext, mockTimeKeeper, mockEnvironment);
+    const rectWindow = new WorldWindow(rectContext, rectWorld);
     
     // Seed some cells
     rectWindow.world.grid.setCell(1, 1);

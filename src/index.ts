@@ -18,66 +18,6 @@ import { ITimeKeeper, IEnvironment,IEnvironmentLayer } from '@/world/simulationT
 // Initialize OpenObserve RUM if configured
 initializeOpenObserveRum();
 
-/**
- * Dynamically resolves and instantiates a TimeKeeper provider.
- */
-async function resolveTimeKeeper(config: WorldConfig['time']): Promise<ITimeKeeper> {
-  const { provider, params } = config;
-  try {
-    logDebug(`Resolving TimeKeeper provider: ${provider}`);
-    const module = await import(`./world/time/${provider}.ts`);
-    const TimeKeeperClass = module[provider];
-
-    if (!TimeKeeperClass) {
-      throw new Error(`Class ${provider} not found in module ./world/time/${provider}.ts`);
-    }
-
-    const instance = new TimeKeeperClass(params);
-    
-    return instance;
-  } catch (err) {
-    logError(`Failed to load TimeKeeper [${provider}]`, err);
-    throw err;
-  }
-}
-
-/**
- * Dynamically resolves and instantiates an Environment provider and its layers.
- */
-async function resolveEnvironment(config: WorldConfig['environment']): Promise<IEnvironment> {
-  const { provider, layers: layerConfigs, params } = config;
-  try {
-    logDebug(`Resolving Environment provider: ${provider}`);
-    
-    // Resolve Layers first
-    const resolvedLayers: IEnvironmentLayer[] = [];
-    for (const lc of layerConfigs) {
-      logDebug(`Resolving Environment Layer: ${lc.provider}`);
-      const lModule = await import(`./world/environments/layers/${lc.provider}.ts`);
-      const LayerClass = lModule[lc.provider];
-      if (!LayerClass) {
-        throw new Error(`Class ${lc.provider} not found in module ./world/environments/layers/${lc.provider}.ts`);
-      }
-      resolvedLayers.push(new LayerClass(lc.params));
-    }
-
-    const module = await import(`./world/environments/${provider}.ts`);
-    const EnvironmentClass = module[provider];
-
-    if (!EnvironmentClass) {
-      throw new Error(`Class ${provider} not found in module ./world/environments/${provider}.ts`);
-    }
-
-    // Pass resolved layers and params to Environment constructor
-    const instance = new EnvironmentClass(resolvedLayers, params);
-    
-    return instance;
-  } catch (err) {
-    logError(`Failed to load Environment [${provider}]`, err);
-    throw err;
-  }
-}
-
 function setSimulationCanvasSize() {
   const appDiv = document.getElementById('app');
   if (appDiv) {
@@ -101,6 +41,7 @@ async function bootstrap() {
     const sinks = createAllEventSinks();
     const trackers = RunContext.createTrackers(sinks, sessionId);
     runContext = new RunContext(trackers, sessionId);
+    runContext.getTracker(UXTracker).track('app starting - Trackers created', { version: '0.1.0' });
     logInfo('RunContext initialized. Telemetry system online.');
   } catch (err) {
     logWarn('Falling back to ConsoleSink due to error creating event sinks:', err);
@@ -117,24 +58,19 @@ async function bootstrap() {
     runContext = new RunContext(trackers, sessionId);
   }
 
-  let timeKeeper: ITimeKeeper;
-  let environment: IEnvironment;
+  // Phase 2: Simulation Assembly
+  const simTracker = runContext.getTracker(SimulationTracker);
+  const simContext = new SimulationContext(simTracker, worldConfig, worldWindowConfig);
+  
   try {
-    timeKeeper = await resolveTimeKeeper(worldConfig.time);
-    environment = await resolveEnvironment(worldConfig.environment);
-    runContext.getTracker(SimulationTracker).track('timekeeper_initialized', { provider: worldConfig.time });
-    runContext.getTracker(SimulationTracker).track('environment_initialized', { provider: worldConfig.environment });
+    await initWorldWindow(simContext);
+    logInfo('Simulation Assembly complete.');
   } catch (err) {
-    logError('Critical failure: Could not resolve dependencies. Simulation cannot start.', err);
+    logError('Critical failure: Could not assemble simulation. Simulation cannot start.', err);
     return;
   }
 
-  // Phase 3: Simulation Assembly
-  const simTracker = runContext.getTracker(SimulationTracker);
-  const simContext = new SimulationContext(simTracker, timeKeeper, environment, worldConfig, worldWindowConfig);
-  initWorldWindow(simContext);
-
-  runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });
+  runContext.getTracker(UXTracker).track('*****app_startup_complete*****', { version: '0.1.0' });
 
   const phaserConfig: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,

@@ -1,11 +1,18 @@
 import { Cell, WorldBounds, IGrid } from '@/world/simulationTypes';
+import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class SparseGrid implements IGrid {
   private readonly cells: Map<string, Cell> = new Map();
 
   constructor(
-    public readonly bounds: WorldBounds
-  ) {}
+    public readonly bounds: WorldBounds,
+    private readonly tracker: SimulationTracker
+  ) {
+    this.tracker.track('grid_created', {
+      width: this.width,
+      height: this.height
+    });
+  }
 
   public get width(): number {
     return this.bounds.width;
@@ -17,6 +24,14 @@ export class SparseGrid implements IGrid {
 
   public setCell(x: number, y: number): void {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+
+      this.tracker.track('setCell Error. Values outside the range', {
+        x,
+        y,
+        width: this.width,
+        height: this.height
+      });
+
       throw new Error(`Coordinates out of bounds: (${x}, ${y})`);
     }
 

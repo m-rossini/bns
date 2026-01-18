@@ -20,6 +20,7 @@ describe('World', () => {
   let tracker: SimulationTracker;
   let timeKeeper: SequentialTimeKeeper;
   let context: SimulationContext;
+  let world: World;
 
   const mockWorldConfig: WorldConfig = {
     dimensions: { width: 10, height: 10 },
@@ -41,12 +42,16 @@ describe('World', () => {
     sink = new FakeSink();
     tracker = new SimulationTracker(sink, 'test-session');
     timeKeeper = new SequentialTimeKeeper({ ticksPerYear: 100 });
-    const environment = new CompositeEnvironment([new LuminosityLayer({})]);
-    context = new SimulationContext(tracker, timeKeeper, environment, mockWorldConfig, mockWindowConfig);
+    const environment = new CompositeEnvironment(
+      [new LuminosityLayer({}, tracker)], 
+      {}, 
+      tracker
+    );
+    context = new SimulationContext(tracker, mockWorldConfig, mockWindowConfig);
+    world = new World(context, timeKeeper, environment);
   });
 
   it('should initialize with a grid of correct dimensions', () => {
-    const world = new World(context);
     expect(world.grid).toBeDefined();
     expect(world.grid.width).toBe(10);
     expect(world.grid.height).toBe(10);
@@ -61,7 +66,6 @@ describe('World', () => {
   });
 
   it('should increment tick and totalTime on step', () => {
-    const world = new World(context);
     const initialTick = world.state.tick;
     
     world.step(100, 16);
@@ -69,6 +73,17 @@ describe('World', () => {
     expect(world.state.tick).toBe(initialTick + 1);
     expect(world.state.totalTime).toBe(16);
     expect(timeKeeper.getTicks()).toBe(initialTick + 1);
+  });
+
+  it('should not update environment until first step is called', () => {
+    // After construction, environment should be an empty object (not yet initialized)
+    expect(world.state.environment).toEqual({});
+
+    // After first step, environment should have properties
+    world.step(100, 16);
+    
+    expect(Object.keys(world.state.environment).length).toBeGreaterThan(0);
+    expect(world.state.environment).toHaveProperty('luminosity');
   });
 });
 

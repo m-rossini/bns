@@ -1,12 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { CompositeEnvironment } from '@/world/environments/CompositeEnvironment';
 import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 import { AtmosphericTemperatureLayer } from '@/world/environments/layers/AtmosphericTemperatureLayer';
 import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
 import { SparseGrid } from '@/world/SparseGrid';
 import { EnvironmentLayerType } from '@/world/simulationTypes';
+import { SimulationTracker } from '@/observability/simulationTracker';
 
 describe('CompositeEnvironment', () => {
+  const mockTracker = {
+    track: vi.fn()
+  } as unknown as SimulationTracker;
+
   const getTK = (ticks: number) => {
     const tk = new SequentialTimeKeeper({ ticksPerYear: 360 });
     for (let i = 0; i < ticks; i++) tk.tick();
@@ -14,12 +19,12 @@ describe('CompositeEnvironment', () => {
   };
 
   const createEnv = () => {
-    const lum = new LuminosityLayer({});
-    const temp = new AtmosphericTemperatureLayer({ baseTemperature: 20 });
-    return new CompositeEnvironment([lum, temp]);
+    const lum = new LuminosityLayer({}, mockTracker);
+    const temp = new AtmosphericTemperatureLayer({ baseTemperature: 20 }, mockTracker);
+    return new CompositeEnvironment([lum, temp], {}, mockTracker);
   };
 
-  const mockGrid = new SparseGrid({ width: 10, height: 10 });
+  const mockGrid = new SparseGrid({ width: 10, height: 10 }, mockTracker);
 
   it('should calculate luminosity based on seasonal progress from LuminosityLayer', () => {
     const env = createEnv();

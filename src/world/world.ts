@@ -1,33 +1,31 @@
-import { SimulationContext } from './simulationContext';
-
-export interface WorldState {
-  // Example state: add more as needed
-  tick: number;
-  totalTime: number;
-  timer?: number;
-}
+import { SimulationContext } from '@/simulationContext';
+import { WorldState } from '@/world/simulationTypes';
+import { SparseGrid } from '@/world/SparseGrid';
 
 export class World {
   public state: WorldState;
+  public readonly grid: SparseGrid;
   
   constructor(
     public readonly context: SimulationContext
   ) {
+    this.grid = new SparseGrid(this.context.worldConfig.dimensions);
     this.state = {
       tick: this.context.timeKeeper.getTicks(),
       totalTime: 0
     };
     this.context.tracker.track('world_created', { 
-      width: this.context.windowConfig.canvasWidth, 
-      height: this.context.windowConfig.canvasHeight,
+      width: this.grid.width,
+      height: this.grid.height,
+      canvasWidth: this.context.windowConfig.canvasWidth, 
+      canvasHeight: this.context.windowConfig.canvasHeight,
       initialTick: this.state.tick,
       yearProgress: this.context.timeKeeper.getYearProgress()
     });
   }
 
   step(time: number, delta: number) {
-    this.context.timeKeeper.tick();
-    this.state.tick = this.context.timeKeeper.getTicks();
+    this.state.tick = this.context.timeKeeper.tick();
     this.state.totalTime += delta;
     this.state.timer = time;
     

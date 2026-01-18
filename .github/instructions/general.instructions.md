@@ -13,6 +13,14 @@ applyTo: '**'
 
 ## Development Guidelines
 - Development MUST be done in TDD style.
+- Code MUST follow the existing style and conventions of the project.
+- In between phases a commit needs to be done with a clear and concise message describing the changes made.
+
+## Coding Standards
+- All code MUST be written in TypeScript.
+- Public methods cannot have boolean parameters.
+- Imports must NEVER be local and must be at the beginning of the file
+
 
 ## Testing Guidelines
 - All new features and bug fixes MUST include appropriate tests.

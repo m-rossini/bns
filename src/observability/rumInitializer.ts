@@ -1,4 +1,4 @@
-import { logInfo, logWarn, logError } from './logger';
+import { logInfo, logWarn, logError } from '@/observability/logger';
 
 declare global {
   interface Window {

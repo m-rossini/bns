@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EventType, Event, EventSink } from '../../src/observability/types';
+import { EventType, Event, EventSink } from '@/observability/types';
 
 describe('EventSink', () => {
   it('should implement sendEvent(event)', async () => {

@@ -1,6 +1,6 @@
-import { SimulationTracker } from './observability/simulationTracker';
-import { WorldConfig, WorldWindowConfig } from './config';
-import { ITimeKeeper } from './world/time/types';
+import { SimulationTracker } from '@/observability/simulationTracker';
+import { WorldConfig, WorldWindowConfig } from '@/config';
+import { ITimeKeeper } from '@/world/simulationTypes';
 
 /**
  * SimulationContext: container for simulation-level dependencies.

@@ -1,4 +1,4 @@
-import { ITimeKeeper } from './types';
+import { ITimeKeeper } from '@/world/simulationTypes';
 
 export class SequentialTimeKeeper implements ITimeKeeper {
   private ticks: number;
@@ -9,14 +9,15 @@ export class SequentialTimeKeeper implements ITimeKeeper {
     this.ticksPerYear = params.ticksPerYear;
   }
 
-  tick(): void {
+  tick(): number {
     this.ticks++;
+    return this.ticks;
   }
 
   getTicks(): number {
     return this.ticks;
   }
-
+  
   getYearProgress(): number {
     return (this.ticks % this.ticksPerYear) / this.ticksPerYear;
   }

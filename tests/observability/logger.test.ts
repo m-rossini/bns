@@ -1,7 +1,7 @@
 // Moved from tests/logger.test.ts
 // Updated imports to reflect new file paths
 import { describe, it, expect } from 'vitest';
-import { logInfo, logError } from '../../src/observability/logger';
+import { logInfo, logError } from '@/observability/logger';
 
 describe('Logger', () => {
   it('should log info without throwing', () => {

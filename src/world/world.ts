@@ -1,11 +1,5 @@
-import { SimulationContext } from './simulationContext';
-
-export interface WorldState {
-  // Example state: add more as needed
-  tick: number;
-  totalTime: number;
-  timer?: number;
-}
+import { SimulationContext } from '../simulationContext';
+import { WorldState } from './simulationTypes';
 
 export class World {
   public state: WorldState;

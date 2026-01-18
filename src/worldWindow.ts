@@ -1,5 +1,5 @@
 import { WorldWindowConfig } from './config';
-import { World } from './world';
+import { World } from './world/world';
 import { SimulationContext } from './simulationContext';
 
 export interface WorldWindowState {

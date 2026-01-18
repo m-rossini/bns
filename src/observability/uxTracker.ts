@@ -1,5 +1,5 @@
-import { EventSink, EventType } from './types';
-import { BaseTracker } from './baseTracker';
+import { EventSink, EventType } from '@/observability/types';
+import { BaseTracker } from '@/observability/baseTracker';
 
 export class UXTracker extends BaseTracker {
   constructor(sink: EventSink, sessionId: string, debounceMs = 300) {

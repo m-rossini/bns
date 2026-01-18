@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, afterEach, describe, it, expect } from 'vitest';
-import { DynamicConfigDashboard } from '../src/dashboards/DynamicConfigDashboard';
+import { DynamicConfigDashboard } from '@/dashboards/DynamicConfigDashboard';
 
 beforeAll(() => {
   if (typeof window === 'undefined') {

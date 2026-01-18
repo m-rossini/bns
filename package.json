@@ -7,15 +7,18 @@
     "dev": "vite",
     "start": "ts-node src/index.ts",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint:dup": "jscpd src",
     "lint:dead": "knip"
   },
   "dependencies": {
     "@openobserve/browser-logs": "^0.3.1",
     "@openobserve/browser-rum": "^0.3.1",
+    "itr": "latest",
     "phaser": "^3.60.0"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "latest",
     "global-jsdom": "^27.0.0",
     "jscpd": "^4.0.7",
     "knip": "^5.81.0",

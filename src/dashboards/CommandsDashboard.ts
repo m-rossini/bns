@@ -1,5 +1,5 @@
-import { RunContext } from '../runContext';
-import { UXTracker } from '../observability/uxTracker';
+import { RunContext } from '@/runContext';
+import { UXTracker } from '@/observability/uxTracker';
 
 export class CommandsDashboard {
   private gridToggleButton: HTMLButtonElement;

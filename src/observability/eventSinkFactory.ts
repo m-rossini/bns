@@ -1,6 +1,6 @@
-import { OpenObserveSink } from "./openObserveSink";
-import { logInfo, logError, logDebug } from "./logger";
-import { EventType, EventSink } from "./types";
+import { OpenObserveSink } from "@/observability/openObserveSink";
+import { logInfo, logError, logDebug } from "@/observability/logger";
+import { EventType, EventSink } from "@/observability/types";
 
 export type EventSinkMap = {
   [EventType.UX_ACTION]?: EventSink;

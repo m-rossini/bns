@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createEventSink } from '../src/observability/eventSinkFactory';
-import { RunContext } from '../src/runContext';
-import { UXTracker } from '../src/observability/uxTracker';
-import { EventType, EventSink } from '../src/observability/types';
-import * as logger from '../src/observability/logger';
+import { createEventSink } from '@/observability/eventSinkFactory';
+import { RunContext } from '@/runContext';
+import { UXTracker } from '@/observability/uxTracker';
+import { EventType, EventSink } from '@/observability/types';
+import * as logger from '@/observability/logger';
 
 describe('Bootstrap Logic', () => {
   beforeEach(() => {

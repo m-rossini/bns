@@ -1,7 +1,7 @@
 import { beforeAll, describe, it, expect } from 'vitest';
-import { SimulationStatsDashboard } from '../src/dashboards/SimulationStatsDashboard';
-import { StatsDashboard } from '../src/dashboards/StatsDashboard';
-import { CommandsDashboard } from '../src/dashboards/CommandsDashboard';
+import { SimulationStatsDashboard } from '@/dashboards/SimulationStatsDashboard';
+import { StatsDashboard } from '@/dashboards/StatsDashboard';
+import { CommandsDashboard } from '@/dashboards/CommandsDashboard';
 
 
 describe('Dashboard integration', () => {

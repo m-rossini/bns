@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { UXTracker } from './observability/uxTracker';
-import { SimulationTracker } from './observability/simulationTracker';
-import { Tracker, EventType } from './observability/types';
-import { EventSinkMap } from './observability/eventSinkFactory';
-import { uuidv4 } from './utils/uuid';
+import { UXTracker } from '@/observability/uxTracker';
+import { SimulationTracker } from '@/observability/simulationTracker';
+import { Tracker, EventType } from '@/observability/types';
+import { EventSinkMap } from '@/observability/eventSinkFactory';
+import { uuidv4 } from '@/utils/uuid';
 
 export class RunContext {
   public sessionId: string;

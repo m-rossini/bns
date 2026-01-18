@@ -1,6 +1,6 @@
-import { uuidv4 } from '../utils/uuid';
-import { Event, EventSink, EventType, Tracker } from './types';
-import { logDebug } from './logger';
+import { uuidv4 } from '@/utils/uuid';
+import { Event, EventSink, EventType, Tracker } from '@/observability/types';
+import { logDebug } from '@/observability/logger';
 
 export type PendingEvent = {
   timeoutId: ReturnType<typeof setTimeout> | null;

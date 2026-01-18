@@ -1,4 +1,4 @@
-import { ITimeKeeper } from '../../world/simulationTypes';
+import { ITimeKeeper } from '@/world/simulationTypes';
 
 export class SequentialTimeKeeper implements ITimeKeeper {
   private ticks: number;

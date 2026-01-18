@@ -1,5 +1,5 @@
-import { Event, EventSink } from "./types";
-import { logInfo, logError, logDebug } from "./logger";
+import { Event, EventSink } from "@/observability/types";
+import { logInfo, logError, logDebug } from "@/observability/logger";
 
 export class OpenObserveSink implements EventSink {
   constructor(private url: string, private apiKey: string) {}
@@ -7,7 +7,6 @@ export class OpenObserveSink implements EventSink {
   async sendEvent(event: Event): Promise<void> {
     logDebug(`>>>OpenObserveSink.sendEvent: eventType=${event.eventType}`, event);
     try {
-      logInfo(`Sending event to OpenObserve: ${event.eventType}`);
       
       const response = await fetch(this.url, {
         method: 'POST',
@@ -23,7 +22,6 @@ export class OpenObserveSink implements EventSink {
         throw new Error(`OpenObserve ingestion failed (${response.status}): ${errorText}`);
       }
 
-      logInfo("Event sent successfully");
     } catch (err) {
       logError("Failed to send event", err);
     }

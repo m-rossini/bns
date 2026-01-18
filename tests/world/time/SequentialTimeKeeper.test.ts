@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SequentialTimeKeeper } from '../../../src/world/time/SequentialTimeKeeper';
+import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
 
 describe('SequentialTimeKeeper', () => {
   it('should initialize with provided ticks', () => {

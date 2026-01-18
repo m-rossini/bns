@@ -1,26 +1,11 @@
+import { WorldBounds } from '@/world/simulationTypes';
+
 export interface Dimensions {
   width: number;
   height: number;
 }
 
 
-// Utility to deeply freeze an object (for immutability)
-// EventType enum and Event interface for event tracking system
-// export enum EventType {
-//   UX_ACTION = "ux_action",
-//   SIMULATION_EVENT = "simulation_event"
-// }
-
-// export interface Event {
-//   id: string; // UUID
-//   timestamp: string; // ISO string
-//   eventType: EventType;
-//   userId?: string;
-//   sessionId?: string;
-//   payload: Record<string, unknown>;
-// }
-
-// Utility to deeply freeze an object (for immutability)
 function deepFreeze<T>(obj: T): T {
   Object.freeze(obj);
   Object.getOwnPropertyNames(obj).forEach((prop) => {
@@ -35,6 +20,7 @@ function deepFreeze<T>(obj: T): T {
 export type GridDrawMode = 'lines' | 'rects';
 
 export interface WorldConfig {
+  readonly dimensions: WorldBounds;
   readonly time: {
     readonly provider: string;
     readonly params: {
@@ -58,6 +44,10 @@ export interface WorldWindowConfig {
 }
 
 export const worldConfig: Readonly<WorldConfig> = deepFreeze({
+  dimensions: {
+    width: 60,  // 1200 / 20
+    height: 40  // 800 / 20
+  },
   time: {
     provider: 'SequentialTimeKeeper',
     params: {
@@ -77,5 +67,6 @@ export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({
   defaultFontFamily: 'Arial',
   cellSize: 20,
   gridDrawMode: 'lines',
+  cellSizeInPixels: 20
   // Add more drawing/presentation config here
 });

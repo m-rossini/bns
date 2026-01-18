@@ -7,7 +7,7 @@ beforeAll(() => {
   }
 });
 import { describe, it, expect } from 'vitest';
-import { StatsDashboard } from '../src/dashboards/StatsDashboard';
+import { StatsDashboard } from '@/dashboards/StatsDashboard';
 
 describe('StatsDashboard', () => {
   it('should instantiate without error', () => {

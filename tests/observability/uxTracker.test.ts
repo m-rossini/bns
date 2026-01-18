@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { UXTracker } from '../../src/observability/uxTracker';
-import { Event } from '../../src/observability/types';
+import { UXTracker } from '@/observability/uxTracker';
+import { Event } from '@/observability/types';
 
 class FakeSink {
   public events: Event[] = [];

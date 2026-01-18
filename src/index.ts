@@ -1,20 +1,19 @@
 import Phaser from 'phaser';
-import { initWorldWindow, worldWindow } from './worldWindow';
-import { StatsDashboard } from './dashboards/StatsDashboard';
-import { DynamicConfigDashboard } from './dashboards/DynamicConfigDashboard';
-import { CommandsDashboard } from './dashboards/CommandsDashboard';
-import { drawGrid } from './grid';
-import { createAllEventSinks } from './observability/eventSinkFactory';
-import { RunContext } from './runContext';
-import { UXTracker } from './observability/uxTracker';
-import { SimulationTracker } from './observability/simulationTracker';
-import { SimulationContext } from './simulationContext';
-import { EventType, EventSink } from './observability/types';
-import { logWarn, logInfo, logError, logDebug } from './observability/logger';
-import { worldConfig, worldWindowConfig, WorldConfig } from './config';
-import { uuidv4 } from './utils/uuid';
-import { initializeOpenObserveRum } from './observability/rumInitializer';
-import { ITimeKeeper } from './world/time/types';
+import { initWorldWindow, worldWindow } from '@/worldWindow';
+import { StatsDashboard } from '@/dashboards/StatsDashboard';
+import { DynamicConfigDashboard } from '@/dashboards/DynamicConfigDashboard';
+import { CommandsDashboard } from '@/dashboards/CommandsDashboard';
+import { createAllEventSinks } from '@/observability/eventSinkFactory';
+import { RunContext } from '@/runContext';
+import { UXTracker } from '@/observability/uxTracker';
+import { SimulationTracker } from '@/observability/simulationTracker';
+import { SimulationContext } from '@/simulationContext';
+import { EventType, EventSink } from '@/observability/types';
+import { logWarn, logInfo, logError, logDebug } from '@/observability/logger';
+import { worldConfig, worldWindowConfig, WorldConfig } from '@/config';
+import { uuidv4 } from '@/utils/uuid';
+import { initializeOpenObserveRum } from '@/observability/rumInitializer';
+import { ITimeKeeper } from '@/world/simulationTypes';
 
 // Initialize OpenObserve RUM if configured
 initializeOpenObserveRum();
@@ -65,7 +64,7 @@ let statsDashboard: StatsDashboard;
 let dynamicConfigDashboard: DynamicConfigDashboard;
 let commandsDashboard: CommandsDashboard;
 let isPaused = false;
-let drawGridFn: ((showGrid: boolean) => void) | undefined;
+let gridGraphics: Phaser.GameObjects.Graphics;
 
 async function bootstrap() {
   const sessionId = uuidv4();
@@ -116,9 +115,8 @@ async function bootstrap() {
     parent: 'app',
     scene: {
       create() {
-        const gridGraphics = this.add.graphics();
-        drawGridFn = (show: boolean) => drawGrid(gridGraphics, show, worldWindow.config);
-        drawGridFn(worldWindow.state.showGrid);
+        gridGraphics = this.add.graphics();
+        worldWindow.draw(gridGraphics);
 
         // Instantiate dashboards
         statsDashboard = new StatsDashboard();
@@ -134,7 +132,7 @@ async function bootstrap() {
             worldWindow.state.showGrid,
             (newShowGrid: boolean) => {
               worldWindow.state.showGrid = newShowGrid;
-              drawGridFn?.(worldWindow.state.showGrid);
+              worldWindow.draw(gridGraphics);
             },
             (paused: boolean) => {
               isPaused = paused;
@@ -149,7 +147,9 @@ async function bootstrap() {
         if (!isPaused) {
           worldWindow.update(time, delta * speed);
         }
-        drawGridFn?.(worldWindow.state.showGrid);
+        if (gridGraphics) {
+          worldWindow.draw(gridGraphics);
+        }
         if (statsDashboard) {
           statsDashboard.render(worldWindow.world.state);
         }

@@ -4,6 +4,8 @@ import { SimulationContext } from '@/simulationContext';
 import { SimulationTracker } from '@/observability/simulationTracker';
 import { WorldConfig, WorldWindowConfig } from '@/config';
 import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
+import { CompositeEnvironment } from '@/world/environments/CompositeEnvironment';
+import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 import { Event, EventSink } from '@/observability/types';
 
 class FakeSink implements EventSink {
@@ -21,6 +23,11 @@ describe('World', () => {
 
   const mockWorldConfig: WorldConfig = {
     dimensions: { width: 10, height: 10 },
+    environment: { 
+      provider: 'CompositeEnvironment', 
+      params: {},
+      layers: [{ provider: 'LuminosityLayer', params: {} }]
+    },
     time: { provider: 'SequentialTimeKeeper', params: { ticksPerYear: 100 } }
   };
 
@@ -34,7 +41,8 @@ describe('World', () => {
     sink = new FakeSink();
     tracker = new SimulationTracker(sink, 'test-session');
     timeKeeper = new SequentialTimeKeeper({ ticksPerYear: 100 });
-    context = new SimulationContext(tracker, timeKeeper, mockWorldConfig, mockWindowConfig);
+    const environment = new CompositeEnvironment([new LuminosityLayer({})]);
+    context = new SimulationContext(tracker, timeKeeper, environment, mockWorldConfig, mockWindowConfig);
   });
 
   it('should initialize with a grid of correct dimensions', () => {

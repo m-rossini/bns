@@ -12,7 +12,8 @@ export class World {
     this.grid = new SparseGrid(this.context.worldConfig.dimensions);
     this.state = {
       tick: this.context.timeKeeper.getTicks(),
-      totalTime: 0
+      totalTime: 0,
+      environment: this.context.environment.update(this.context.timeKeeper, this.grid)
     };
     this.context.tracker.track('world_created', { 
       width: this.grid.width,
@@ -26,6 +27,7 @@ export class World {
 
   step(time: number, delta: number) {
     this.state.tick = this.context.timeKeeper.tick();
+    this.state.environment = this.context.environment.update(this.context.timeKeeper, this.grid);
     this.state.totalTime += delta;
     this.state.timer = time;
     

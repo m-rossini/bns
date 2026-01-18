@@ -1,6 +1,7 @@
 import { WorldWindowConfig } from '@/config';
 import { World } from '@/world/world';
 import { SimulationContext } from '@/simulationContext';
+import { EnvironmentLayerType } from '@/world/simulationTypes';
 import type { GameObjects } from 'phaser';
 
 export interface WorldWindowState {
@@ -30,6 +31,9 @@ export class WorldWindow {
 
   public draw(graphics: GameObjects.Graphics): void {
     graphics.clear();
+    
+    this.drawBackground(graphics);
+
     if (!this.state.showGrid) {
       return;
     }
@@ -39,6 +43,21 @@ export class WorldWindow {
     } else {
       this.drawLines(graphics);
     }
+  }
+
+  private drawBackground(graphics: GameObjects.Graphics): void {
+    const luminosity = this.world.context.environment.getValueAt(EnvironmentLayerType.Luminosity, { x: 0, y: 0 });
+    // Darken or lighten the background color based on luminosity
+    const baseColor = this.hexToColor(this.config.canvasBackgroundColor);
+    
+    // Simple way to adjust brightness - this is just a placeholder to show it works
+    // In a real app we'd use Phaser.Display.Color or similar
+    graphics.fillStyle(baseColor, 1);
+    graphics.fillRect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
+    
+    // Overlay a dark rectangle with varying alpha based on luminosity (inverse)
+    graphics.fillStyle(0x000000, Math.max(0, 0.5 * (1 - luminosity)));
+    graphics.fillRect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
   }
 
   private drawLines(graphics: GameObjects.Graphics): void {

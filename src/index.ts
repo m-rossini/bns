@@ -13,7 +13,7 @@ import { logWarn, logInfo, logError, logDebug } from '@/observability/logger';
 import { worldConfig, worldWindowConfig, WorldConfig } from '@/config';
 import { uuidv4 } from '@/utils/uuid';
 import { initializeOpenObserveRum } from '@/observability/rumInitializer';
-import { ITimeKeeper } from '@/world/simulationTypes';
+import { ITimeKeeper, IEnvironment,IEnvironmentLayer } from '@/world/simulationTypes';
 
 // Initialize OpenObserve RUM if configured
 initializeOpenObserveRum();
@@ -37,6 +37,43 @@ async function resolveTimeKeeper(config: WorldConfig['time']): Promise<ITimeKeep
     return instance;
   } catch (err) {
     logError(`Failed to load TimeKeeper [${provider}]`, err);
+    throw err;
+  }
+}
+
+/**
+ * Dynamically resolves and instantiates an Environment provider and its layers.
+ */
+async function resolveEnvironment(config: WorldConfig['environment']): Promise<IEnvironment> {
+  const { provider, layers: layerConfigs, params } = config;
+  try {
+    logDebug(`Resolving Environment provider: ${provider}`);
+    
+    // Resolve Layers first
+    const resolvedLayers: IEnvironmentLayer[] = [];
+    for (const lc of layerConfigs) {
+      logDebug(`Resolving Environment Layer: ${lc.provider}`);
+      const lModule = await import(`./world/environments/layers/${lc.provider}.ts`);
+      const LayerClass = lModule[lc.provider];
+      if (!LayerClass) {
+        throw new Error(`Class ${lc.provider} not found in module ./world/environments/layers/${lc.provider}.ts`);
+      }
+      resolvedLayers.push(new LayerClass(lc.params));
+    }
+
+    const module = await import(`./world/environments/${provider}.ts`);
+    const EnvironmentClass = module[provider];
+
+    if (!EnvironmentClass) {
+      throw new Error(`Class ${provider} not found in module ./world/environments/${provider}.ts`);
+    }
+
+    // Pass resolved layers and params to Environment constructor
+    const instance = new EnvironmentClass(resolvedLayers, params);
+    
+    return instance;
+  } catch (err) {
+    logError(`Failed to load Environment [${provider}]`, err);
     throw err;
   }
 }
@@ -81,17 +118,20 @@ async function bootstrap() {
   }
 
   let timeKeeper: ITimeKeeper;
+  let environment: IEnvironment;
   try {
     timeKeeper = await resolveTimeKeeper(worldConfig.time);
+    environment = await resolveEnvironment(worldConfig.environment);
     runContext.getTracker(SimulationTracker).track('timekeeper_initialized', { provider: worldConfig.time });
+    runContext.getTracker(SimulationTracker).track('environment_initialized', { provider: worldConfig.environment });
   } catch (err) {
-    logError('Critical failure: Could not resolve TimeKeeper. Simulation cannot start.', err);
+    logError('Critical failure: Could not resolve dependencies. Simulation cannot start.', err);
     return;
   }
 
   // Phase 3: Simulation Assembly
   const simTracker = runContext.getTracker(SimulationTracker);
-  const simContext = new SimulationContext(simTracker, timeKeeper, worldConfig, worldWindowConfig);
+  const simContext = new SimulationContext(simTracker, timeKeeper, environment, worldConfig, worldWindowConfig);
   initWorldWindow(simContext);
 
   runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });

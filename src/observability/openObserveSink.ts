@@ -1,5 +1,5 @@
 import { Event, EventSink } from "@/observability/types";
-import { logInfo, logError, logDebug } from "@/observability/logger";
+import { logError, logDebug } from "@/observability/logger";
 
 export class OpenObserveSink implements EventSink {
   constructor(private url: string, private apiKey: string) {}

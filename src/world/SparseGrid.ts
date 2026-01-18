@@ -1,6 +1,6 @@
-import { Cell, WorldBounds } from '@/world/simulationTypes';
+import { Cell, WorldBounds, IGrid } from '@/world/simulationTypes';
 
-export class SparseGrid {
+export class SparseGrid implements IGrid {
   private readonly cells: Map<string, Cell> = new Map();
 
   constructor(
@@ -28,8 +28,16 @@ export class SparseGrid {
     return this.cells.get(this.generateKey(x, y));
   }
 
+  public hasCell(x: number, y: number): boolean {
+    return this.cells.has(this.generateKey(x, y));
+  }
+
   public getAllCells(): Cell[] {
     return Array.from(this.cells.values());
+  }
+
+  public getBounds(): WorldBounds {
+    return this.bounds;
   }
 
   private generateKey(x: number, y: number): string {

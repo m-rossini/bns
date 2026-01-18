@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorldWindow } from '@/worldWindow';
 import { SimulationContext } from '@/simulationContext';
 import { SimulationTracker } from '@/observability/simulationTracker';
-import { ITimeKeeper } from '@/world/simulationTypes';
+import { ITimeKeeper, IEnvironment } from '@/world/simulationTypes';
 import { WorldConfig, WorldWindowConfig } from '@/config';
 
 describe('WorldWindow', () => {
@@ -20,14 +20,25 @@ describe('WorldWindow', () => {
     tick: vi.fn()
   } as unknown as ITimeKeeper;
 
+  const mockEnvironment = {
+    getValueAt: vi.fn().mockReturnValue(0),
+    update: vi.fn()
+  } as unknown as IEnvironment;
+
   const mockWorldConfig: WorldConfig = {
     dimensions: { width: 10, height: 10 },
+    environment: { 
+      provider: 'test', 
+      params: {},
+      layers: []
+    },
     time: { provider: 'test', params: { ticksPerYear: 100 } }
   };
 
   const mockWindowConfig: WorldWindowConfig = {
     canvasWidth: 200,
     canvasHeight: 200,
+    canvasBackgroundColor: '#e45a96',
     cellSize: 20,
     gridColor: '#efde74',
     gridLineThickness: 1,
@@ -35,7 +46,7 @@ describe('WorldWindow', () => {
     gridDrawMode: 'lines'
   } as WorldWindowConfig;
 
-  const context = new SimulationContext(mockTracker, mockTimeKeeper, mockWorldConfig, mockWindowConfig);
+  const context = new SimulationContext(mockTracker, mockTimeKeeper, mockEnvironment, mockWorldConfig, mockWindowConfig);
 
   beforeEach(() => {
     worldWindow = new WorldWindow(context);
@@ -68,7 +79,7 @@ describe('WorldWindow', () => {
     // We need to change the config, but config is readonly in real app.
     // For test, we can use a new context or just mock the property if possible.
     const rectConfig = { ...mockWindowConfig, gridDrawMode: 'rects' } as WorldWindowConfig;
-    const rectContext = new SimulationContext(mockTracker, mockTimeKeeper, mockWorldConfig, rectConfig);
+    const rectContext = new SimulationContext(mockTracker, mockTimeKeeper, mockEnvironment, mockWorldConfig, rectConfig);
     const rectWindow = new WorldWindow(rectContext);
     
     // Seed some cells
@@ -77,7 +88,8 @@ describe('WorldWindow', () => {
 
     rectWindow.draw(gridGraphics);
     expect(gridGraphics.clear).toHaveBeenCalled();
-    expect(gridGraphics.fillRect).toHaveBeenCalledTimes(2);
+    // 2 background rects + 2 cell rects
+    expect(gridGraphics.fillRect).toHaveBeenCalledTimes(4);
     // logical (1,1) * cellSize(20) = pixel (20,20)
     expect(gridGraphics.fillRect).toHaveBeenCalledWith(20, 20, 20, 20);
     expect(gridGraphics.fillRect).toHaveBeenCalledWith(40, 40, 20, 20);

@@ -1,16 +1,30 @@
 import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment } from '@/world/simulationTypes';
+import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class AtmosphericTemperatureLayer implements IEnvironmentLayer {
   public readonly type = EnvironmentLayerType.Temperature;
   private yearProgress: number = 0;
   private baseTemp: number;
 
-  constructor(params: { baseTemperature: number }) {
+  constructor(
+    params: { baseTemperature: number },
+    private readonly tracker: SimulationTracker
+  ) {
     this.baseTemp = params.baseTemperature ?? 20;
+    this.tracker.track('layer_created', { 
+      provider: 'AtmosphericTemperatureLayer',
+      type: this.type 
+    });
   }
 
   public update(timeKeeper: ITimeKeeper, _grid: IGrid, _environment: IEnvironment): EnvironmentLayerState {
     this.yearProgress = timeKeeper.getYearProgress();
+
+    this.tracker.track('temperature_layer_updated', {
+      yearProgress: this.yearProgress,
+      baseTemp: this.baseTemp
+    }, true);
+
     return { yearProgress: this.yearProgress, baseTemp: this.baseTemp };
   }
 

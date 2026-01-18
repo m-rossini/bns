@@ -1,13 +1,22 @@
 import { IEnvironment, IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentState, IGrid, Cell } from '@/world/simulationTypes';
 import { logDebug } from '@/observability/logger';
+import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class CompositeEnvironment implements IEnvironment {
   private layers: Map<EnvironmentLayerType, IEnvironmentLayer> = new Map();
 
-  constructor(layers: IEnvironmentLayer[]) {
+  constructor(
+    layers: IEnvironmentLayer[], 
+    _params: any,
+    private readonly tracker: SimulationTracker
+  ) {
     layers.forEach(layer => {
       this.layers.set(layer.type, layer);
       logDebug(`Layer initialized in CompositeEnvironment: ${layer.type}`);
+    });
+    this.tracker.track('environment_created', { 
+      provider: 'CompositeEnvironment',
+      layerCount: this.layers.size 
     });
   }
 
@@ -16,6 +25,12 @@ export class CompositeEnvironment implements IEnvironment {
     this.layers.forEach((layer, type) => {
       state[type] = layer.update(timeKeeper, grid, this);
     });
+
+    this.tracker.track('environment_updated', {
+      tick: timeKeeper.getTicks(),
+      layerCount: this.layers.size
+    }, true);
+
     return state as EnvironmentState;
   }
 

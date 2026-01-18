@@ -25,8 +25,7 @@ export class World {
   }
 
   step(time: number, delta: number) {
-    this.context.timeKeeper.tick();
-    this.state.tick = this.context.timeKeeper.getTicks();
+    this.state.tick = this.context.timeKeeper.tick();
     this.state.totalTime += delta;
     this.state.timer = time;
     

@@ -18,17 +18,6 @@ import { ITimeKeeper } from '@/world/simulationTypes';
 // Initialize OpenObserve RUM if configured
 initializeOpenObserveRum();
 
-// Dynamically set container widths based on config
-// function setContainerWidths() {
-//   const width = worldWindow.config.canvasWidth;
-//   const mainContainer = document.getElementById('mainContainer');
-//   const appDiv = document.getElementById('app');
-//   const optionsFrame = document.getElementById('optionsFrame');
-//   if (mainContainer) mainContainer.style.width = width + 'px';
-//   if (appDiv) appDiv.style.width = width + 'px';
-//   if (optionsFrame) optionsFrame.style.width = width + 'px';
-// }
-
 /**
  * Dynamically resolves and instantiates a TimeKeeper provider.
  */

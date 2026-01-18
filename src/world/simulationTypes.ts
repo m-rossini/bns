@@ -1,14 +1,10 @@
 export interface ITimeKeeper {
   /**
-   * Increments the internal simulation ticks.
+   * Increments the internal simulation ticks and returns the new value
    */
-  tick(): void;
+  tick(): number;
 
-  /**
-   * Returns the absolute number of ticks since simulation start.
-   */
-  getTicks(): number;
-
+  getTicks() : number;
   /**
    * Returns a normalized value [0.0, 1.0) representing the progress within the current year.
    */

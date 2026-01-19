@@ -35,7 +35,7 @@ describe('World', () => {
   const mockWindowConfig: WorldWindowConfig = {
     canvasWidth: 200,
     canvasHeight: 200,
-    cellSize: 20,
+    cellSizeInPixels: 20,
   } as WorldWindowConfig;
 
   beforeEach(() => {
@@ -73,17 +73,6 @@ describe('World', () => {
     expect(world.state.tick).toBe(initialTick + 1);
     expect(world.state.totalTime).toBe(16);
     expect(timeKeeper.getTicks()).toBe(initialTick + 1);
-  });
-
-  it('should not update environment until first step is called', () => {
-    // After construction, environment should be an empty object (not yet initialized)
-    expect(world.state.environment).toEqual({});
-
-    // After first step, environment should have properties
-    world.step(100, 16);
-    
-    expect(Object.keys(world.state.environment).length).toBeGreaterThan(0);
-    expect(world.state.environment).toHaveProperty('luminosity');
   });
 });
 

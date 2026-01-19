@@ -48,8 +48,8 @@ export interface WorldWindowConfig {
   readonly gridLineThickness: number;
   readonly gridLineAlpha: number;
   readonly defaultFontFamily: string;
-  readonly cellSize: number;
   readonly gridDrawMode: GridDrawMode;
+  readonly cellSizeInPixels: number;
   // Add more drawing/presentation config here
 }
 
@@ -93,7 +93,6 @@ export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({
   gridLineThickness: 0.5,
   gridLineAlpha: 0.7,
   defaultFontFamily: 'Arial',
-  cellSize: 20,
   gridDrawMode: 'lines',
   cellSizeInPixels: 20
   // Add more drawing/presentation config here

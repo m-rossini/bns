@@ -41,7 +41,7 @@ describe('WorldWindow', () => {
     canvasWidth: 200,
     canvasHeight: 200,
     canvasBackgroundColor: '#e45a96',
-    cellSize: 20,
+    cellSizeInPixels: 20,
     gridColor: '#efde74',
     gridLineThickness: 1,
     gridLineAlpha: 0.7,

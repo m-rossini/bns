@@ -61,7 +61,7 @@ export class WorldWindow {
   }
 
   private drawLines(graphics: GameObjects.Graphics): void {
-    const step = this.config.cellSize ?? 40;
+    const step = this.config.cellSizeInPixels ?? 40;
     const alpha = this.config.gridLineAlpha ?? 0.7;
     const thickness = this.config.gridLineThickness ?? 1;
 
@@ -81,13 +81,13 @@ export class WorldWindow {
 
   private drawCells(graphics: GameObjects.Graphics): void {
     const alpha = this.config.gridLineAlpha ?? 0.7;
-    const cellSize = this.config.cellSize;
+    const cellSizeInPixels = this.config.cellSizeInPixels;
 
     for (const cell of this.world.grid.getAllCells()) {
-      const screenX = cell.x * cellSize;
-      const screenY = cell.y * cellSize;
+      const screenX = cell.x * cellSizeInPixels;
+      const screenY = cell.y * cellSizeInPixels;
       graphics.fillStyle(this.randomColor(), alpha);
-      graphics.fillRect(screenX, screenY, cellSize, cellSize);
+      graphics.fillRect(screenX, screenY, cellSizeInPixels, cellSizeInPixels);
     }
   }
 

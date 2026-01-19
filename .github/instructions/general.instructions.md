@@ -28,3 +28,16 @@ applyTo: '**'
 - All tests MUST pass before submitting a pull request.
 - Tests MUST be significant, and MUST NOT access internal state via spies or mocks or dubs.
 - All test files MUST be placed in the `tests/` directory, not mixed with production code.
+
+## Planning Guidelines
+ - When in plan mode, let's consider pros and cons of each feature or change.
+ - Let's always think about the future implications of our design choices.
+ - Always consider logging and monitoring and tracing and metrics from the start
+ - When asked to build a final plan, make a very detailed plan to be implemented by an unexperienced intern
+ - Deatiled plan implies:
+    - Step by step instructions
+    - All interfaces and classes and types described
+    - All methods described with input and output
+    - Properties described with types
+    - No implementation code, just design and plan, but example code is allowed for illustration on top of the interfaces and types
+    

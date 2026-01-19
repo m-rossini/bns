@@ -66,7 +66,10 @@ describe('World', () => {
     const environment = new CompositeEnvironment(
       [new LuminosityLayer({}, layerContext)], 
       {}, 
-      tracker
+      tracker,
+      timeKeeper,
+      10,
+      10
     );
     context = new SimulationContext(tracker, mockWorldConfig, mockWindowConfig);
     world = new World(context, timeKeeper, environment);

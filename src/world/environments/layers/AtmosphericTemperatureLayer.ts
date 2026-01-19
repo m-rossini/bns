@@ -1,5 +1,4 @@
 import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment, LayerContext } from '@/world/simulationTypes';
-import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class AtmosphericTemperatureLayer implements IEnvironmentLayer {
   public readonly type = EnvironmentLayerType.Temperature;

@@ -40,7 +40,7 @@ describe('CompositeEnvironment', () => {
     const context = createLayerContext(tk);
     const lum = new LuminosityLayer({}, context);
     const temp = new AtmosphericTemperatureLayer({ baseTemperature: 20 }, context);
-    return new CompositeEnvironment([lum, temp], {}, mockTracker);
+    return new CompositeEnvironment([lum, temp], {}, mockTracker, tk, 10, 10);
   };
 
   const mockGrid = new SparseGrid({ width: 10, height: 10 }, mockTracker);

@@ -1,4 +1,4 @@
-import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment } from '@/world/simulationTypes';
+import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment, LayerContext } from '@/world/simulationTypes';
 import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class HumidityLayer implements IEnvironmentLayer {
@@ -7,22 +7,25 @@ export class HumidityLayer implements IEnvironmentLayer {
   private baseHumidity: number;
 
   constructor(
-    params: { baseHumidity: number },
-    private readonly tracker: SimulationTracker
+    params: { baseHumidity?: number },
+    private readonly context: LayerContext
   ) {
     this.baseHumidity = params.baseHumidity ?? 0.5;
-    this.tracker.track('layer_created', { 
+    // Humidity inverse to temperature - peaks when seasonal factor is lower
+    this.seasonalFactor = 1 - context.seasonalData.continuousSeasonalFactor;
+    
+    context.simulationTracker.track('layer_created', { 
       provider: 'HumidityLayer', 
-      type: this.type 
+      type: this.type,
+      contextProvided: true
     });
   }
 
   public update(timeKeeper: ITimeKeeper, _grid: IGrid, _environment: IEnvironment): EnvironmentLayerState {
-    // Humidity peaks when seasonal heat is lower (sin(progress * pi) is heat)
-    // So 1 - sin(progress * pi)
-    this.seasonalFactor = 1 - Math.sin(timeKeeper.getYearProgress() * Math.PI);
+    // Update seasonal factor inversely from context each tick
+    this.seasonalFactor = 1 - this.context.seasonalData.continuousSeasonalFactor;
 
-    this.tracker.track('humidity_layer_updated', {
+    this.context.simulationTracker.track('humidity_layer_updated', {
       seasonalFactor: this.seasonalFactor,
       yearProgress: timeKeeper.getYearProgress()
     }, true);

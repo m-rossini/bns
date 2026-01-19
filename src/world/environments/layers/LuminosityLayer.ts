@@ -1,32 +1,35 @@
-import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment } from '@/world/simulationTypes';
+import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment, LayerContext } from '@/world/simulationTypes';
 import { SimulationTracker } from '@/observability/simulationTracker';
 
 export class LuminosityLayer implements IEnvironmentLayer {
   public readonly type = EnvironmentLayerType.Luminosity;
-  private yearProgress: number = 0;
+  private seasonalFactor: number = 0;
 
   constructor(
     _params: any,
-    private readonly tracker: SimulationTracker
+    private readonly context: LayerContext
   ) {
-    this.tracker.track('layer_created', { 
+    this.seasonalFactor = context.seasonalData.continuousSeasonalFactor;
+    
+    context.simulationTracker.track('layer_created', { 
       provider: 'LuminosityLayer',
-      type: this.type 
+      type: this.type,
+      contextProvided: true
     });
   }
 
   public update(timeKeeper: ITimeKeeper, _grid: IGrid, _environment: IEnvironment): EnvironmentLayerState {
-    this.yearProgress = timeKeeper.getYearProgress();
+    this.seasonalFactor = this.context.seasonalData.continuousSeasonalFactor;
 
-    this.tracker.track('luminosity_layer_updated', {
-      yearProgress: this.yearProgress
+    this.context.simulationTracker.track('luminosity_layer_updated', {
+      yearProgress: timeKeeper.getYearProgress()
     }, true);
 
-    return { yearProgress: this.yearProgress };
+    return { yearProgress: timeKeeper.getYearProgress() };
   }
 
   public getValueAt(_position: Cell): number {
-    // Basic seasonal factor peaking at mid-year (0.5)
-    return Math.sin(this.yearProgress * Math.PI);
+    // Luminosity directly follows seasonal factor
+    return this.seasonalFactor;
   }
 }

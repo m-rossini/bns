@@ -7,6 +7,7 @@ import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
 import { CompositeEnvironment } from '@/world/environments/CompositeEnvironment';
 import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 import { Event, EventSink } from '@/observability/types';
+import { DiscreteSeasonName, LayerContext } from '@/world/simulationTypes';
 
 class FakeSink implements EventSink {
   public events: Event[] = [];
@@ -38,12 +39,30 @@ describe('World', () => {
     cellSizeInPixels: 20,
   } as WorldWindowConfig;
 
+  const createLayerContext = (timeKeeper: SequentialTimeKeeper): LayerContext => {
+    const yearProgress = timeKeeper.getYearProgress();
+    return Object.freeze({
+      seasonalData: {
+        discreteSeason: DiscreteSeasonName.SUMMER,
+        continuousSeasonalFactor: Math.sin(yearProgress * 2 * Math.PI),
+        yearProgress,
+        hemisphere: 'northern',
+        transitionPhase: 0
+      },
+      timeKeeper,
+      gridWidth: 10,
+      gridHeight: 10,
+      simulationTracker: tracker
+    }) as LayerContext;
+  };
+
   beforeEach(() => {
     sink = new FakeSink();
     tracker = new SimulationTracker(sink, 'test-session');
     timeKeeper = new SequentialTimeKeeper({ ticksPerYear: 100 });
+    const layerContext = createLayerContext(timeKeeper);
     const environment = new CompositeEnvironment(
-      [new LuminosityLayer({}, tracker)], 
+      [new LuminosityLayer({}, layerContext)], 
       {}, 
       tracker
     );

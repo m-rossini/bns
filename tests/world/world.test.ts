@@ -7,7 +7,7 @@ import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
 import { CompositeEnvironment } from '@/world/environments/CompositeEnvironment';
 import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 import { Event, EventSink } from '@/observability/types';
-import { DiscreteSeasonName, LayerContext } from '@/world/simulationTypes';
+import { DiscreteSeasonName, LayerContext, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
 
 class FakeSink implements EventSink {
   public events: Event[] = [];
@@ -25,6 +25,8 @@ describe('World', () => {
 
   const mockWorldConfig: WorldConfig = {
     dimensions: { width: 10, height: 10 },
+    seasonStrategy: SeasonStrategy.HEMISPHERIC,
+    seasonTransitionMode: TransitionMode.DISCRETIZED,
     environment: { 
       provider: 'CompositeEnvironment', 
       params: {},

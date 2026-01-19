@@ -1,4 +1,4 @@
-import { ISeasonStrategy, SeasonStrategy, TransitionMode, DiscreteSeasonName, SeasonalData, LayerContext, ITimeKeeper } from '@/world/simulationTypes';
+import { ISeasonStrategy, TransitionMode, DiscreteSeasonName, SeasonalData, LayerContext, ITimeKeeper } from '@/world/simulationTypes';
 import { SimulationTracker } from '@/observability/simulationTracker';
 
 /**
@@ -7,7 +7,7 @@ import { SimulationTracker } from '@/observability/simulationTracker';
 export class HemisphericSeasonStrategy implements ISeasonStrategy {
   constructor(
     private readonly strategyName: string,
-    private readonly transitionMode: TransitionMode,
+    private readonly _transitionMode: TransitionMode,
     private readonly tracker: SimulationTracker
   ) {}
 
@@ -17,7 +17,7 @@ export class HemisphericSeasonStrategy implements ISeasonStrategy {
     });
   }
 
-  public getSeasonForCell(x: number, y: number, yearProgress: number): SeasonalData {
+  public getSeasonForCell(_x: number, y: number, yearProgress: number): SeasonalData {
     // Determine hemisphere based on y-coordinate
     // Assuming grid height is around 40, with y=0 as north pole, y=20 as equator, y=40 as south pole
     const gridHeight = 40; // This will be passed through in real implementation
@@ -96,7 +96,7 @@ export class HemisphericSeasonStrategy implements ISeasonStrategy {
 
   private getTransitionPhase(yearProgress: number): number {
     // Transition zone width: ±0.05 around each boundary
-    const zoneWidth = 0.05;
+    const _zoneWidth = 0.05;
     const normalized = ((yearProgress % 1) + 1) % 1;
 
     // Check distance to nearest season boundary (0.0, 0.25, 0.5, 0.75)
@@ -124,7 +124,7 @@ export class HemisphericSeasonStrategy implements ISeasonStrategy {
 export class GlobalUniformSeasonStrategy implements ISeasonStrategy {
   constructor(
     private readonly strategyName: string,
-    private readonly transitionMode: TransitionMode,
+    private readonly _transitionMode: TransitionMode,
     private readonly tracker: SimulationTracker
   ) {}
 
@@ -193,7 +193,7 @@ export class SeasonManager {
   constructor(
     private readonly strategy: ISeasonStrategy,
     private readonly tracker: SimulationTracker,
-    private readonly transitionMode: TransitionMode
+    private readonly _transitionMode: TransitionMode
   ) {
     this.lastDiscreteSeasonCache = new Map();
     this.strategyName = (this.strategy.constructor as any).name;
@@ -201,7 +201,7 @@ export class SeasonManager {
 
     this.tracker.track('season_manager_created', {
       strategy: this.strategyName,
-      transitionMode: transitionMode
+      transitionMode: _transitionMode
     });
   }
 

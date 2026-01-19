@@ -1,4 +1,4 @@
-import { WorldBounds } from '@/world/simulationTypes';
+import { WorldBounds, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
 
 export interface Dimensions {
   width: number;
@@ -26,6 +26,8 @@ export interface LayerConfig {
 
 export interface WorldConfig {
   readonly dimensions: WorldBounds;
+  readonly seasonStrategy: SeasonStrategy;
+  readonly seasonTransitionMode: TransitionMode;
   readonly environment: {
     readonly provider: string;
     readonly layers: LayerConfig[];
@@ -58,6 +60,8 @@ export const worldConfig: Readonly<WorldConfig> = deepFreeze({
     width: 60,  // 1200 / 20
     height: 40  // 800 / 20
   },
+  seasonStrategy: SeasonStrategy.HEMISPHERIC,
+  seasonTransitionMode: TransitionMode.DISCRETIZED,
   environment: {
     provider: 'CompositeEnvironment',
     params: {},
@@ -93,7 +97,7 @@ export const worldWindowConfig: Readonly<WorldWindowConfig> = deepFreeze({
   gridLineThickness: 0.5,
   gridLineAlpha: 0.7,
   defaultFontFamily: 'Arial',
-  gridDrawMode: 'lines',
-  cellSizeInPixels: 20
-  // Add more drawing/presentation config here
+  cellSize: 20,
+  cellSizeInPixels: 20,
+  gridDrawMode: 'lines'
 });

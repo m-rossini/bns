@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WorldWindow } from '@/worldWindow';
 import { SimulationContext } from '@/simulationContext';
 import { SimulationTracker } from '@/observability/simulationTracker';
-import { ITimeKeeper, IEnvironment } from '@/world/simulationTypes';
+import { ITimeKeeper, IEnvironment, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
 import { WorldConfig, WorldWindowConfig } from '@/config';
 import { World } from '@/world/world';
 
@@ -29,6 +29,8 @@ describe('WorldWindow', () => {
 
   const mockWorldConfig: WorldConfig = {
     dimensions: { width: 10, height: 10 },
+    seasonStrategy: SeasonStrategy.HEMISPHERIC,
+    seasonTransitionMode: TransitionMode.DISCRETIZED,
     environment: { 
       provider: 'test', 
       params: {},
@@ -41,11 +43,12 @@ describe('WorldWindow', () => {
     canvasWidth: 200,
     canvasHeight: 200,
     canvasBackgroundColor: '#e45a96',
-    cellSizeInPixels: 20,
     gridColor: '#efde74',
     gridLineThickness: 1,
     gridLineAlpha: 0.7,
-    gridDrawMode: 'lines'
+    gridDrawMode: 'lines',
+    cellSizeInPixels: 20,
+    defaultFontFamily: 'Arial'
   } as WorldWindowConfig;
 
   const context = new SimulationContext(mockTracker, mockWorldConfig, mockWindowConfig);

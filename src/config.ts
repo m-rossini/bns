@@ -19,8 +19,18 @@ function deepFreeze<T>(obj: T): T {
 
 export type GridDrawMode = 'lines' | 'rects';
 
+export interface LayerConfig {
+  readonly provider: string;
+  readonly params: Record<string, any>;
+}
+
 export interface WorldConfig {
   readonly dimensions: WorldBounds;
+  readonly environment: {
+    readonly provider: string;
+    readonly layers: LayerConfig[];
+    readonly params: Record<string, any>;
+  };
   readonly time: {
     readonly provider: string;
     readonly params: {
@@ -47,6 +57,24 @@ export const worldConfig: Readonly<WorldConfig> = deepFreeze({
   dimensions: {
     width: 60,  // 1200 / 20
     height: 40  // 800 / 20
+  },
+  environment: {
+    provider: 'CompositeEnvironment',
+    params: {},
+    layers: [
+      {
+        provider: 'LuminosityLayer',
+        params: {}
+      },
+      {
+        provider: 'AtmosphericTemperatureLayer',
+        params: { baseTemperature: 20 }
+      },
+      {
+        provider: 'HumidityLayer',
+        params: { baseHumidity: 0.5 }
+      }
+    ]
   },
   time: {
     provider: 'SequentialTimeKeeper',

@@ -5,6 +5,7 @@ describe('EventSink', () => {
   it('should implement sendEvent(event)', async () => {
     class MockSink implements EventSink {
       async sendEvent(event: Event) {
+        console.log('MockSink received event:', event);
         return Promise.resolve();
       }
     }

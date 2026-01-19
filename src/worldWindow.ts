@@ -1,6 +1,7 @@
 import { WorldWindowConfig } from '@/config';
 import { World } from '@/world/world';
 import { SimulationContext } from '@/simulationContext';
+import { EnvironmentLayerType } from '@/world/simulationTypes';
 import type { GameObjects } from 'phaser';
 
 export interface WorldWindowState {
@@ -12,12 +13,12 @@ export class WorldWindow {
   public readonly world: World;
   public readonly config: WorldWindowConfig;
 
-  constructor(public readonly context: SimulationContext) {
+  constructor(public readonly context: SimulationContext, world: World) {
     this.config = context.windowConfig;
     this.state = { showGrid: true };
 
-    this.world = new World(context);
-    this.context.tracker.track('simulation_start', {
+    this.world = world;
+    this.context.tracker.track('worldWindow_created', {
       canvasWidth: this.config.canvasWidth,
       canvasHeight: this.config.canvasHeight
     });
@@ -30,6 +31,9 @@ export class WorldWindow {
 
   public draw(graphics: GameObjects.Graphics): void {
     graphics.clear();
+    
+    this.drawBackground(graphics);
+
     if (!this.state.showGrid) {
       return;
     }
@@ -39,6 +43,21 @@ export class WorldWindow {
     } else {
       this.drawLines(graphics);
     }
+  }
+
+  private drawBackground(graphics: GameObjects.Graphics): void {
+    const luminosity = this.world.environment.getValueAt(EnvironmentLayerType.Luminosity, { x: 0, y: 0 });
+    // Darken or lighten the background color based on luminosity
+    const baseColor = this.hexToColor(this.config.canvasBackgroundColor);
+    
+    // Simple way to adjust brightness - this is just a placeholder to show it works
+    // In a real app we'd use Phaser.Display.Color or similar
+    graphics.fillStyle(baseColor, 1);
+    graphics.fillRect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
+    
+    // Overlay a dark rectangle with varying alpha based on luminosity (inverse)
+    graphics.fillStyle(0x000000, Math.max(0, 0.5 * (1 - luminosity)));
+    graphics.fillRect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
   }
 
   private drawLines(graphics: GameObjects.Graphics): void {
@@ -88,7 +107,9 @@ export class WorldWindow {
  */
 export let worldWindow: WorldWindow;
 
-export function initWorldWindow(context: SimulationContext): WorldWindow {
-  worldWindow = new WorldWindow(context);
+export async function initWorldWindow(context: SimulationContext): Promise<WorldWindow> {
+  context.tracker.track('world_window_initializing', {});
+  const world = await World.create(context);
+  worldWindow = new WorldWindow(context, world);
   return worldWindow;
 }

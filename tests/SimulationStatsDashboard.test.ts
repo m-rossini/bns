@@ -11,8 +11,7 @@ import { SimulationStatsDashboard } from '@/dashboards/SimulationStatsDashboard'
 
 describe('SimulationStatsDashboard', () => {
   it('should instantiate without error', () => {
-    const container = document.createElement('div');
-    const dashboard = new SimulationStatsDashboard(container);
+    const dashboard = new SimulationStatsDashboard();
     expect(dashboard).toBeInstanceOf(SimulationStatsDashboard);
   });
 });

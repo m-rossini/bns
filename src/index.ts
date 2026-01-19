@@ -13,33 +13,10 @@ import { logWarn, logInfo, logError, logDebug } from '@/observability/logger';
 import { worldConfig, worldWindowConfig, WorldConfig } from '@/config';
 import { uuidv4 } from '@/utils/uuid';
 import { initializeOpenObserveRum } from '@/observability/rumInitializer';
-import { ITimeKeeper } from '@/world/simulationTypes';
+import { ITimeKeeper, IEnvironment,IEnvironmentLayer } from '@/world/simulationTypes';
 
 // Initialize OpenObserve RUM if configured
 initializeOpenObserveRum();
-
-/**
- * Dynamically resolves and instantiates a TimeKeeper provider.
- */
-async function resolveTimeKeeper(config: WorldConfig['time']): Promise<ITimeKeeper> {
-  const { provider, params } = config;
-  try {
-    logDebug(`Resolving TimeKeeper provider: ${provider}`);
-    const module = await import(`./world/time/${provider}.ts`);
-    const TimeKeeperClass = module[provider];
-
-    if (!TimeKeeperClass) {
-      throw new Error(`Class ${provider} not found in module ./world/time/${provider}.ts`);
-    }
-
-    const instance = new TimeKeeperClass(params);
-    
-    return instance;
-  } catch (err) {
-    logError(`Failed to load TimeKeeper [${provider}]`, err);
-    throw err;
-  }
-}
 
 function setSimulationCanvasSize() {
   const appDiv = document.getElementById('app');
@@ -64,6 +41,7 @@ async function bootstrap() {
     const sinks = createAllEventSinks();
     const trackers = RunContext.createTrackers(sinks, sessionId);
     runContext = new RunContext(trackers, sessionId);
+    runContext.getTracker(UXTracker).track('app starting - Trackers created', { version: '0.1.0' });
     logInfo('RunContext initialized. Telemetry system online.');
   } catch (err) {
     logWarn('Falling back to ConsoleSink due to error creating event sinks:', err);
@@ -80,21 +58,19 @@ async function bootstrap() {
     runContext = new RunContext(trackers, sessionId);
   }
 
-  let timeKeeper: ITimeKeeper;
+  // Phase 2: Simulation Assembly
+  const simTracker = runContext.getTracker(SimulationTracker);
+  const simContext = new SimulationContext(simTracker, worldConfig, worldWindowConfig);
+  
   try {
-    timeKeeper = await resolveTimeKeeper(worldConfig.time);
-    runContext.getTracker(SimulationTracker).track('timekeeper_initialized', { provider: worldConfig.time });
+    await initWorldWindow(simContext);
+    logInfo('Simulation Assembly complete.');
   } catch (err) {
-    logError('Critical failure: Could not resolve TimeKeeper. Simulation cannot start.', err);
+    logError('Critical failure: Could not assemble simulation. Simulation cannot start.', err);
     return;
   }
 
-  // Phase 3: Simulation Assembly
-  const simTracker = runContext.getTracker(SimulationTracker);
-  const simContext = new SimulationContext(simTracker, timeKeeper, worldConfig, worldWindowConfig);
-  initWorldWindow(simContext);
-
-  runContext.getTracker(UXTracker).track('app_startup', { version: '0.1.0' });
+  runContext.getTracker(UXTracker).track('*****app_startup_complete*****', { version: '0.1.0' });
 
   const phaserConfig: Phaser.Types.Core.GameConfig = {
     type: Phaser.AUTO,

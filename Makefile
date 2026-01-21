@@ -35,10 +35,10 @@ clean-image:
 	podman rmi $(IMAGE_NAME) || true
 
 ds-up:
-	podman-compose -f ds-environment/docker-compose.yml up -d
+	podman-compose -f devops/docker-compose.yml up -d
 
 ds-down:
-	podman-compose -f ds-environment/docker-compose.yml down
+	podman-compose -f devops/docker-compose.yml down
 
 ds-logs:
-	podman-compose -f ds-environment/docker-compose.yml logs -f
+	podman-compose -f devops/docker-compose.yml logs -f

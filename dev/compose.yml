@@ -1,0 +1,23 @@
+services:
+  bns-dev:
+    image: bns-dev:fedora
+    container_name: bns-dev
+    stdin_open: true
+    tty: true
+    volumes:
+      - ..:/workspace:Z
+    working_dir: /workspace
+    environment:
+      - NODE_ENV=development
+      - OPENOBSERVE_URL=http://openobserve:5080
+    cap_add:
+      - NET_RAW
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    networks:
+      - devops_default
+
+networks:
+  devops_default:
+    external: true

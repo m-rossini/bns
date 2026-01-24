@@ -5,10 +5,16 @@ services:
     restart: always
     environment:
       - ZO_ROOT_USER_EMAIL=observe@signalix.com
-      - ZO_ROOT_USER_PASSWORD=c
+      - ZO_ROOT_USER_PASSWORD=signalix123
       - ZO_NODE_ROLE=all
       - ZO_LOCAL_MODE=true
     ports:
       - "5080:5080"
     volumes:
       - ../../data/openobserve:/data:Z
+    networks:
+      - devops_default
+
+networks:
+  devops_default:
+    externl: true

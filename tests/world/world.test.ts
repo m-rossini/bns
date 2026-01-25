@@ -7,7 +7,7 @@ import { SequentialTimeKeeper } from '@/world/time/SequentialTimeKeeper';
 import { CompositeEnvironment } from '@/world/environments/CompositeEnvironment';
 import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 import { Event, EventSink } from '@/observability/types';
-import { DiscreteSeasonName, LayerContext, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
+import { DiscreteSeasonName, LayerContext, SeasonStrategy, TransitionMode, EnvironmentLayerType } from '@/world/simulationTypes';
 
 class FakeSink implements EventSink {
   public events: Event[] = [];
@@ -62,9 +62,11 @@ describe('World', () => {
     sink = new FakeSink();
     tracker = new SimulationTracker(sink, 'test-session');
     timeKeeper = new SequentialTimeKeeper({ ticksPerYear: 100 });
-    const layerContext = createLayerContext(timeKeeper);
+    const layerConfigs = [
+      { type: EnvironmentLayerType.Luminosity, params: {} }
+    ];
     const environment = new CompositeEnvironment(
-      [new LuminosityLayer({}, layerContext)], 
+      layerConfigs,
       {}, 
       tracker,
       timeKeeper,

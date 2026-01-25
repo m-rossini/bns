@@ -1,3 +1,4 @@
+import { logDebug } from '@/observability/logger';
 import { IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentLayerState, IGrid, Cell, IEnvironment, LayerContext } from '@/world/simulationTypes';
 
 export class LuminosityLayer implements IEnvironmentLayer {
@@ -8,6 +9,7 @@ export class LuminosityLayer implements IEnvironmentLayer {
     _params: any,
     private readonly context: LayerContext
   ) {
+    logDebug('LuminosityLayer initialized with context:', this.context);
     this.seasonalFactor = context.seasonalData.continuousSeasonalFactor;
     
     context.simulationTracker.track('layer_created', { 

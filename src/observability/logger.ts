@@ -1,5 +1,14 @@
 export function logDebug(message: string, ...args: unknown[]) {
   const prefix = `[DEBUG] ${new Date().toISOString()} - ${message}`;
+  // console.log("-------------------------------------")
+  // console.log(">>>Logging debug message");
+  // console.log(">>>Args:", args);
+  // console.log(">>>Prefix:", prefix);
+  // console.log(">>>Typeof console:", typeof console);
+  // console.log(">>>Console object:", console);
+  // console.log(">>>Typeof console.debug:", typeof console.debug);
+  // console.log(">>>Typeof console.log:", typeof console.log);
+  // console.log("-------------------------------------")
   if (typeof console !== 'undefined') {
     if (typeof console.debug === 'function') {
       console.debug(prefix, ...args);

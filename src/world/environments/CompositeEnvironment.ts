@@ -1,3 +1,4 @@
+console.log("CompositeEnvironment loaded");
 import { IEnvironment, IEnvironmentLayer, EnvironmentLayerType, ITimeKeeper, EnvironmentState, IGrid, Cell, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
 import { logDebug } from '@/observability/logger';
 import { SimulationTracker } from '@/observability/simulationTracker';
@@ -6,13 +7,14 @@ import { AtmosphericTemperatureLayer } from '@/world/environments/layers/Atmosph
 import { HumidityLayer } from '@/world/environments/layers/HumidityLayer';
 import { LuminosityLayer } from '@/world/environments/layers/LuminosityLayer';
 
+console.log(10, "here")
+
 export class CompositeEnvironment implements IEnvironment {
   private layers: Map<EnvironmentLayerType, IEnvironmentLayer> = new Map();
   private seasonManager: SeasonManager;
 
   constructor(
-    layers: IEnvironmentLayer[],
-    params: any,
+    layerConfigs: { type: EnvironmentLayerType, params: any }[],
     private readonly tracker: SimulationTracker,
     private readonly timeKeeper: ITimeKeeper,
     private readonly gridWidth: number,
@@ -27,9 +29,10 @@ export class CompositeEnvironment implements IEnvironment {
 
     this.seasonManager = new SeasonManager(strategy, this.tracker, seasonTransitionMode);
 
-    layers.forEach(layer => {
+    // Instantiate layers using private method
+    layerConfigs.forEach(cfg => {
+      const layer = this.createLayerWithContext(cfg.type, cfg.params);
       this.layers.set(layer.type, layer);
-      logDebug(`Layer initialized in CompositeEnvironment: ${layer.type}`);
     });
 
     this.tracker.track('environment_created', {
@@ -67,9 +70,10 @@ export class CompositeEnvironment implements IEnvironment {
   }
 
   /**
-   * Factory method to create a layer with LayerContext from SeasonManager
+   * Private factory method to create a layer with LayerContext from SeasonManager
    */
-  public createLayerWithContext(layerType: EnvironmentLayerType, params: any = {}): IEnvironmentLayer {
+  private createLayerWithContext(layerType: EnvironmentLayerType, params: any = {}): IEnvironmentLayer {
+    logDebug(`Creating layer of type: ${layerType}`);
     const yearProgress = this.timeKeeper.getYearProgress();
     const centerX = this.gridWidth / 2;
     const centerY = this.gridHeight / 2;

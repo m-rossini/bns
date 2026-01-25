@@ -1,5 +1,5 @@
 import { SimulationContext } from '@/simulationContext';
-import { WorldState, ITimeKeeper, IEnvironment, IEnvironmentLayer } from '@/world/simulationTypes';
+import { WorldState, ITimeKeeper, IEnvironment, IEnvironmentLayer, EnvironmentLayerType, WorldBounds, SeasonStrategy, TransitionMode } from '@/world/simulationTypes';
 import { SparseGrid } from '@/world/SparseGrid';
 import { logDebug, logError } from '@/observability/logger';
 import { WorldConfig } from '@/config';
@@ -45,7 +45,14 @@ export class World {
     });
 
     const timeKeeper = await World.resolveTimeKeeper(context.worldConfig.time, context.tracker);
-    const environment = await World.resolveEnvironment(context.worldConfig.environment, context.tracker);
+    const environment = await World.resolveEnvironment(
+      context.worldConfig.environment,
+      context.worldConfig.dimensions,
+      context.worldConfig.seasonStrategy,
+      context.worldConfig.seasonTransitionMode,
+      timeKeeper,
+      context.tracker
+    );
     const instance = new World(context, timeKeeper, environment);
 
     return instance;
@@ -70,23 +77,42 @@ export class World {
     }
   }
 
-  private static async resolveEnvironment(config: WorldConfig['environment'], tracker: SimulationTracker): Promise<IEnvironment> {
+  private static async resolveEnvironment(
+    config: WorldConfig['environment'],
+    dimensions: WorldBounds,
+    seasonStrategy: SeasonStrategy,
+    seasonTransitionMode: TransitionMode,
+    timeKeeper: ITimeKeeper,
+    tracker: SimulationTracker
+  ): Promise<IEnvironment> {
     const { provider, layers: layerConfigs, params } = config;
     try {
       logDebug(`Resolving Environment provider: ${provider}`);
-      const resolvedLayers: IEnvironmentLayer[] = [];
-      for (const lc of layerConfigs) {
-        logDebug(`Resolving Environment Layer: ${lc.provider}`);
-        const lModule = await import(`./environments/layers/${lc.provider}.ts`);
-        const LayerClass = lModule[lc.provider];
-        if (!LayerClass) throw new Error(`Class ${lc.provider} not found`);
-        resolvedLayers.push(new LayerClass(lc.params, tracker));
-      }
+      // Map layer provider strings to EnvironmentLayerType
+      const layerConfigsWithType = layerConfigs.map(lc => {
+        const providerNormalized = lc.provider.toLowerCase().replace('layer', '');
+        for (const key in EnvironmentLayerType) {
+          if (EnvironmentLayerType[key as keyof typeof EnvironmentLayerType].toLowerCase() === providerNormalized) {
+            return { type: EnvironmentLayerType[key as keyof typeof EnvironmentLayerType], params: lc.params };
+          }
+        }
+        throw new Error(`Could not map provider '${lc.provider}' to EnvironmentLayerType`);
+      });
+      logDebug('Mapped layer configurations:', layerConfigsWithType);
       const module = await import(`./environments/${provider}.ts`);
       const EnvironmentClass = module[provider];
       if (!EnvironmentClass) throw new Error(`Class ${provider} not found`);
       
-      const instance = new EnvironmentClass(resolvedLayers, params, tracker);
+      const instance = new EnvironmentClass(
+        layerConfigsWithType,
+        params,
+        tracker,
+        timeKeeper,
+        dimensions.width,
+        dimensions.height,
+        seasonStrategy,
+        seasonTransitionMode
+      );
       return instance;
 
     } catch (err) {

@@ -39,14 +39,14 @@ describe('CompositeEnvironment with SeasonManager', () => {
       simulationTracker: mockTracker
     }) as LayerContext;
 
-    const layers = [
-      new LuminosityLayer({}, layerContext),
-      new AtmosphericTemperatureLayer({ baseTemperature: 20 }, layerContext),
-      new HumidityLayer({ baseHumidity: 0.5 }, layerContext)
+    const layerConfigs = [
+      { type: EnvironmentLayerType.Luminosity, params: {} },
+      { type: EnvironmentLayerType.Temperature, params: { baseTemperature: 20 } },
+      { type: EnvironmentLayerType.Humidity, params: { baseHumidity: 0.5 } }
     ];
 
     environment = new CompositeEnvironment(
-      layers,
+      layerConfigs,
       {},
       mockTracker,
       timeKeeper,

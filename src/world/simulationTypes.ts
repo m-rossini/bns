@@ -22,7 +22,7 @@ export interface ITimeKeeper {
 }
 
 export enum EnvironmentLayerType {
-  Temperature = 'temperature',
+  Temperature = 'atmospherictemperature',
   Luminosity = 'luminosity',
   SolarEnergy = 'solarEnergy',
   Humidity = 'humidity'

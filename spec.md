@@ -322,6 +322,9 @@ class IEnvironment(ABC):
 - `palette(calendar)` returns `SeasonPalette` with the season name, ground
   colour, detail colours, temperature baseline/swing, humidity, pressure,
   `sun_intensity`, `daylight_fraction`.
+- The ground colour is season-driven, not random: green shades mark growing
+  seasons (spring/summer) and brown shades mark dry or dormant seasons
+  (autumn/winter). This is shown in the Environment box legend.
 - Ground colour: if `SeasonConfig.ground_gradient` is set, it is interpolated
   `start → end` over the season's progress. Otherwise `ground_color` blends
   toward the next season's colour.

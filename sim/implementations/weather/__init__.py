@@ -11,24 +11,26 @@ A new field is generated every ``change_interval`` ticks, deterministically
 from the seed, so runs are reproducible while neighbouring cells share a
 condition instead of being independently random.
 
-Conditions come from the current season's weights (see `SeasonConfig`), so
-snow only appears in seasons that allow it.
+The strategy receives a `ClimateContext` on every update: season, world
+geometry, temperature, humidity, pressure and the season's solar profile. Those
+inputs reshape the season's weights (`ClimateContext.adjusted_weather_weights`)
+so, for example, rain falls as snow below freezing and storms need warmth and
+moisture. Snow never appears in a season whose weights do not allow it.
 """
 
 import math
 import random
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from sim.config import WeatherConfig
-from sim.interfaces.environment import IEnvironment, IWeatherStrategy
+from sim.domain.climate import ClimateContext
+from sim.interfaces.environment import IWeatherStrategy
 from sim.interfaces.world import IWorld
 from sim.observability import get_logger
 
 logger = get_logger("weather")
 
 _SEVERITY = {"clear": 0, "cloudy": 1, "rain": 2, "snow": 2, "storm": 3}
-
-_DEFAULT_WEIGHTS = {"clear": 40, "cloudy": 30, "rain": 20, "storm": 10, "snow": 0}
 
 
 class _Front:
@@ -71,14 +73,10 @@ class WeatherStrategy(IWeatherStrategy):
         values = [w for _, w in options]
         return rng.choices(kinds, weights=values, k=1)[0]
 
-    def _build(self, tick: int, environment: IEnvironment) -> None:
+    def _build(self, tick: int, climate: ClimateContext) -> None:
         interval = tick // self._config.change_interval
-        season = environment.season
-        season_strategy = environment.season_strategy
-        if season_strategy is not None:
-            weights = season_strategy.weather_weights(season)
-        else:
-            weights = dict(_DEFAULT_WEIGHTS)
+        season = climate.season
+        weights = climate.adjusted_weather_weights()
 
         rng = random.Random((self._config.seed, interval, season))
         self._base = self._choose(rng, weights)
@@ -102,7 +100,8 @@ class WeatherStrategy(IWeatherStrategy):
 
         logger.info(
             "weather.field_rebuilt interval=%s season=%s base=%s coverage=%.2f "
-            "fronts=%s radius=%s..%s",
+            "fronts=%s radius=%s..%s temp=%.1f humidity=%.2f pressure=%.0f "
+            "sun=%.2f daylight=%.2f",
             interval,
             season,
             self._base,
@@ -110,6 +109,11 @@ class WeatherStrategy(IWeatherStrategy):
             len(fronts),
             low,
             high,
+            climate.mean_temperature,
+            climate.humidity,
+            climate.pressure_hpa,
+            climate.sun_intensity,
+            climate.daylight_fraction,
         )
         for index, front in enumerate(fronts):
             logger.debug(
@@ -121,10 +125,10 @@ class WeatherStrategy(IWeatherStrategy):
                 front.radius,
             )
 
-    def update(self, tick: int, environment: IEnvironment) -> None:
+    def update(self, tick: int, climate: ClimateContext) -> None:
         interval = tick // self._config.change_interval
         if self._interval != interval or self._interval is None:
-            self._build(tick, environment)
+            self._build(tick, climate)
 
     # ------------------------------------------------------------------
     # Readings

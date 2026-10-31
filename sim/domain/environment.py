@@ -4,10 +4,12 @@ Composes the calendar and the three optional strategies. Every environmental
 reading is a function of position:
 
 * ``weather_at(x, y)``     — per-cell weather field
-* ``light_at(x, y)``       — sun altitude * local shading * season * weather * gradient
+* ``solar``               — the season's `SolarProfile` (owner of the sun)
+* ``light_at(x, y)``       — sun arc * season intensity * shading * weather * gradient
 * ``humidity_at(x, y)``    — seasonal baseline + weather + climate gradient + noise
 * ``pressure_at(x, y)``    — seasonal baseline + weather + climate gradient + noise
 * ``temperature_at(x, y)`` — seasonal mean + diurnal light + weather + gradient + microclimate
+* ``climate_context()``    — immutable snapshot for the weather strategy
 
 The gradient direction comes from `WorldConfig.orientation` unless a
 `GradientConfig` overrides it. This is what makes two cells in the same season
@@ -23,8 +25,9 @@ from typing import Optional
 
 from sim.config import EnvironmentConfig, LoggingConfig, WeatherConfig
 from sim.domain.calendar import Calendar
+from sim.domain.climate import DEFAULT_WEATHER_WEIGHTS, ClimateContext
 from sim.domain.gradient import Gradient
-from sim.domain.visuals import SeasonPalette
+from sim.domain.visuals import CelestialState, SeasonPalette, SolarProfile
 from sim.interfaces.environment import (
     ICalendar,
     IDayNightStrategy,
@@ -38,6 +41,14 @@ from sim.observability import EventLog, get_logger, log_event
 logger = get_logger("environment")
 
 _STATIC_LIGHT = 0.7
+_STATIC_SOLAR = SolarProfile()
+_STATIC_CELESTIAL = CelestialState(
+    sun_progress=0.5,
+    moon_progress=0.0,
+    sun_visible=True,
+    moon_visible=False,
+    moon_illumination=0.0,
+)
 _STATIC_PALETTE = SeasonPalette(
     name="Static",
     ground=(110, 150, 110),
@@ -46,7 +57,8 @@ _STATIC_PALETTE = SeasonPalette(
     temperature_swing=7.0,
     humidity=0.5,
     pressure_hpa=1013.0,
-    light_influence=1.0,
+    sun_intensity=1.0,
+    daylight_fraction=0.5,
 )
 
 
@@ -100,6 +112,7 @@ class Environment(IEnvironment):
         self._last_tick = calendar.tick
         self._palette_tick: Optional[int] = None
         self._palette_cache: SeasonPalette = _STATIC_PALETTE
+        self._solar_cache: SolarProfile = _STATIC_SOLAR
 
         logger.debug(
             "environment.created cols=%s rows=%s season_strategy=%s "
@@ -172,7 +185,7 @@ class Environment(IEnvironment):
     def phase(self) -> str:
         if self._daynight_strategy is None:
             return "day"
-        return self._daynight_strategy.phase(self._calendar)
+        return self._daynight_strategy.phase(self._calendar, self.solar)
 
     @property
     def weather(self) -> str:
@@ -186,14 +199,54 @@ class Environment(IEnvironment):
         return self.light_at(x, y)
 
     @property
+    def solar(self) -> SolarProfile:
+        if self._season_strategy is None:
+            return _STATIC_SOLAR
+        tick = self._calendar.tick
+        if tick != self._palette_tick:
+            self._solar_cache = self._season_strategy.solar_profile(self._calendar)
+            self._palette_cache = self._season_strategy.palette(self._calendar)
+            self._palette_tick = tick
+        return self._solar_cache
+
+    @property
+    def celestial(self) -> CelestialState:
+        if self._daynight_strategy is None:
+            return _STATIC_CELESTIAL
+        return self._daynight_strategy.celestial(self._calendar, self.solar)
+
+    @property
     def palette(self) -> SeasonPalette:
         if self._season_strategy is None:
             return _STATIC_PALETTE
         tick = self._calendar.tick
         if tick != self._palette_tick:
+            self._solar_cache = self._season_strategy.solar_profile(self._calendar)
             self._palette_cache = self._season_strategy.palette(self._calendar)
             self._palette_tick = tick
         return self._palette_cache
+
+    def weather_weights(self) -> dict:
+        """Season weights before the climate adjustments, for the HUD/debug."""
+        if self._season_strategy is None:
+            return {}
+        return self._season_strategy.weather_weights(self._calendar.season)
+
+    def climate_context(self) -> ClimateContext:
+        """Snapshot handed to the weather strategy on every tick."""
+        palette = self.palette
+        weights = self.weather_weights()
+        if not weights:
+            weights = dict(DEFAULT_WEATHER_WEIGHTS)
+        return ClimateContext.from_palette(
+            tick=self._calendar.tick,
+            season=self._calendar.season,
+            season_progress=self._calendar.season_progress,
+            palette=palette,
+            solar=self.solar,
+            weather_weights=weights,
+            world=self._world,
+        )
 
     # ------------------------------------------------------------------
     # Positional readings
@@ -204,12 +257,11 @@ class Environment(IEnvironment):
         return self._weather_strategy.weather_at(x, y)
 
     def light_at(self, x: float, y: float) -> float:
-        palette = self.palette
         if self._daynight_strategy is None:
             base = _STATIC_LIGHT
         else:
             base = self._daynight_strategy.light_at(
-                self._calendar, x, y, season_factor=palette.light_influence
+                self._calendar, x, y, solar=self.solar
             )
 
         width, height = self._extent()
@@ -269,7 +321,9 @@ class Environment(IEnvironment):
     def advance_tick(self) -> None:
         self._calendar.advance()
         if self._weather_strategy is not None:
-            self._weather_strategy.update(self._calendar.tick, self)
+            self._weather_strategy.update(
+                self._calendar.tick, self.climate_context()
+            )
 
         tick = self._calendar.tick
         day = self._calendar.day
@@ -345,4 +399,6 @@ class Environment(IEnvironment):
         self._last_weather = self.weather
         self._last_tick = self._calendar.tick
         self._palette_tick = None
+        self._palette_cache = _STATIC_PALETTE
+        self._solar_cache = _STATIC_SOLAR
         self._event_log.event("environment.reset", tick=self._calendar.tick)

@@ -3,6 +3,10 @@
 Biases spawn probability toward the exact center of the map, creating a dense
 central nucleus that thins exponentially toward the perimeter.
 
+All positions are **collision-free**: beans do not overlap each other, do not
+overlap barriers, and stay inside the world bounds (accounting for bean
+radius).
+
 Tunable attributes:
 * Falloff Exponent Curve
 
@@ -18,9 +22,11 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from sim.domain.beans import Position
+from sim.domain.beans import Bean, Position
+from sim.domain.placement_utils import is_valid_bean_position
+from sim.domain.world import World
 from sim.interfaces.placement import IPlacementStrategy
 from sim.observability import get_logger
 
@@ -35,7 +41,13 @@ class CenterToBorderStrategy(IPlacementStrategy):
         self.seed = seed
 
     def generate_positions(
-        self, n: int, width: float, height: float
+        self,
+        n: int,
+        width: float,
+        height: float,
+        world: Optional[World] = None,
+        existing: Optional[List[Bean]] = None,
+        radius: float = 0.0,
     ) -> List[Position]:
         if n <= 0:
             return []
@@ -47,19 +59,24 @@ class CenterToBorderStrategy(IPlacementStrategy):
         r_max = min(width, height) / 2.0
         exp = self.falloff_exponent
 
-        points: List[Position] = []
+        points: List[Position] = list(existing or [])
         for _ in range(n):
             u = rng.uniform(0.0, 1.0)
             r = r_max * (u ** exp)
             theta = rng.uniform(0.0, 2.0 * math.pi)
             x = max(0.0, min(width, cx + r * math.cos(theta)))
             y = max(0.0, min(height, cy + r * math.sin(theta)))
+            if not is_valid_bean_position(x, y, radius, world, points):
+                continue
             points.append((x, y))
+            if len(points) - len(existing or []) >= n:
+                break
 
+        new_points = points[len(existing or []):]
         logger.debug(
             "placement.center_to_border requested=%d produced=%d exponent=%.2f",
             n,
-            len(points),
+            len(new_points),
             exp,
         )
-        return points
+        return new_points

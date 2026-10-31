@@ -26,7 +26,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
-RUN pip install --upgrade pip && pip install arcade
+RUN pip install --upgrade pip && pip install arcade pytest pytest-cov coverage
 
 # Copy application source
 COPY sim/ ./sim/

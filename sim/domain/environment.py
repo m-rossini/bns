@@ -356,12 +356,21 @@ class Environment(IEnvironment):
             self._last_season = season
 
         if weather != self._last_weather:
+            # Census of cells per condition (matches the weather field box).
+            counts = self._weather_cell_counts()
+            total = max(1, sum(counts.values()))
             self._event_log.event(
                 "environment.weather_changed",
                 previous=self._last_weather,
                 weather=weather,
                 season=season,
                 tick=tick,
+                counts=",".join(f"{k}={v}" for k, v in counts.items() if v > 0),
+                shares=",".join(
+                    f"{k}={v / total:.0%}"
+                    for k, v in counts.items()
+                    if v > 0
+                ),
             )
             self._last_weather = weather
 
@@ -393,6 +402,20 @@ class Environment(IEnvironment):
             light=self.light_at(x, y),
             gradient_position=self._position(x, y),
         )
+
+    def _weather_cell_counts(self) -> dict:
+        """Cells per condition (matches the weather field box proportions)."""
+        world = self._world
+        strategy = self._weather_strategy
+        if world is None or strategy is None:
+            return {self.weather: 1}
+        counts: dict = {}
+        for col in range(world.cols):
+            for row in range(world.rows):
+                cx, cy = world.cell_center(col, row)
+                condition = strategy.weather_at_cell(col, row)
+                counts[condition] = counts.get(condition, 0) + 1
+        return counts
 
     def reset(self) -> None:
         self._calendar.reset()

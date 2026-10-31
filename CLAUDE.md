@@ -8,13 +8,14 @@
   worktree. Base branch is `main` (never `master`). Finish with
   commit → push → PR → merge → clean → update `main`.
 - Keep documentation aligned with the code. If behaviour changes, update
-  `README.md`, `diagrams.md` and `spec.md` in the same change set.
+  `README.md`, `diagrams.md`, `specs/spec.md` in the same change set.
 - Rendering never mutates domain state: `ArcadeView` reads a `GameSession`
   snapshot only.
 - Never call `arcade.draw_text`; use cached `arcade.Text` objects.
 - All tunables live in `sim/config.py`. Do not hardcode constants elsewhere.
-- Verify with `make test` (local, headless) and `make verify` (in-container,
-  headless) before opening a pull request.
+- Verify with `make test` (local, headless) and `make test-container`
+  (in-container, headless) before opening a pull request. See
+  [`skills/container-test.md`](./skills/container-test.md).
 - Never commit the `.venv`, caches, or ad-hoc screenshot scripts.
 
 ## Documentation
@@ -23,7 +24,8 @@
 |------|---------|
 | [`README.md`](./README.md) | Current technical reference and usage |
 | [`diagrams.md`](./diagrams.md) | Mermaid architecture diagrams |
-| [`spec.md`](./spec.md) | Game specification aligned with the code |
+| [`specs/spec.md`](./specs/spec.md) | Game specification aligned with the code |
+| [`specs/bean_placement_strategy_spec.md`](./specs/bean_placement_strategy_spec.md) | Bean placement & gender specification |
 | [`AGENTS.md`](./AGENTS.md) | Documentation index |
 | [`TODO.md`](./TODO.md) | Task board |
 

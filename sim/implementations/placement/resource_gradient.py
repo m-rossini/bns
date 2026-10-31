@@ -3,6 +3,10 @@
 Uses a 2D noise map scaled to world dimensions as a nutrient heatmap,
 clustering initial beans around environmental hotspots.
 
+All positions are **collision-free**: beans do not overlap each other, do not
+overlap barriers, and stay inside the world bounds (accounting for bean
+radius).
+
 Tunable attributes:
 * Noise Frequency Scale
 * Baseline Threshold
@@ -18,22 +22,16 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from sim.config import BEAN_DENSITY_COEFFICIENTS
-from sim.domain.beans import Position
+from sim.config import BEAN_DENSITY_THRESHOLDS
+from sim.domain.beans import Bean, Position
+from sim.domain.placement_utils import is_valid_bean_position
+from sim.domain.world import World
 from sim.interfaces.placement import IPlacementStrategy
 from sim.observability import get_logger
 
 logger = get_logger("placement.resource_gradient")
-
-#: Noise spawn threshold per density tier.
-_NOISE_THRESHOLDS: dict = {
-    "sparse": 0.75,
-    "average": 0.50,
-    "heavy": 0.25,
-    "super": 0.05,
-}
 
 
 class ResourceGradientStrategy(IPlacementStrategy):
@@ -51,7 +49,6 @@ class ResourceGradientStrategy(IPlacementStrategy):
 
     def _noise(self, x: float, y: float, rng: random.Random) -> float:
         """Deterministic pseudo-noise in [0, 1] from a seeded hash."""
-        # Simple deterministic noise using sin of a hash.
         h = rng.random()
         v = math.sin(x * self.noise_frequency + h * 100.0) * math.cos(
             y * self.noise_frequency + h * 77.0
@@ -59,7 +56,13 @@ class ResourceGradientStrategy(IPlacementStrategy):
         return (v + 1.0) / 2.0
 
     def generate_positions(
-        self, n: int, width: float, height: float
+        self,
+        n: int,
+        width: float,
+        height: float,
+        world: Optional[World] = None,
+        existing: Optional[List[Bean]] = None,
+        radius: float = 0.0,
     ) -> List[Position]:
         if n <= 0:
             return []
@@ -67,27 +70,28 @@ class ResourceGradientStrategy(IPlacementStrategy):
             return []
 
         rng = random.Random(self.seed)
-        # Find density tier from config is not available here; use a mid
-        # threshold by default, callers can adjust via a subclass attribute.
-        threshold = getattr(self, "_threshold", 0.50)
 
-        points: List[Position] = []
+        points: List[Position] = list(existing or [])
         attempts = 0
         max_attempts = n * 100
-        while len(points) < n and attempts < max_attempts:
+        while len(points) - len(existing or []) < n and attempts < max_attempts:
             attempts += 1
             x = rng.uniform(0.0, width)
             y = rng.uniform(0.0, height)
-            if self._noise(x, y, rng) >= self.threshold:
-                points.append((x, y))
+            if self._noise(x, y, rng) < self.threshold:
+                continue
+            if not is_valid_bean_position(x, y, radius, world, points):
+                continue
+            points.append((x, y))
 
+        new_points = points[len(existing or []):]
         logger.debug(
             "placement.resource_gradient requested=%d produced=%d attempts=%d "
             "threshold=%.2f freq=%.4f",
             n,
-            len(points),
+            len(new_points),
             attempts,
-            threshold,
+            self.threshold,
             self.noise_frequency,
         )
-        return points
+        return new_points

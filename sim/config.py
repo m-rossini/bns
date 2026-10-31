@@ -332,6 +332,9 @@ class BeanPlacementConfig:
     ring_thickness_ratio: float = 0.3
     bias_strength: float = 1.5
     noise_frequency: float = 0.01
+    #: Radius of a bean (world units) used for collision-free placement.
+    #: Beans, barriers and borders must not overlap.
+    bean_radius: float = 5.0
 
     def __post_init__(self) -> None:
         if self.density_tier not in BEAN_DENSITY_COEFFICIENTS:
@@ -543,6 +546,7 @@ DEFAULT_CONFIG = SimulationConfig(
         ring_thickness_ratio=0.3,
         bias_strength=1.5,
         noise_frequency=0.01,
+        bean_radius=5.0,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

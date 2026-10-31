@@ -3,6 +3,10 @@
 Ensures rotational symmetry across world axes, providing competitive equity
 or aesthetic balance in structured arenas.
 
+All positions are **collision-free**: beans do not overlap each other, do not
+overlap barriers, and stay inside the world bounds (accounting for bean
+radius).
+
 Tunable attributes:
 * Symmetry Axes Count (k >= 1)
 
@@ -17,9 +21,11 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from sim.domain.beans import Position
+from sim.domain.beans import Bean, Position
+from sim.domain.placement_utils import is_valid_bean_position
+from sim.domain.world import World
 from sim.interfaces.placement import IPlacementStrategy
 from sim.observability import get_logger
 
@@ -34,7 +40,13 @@ class SymmetricalStrategy(IPlacementStrategy):
         self.seed = seed
 
     def generate_positions(
-        self, n: int, width: float, height: float
+        self,
+        n: int,
+        width: float,
+        height: float,
+        world: Optional[World] = None,
+        existing: Optional[List[Bean]] = None,
+        radius: float = 0.0,
     ) -> List[Position]:
         if n <= 0:
             return []
@@ -53,8 +65,8 @@ class SymmetricalStrategy(IPlacementStrategy):
             r = r_max * math.sqrt(rng.uniform(0.0, 1.0))
             base_points.append((cx + r * math.cos(theta), cy + r * math.sin(theta)))
 
-        points: List[Position] = []
-        seen: set = set()
+        points: List[Position] = list(existing or [])
+        seen: set = set((round(p.x, 3), round(p.y, 3)) for p in points)
         for base_x, base_y in base_points:
             for i in range(k):
                 phi = i * 2.0 * math.pi / k
@@ -64,19 +76,23 @@ class SymmetricalStrategy(IPlacementStrategy):
                 x = max(0.0, min(width, x))
                 y = max(0.0, min(height, y))
                 key = (round(x, 3), round(y, 3))
-                if key not in seen:
-                    seen.add(key)
-                    points.append((x, y))
-                if len(points) >= n:
+                if key in seen:
+                    continue
+                # Collision-free check against barriers, borders and beans.
+                if not is_valid_bean_position(x, y, radius, world, points):
+                    continue
+                seen.add(key)
+                points.append((x, y))
+                if len(points) - len(existing or []) >= n:
                     break
-            if len(points) >= n:
+            if len(points) - len(existing or []) >= n:
                 break
 
-        points = points[:n]
+        new_points = points[len(existing or []):]
         logger.debug(
             "placement.symmetrical requested=%d produced=%d axes=%d",
             n,
-            len(points),
+            len(new_points),
             k,
         )
-        return points
+        return new_points

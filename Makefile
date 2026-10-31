@@ -104,6 +104,33 @@ test: $(ARCADE_STAMP)
 	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
 		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
+# --- Testing (pytest + coverage) ---
+
+test-pytest: $(ARCADE_STAMP)
+	$(PYTHON_BIN) -m compileall -q sim
+	$(PYTHON_BIN) -m pytest sim/tests/ -v
+
+test-cov: $(ARCADE_STAMP)
+	$(PYTHON_BIN) -m pytest sim/tests/ --cov=sim --cov-report=term-missing --cov-report=html
+
+test: test-pytest test-cov
+	@echo "=== All tests passed ==="
+
+# Run the full test suite inside the container (preferred verification).
+test-container: build
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
+		echo "Error: no container runtime (podman/docker) found."; \
+		exit 1; \
+	fi
+	$(CONTAINER_RUNTIME) run --rm --init \
+		--env BEAN_HEADLESS=1 \
+		--env BEAN_HEADLESS_FRAMES=300 \
+		--env BEAN_LOG_LEVEL=INFO \
+		-v $$(pwd):/app:ro \
+		-w /app \
+		$(CONTAINER_IMAGE) \
+		/bin/sh -c "pip install -q pytest pytest-cov coverage 2>/dev/null; python -m pytest sim/tests/ --cov=sim --cov-report=term-missing"
+
 # --- Container targets ---
 
 build:

@@ -122,15 +122,29 @@ sim/
 │   ├── session.py            # concrete GameSession
 │   ├── visuals.py            # SeasonPalette, SkyPalette, CelestialState, SolarProfile
 │   └── world.py              # bounds, cells, orientation, wrap/clamp, barriers
+│   ├── beans.py              # Bean entity + SpawnResult
+│   ├── placement_utils.py    # collision-free placement helpers
+│   └── spawn_controller.py   # SpawnController (placement → gender → beans)
 ├── interfaces/
 │   ├── barrier.py            # IBarrierStrategy
 │   ├── environment.py        # ICalendar, ISeasonStrategy, IDayNightStrategy,
 │   │                         # IWeatherStrategy, IEnvironment
+│   ├── gender.py             # IGenderController
+│   ├── placement.py          # IPlacementStrategy, ISpawnController
 │   ├── renderer.py           # IRenderer protocol
 │   └── world.py              # IWorld
 ├── implementations/
 │   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
 │   ├── daynight/__init__.py  # DayNightStrategy
+│   ├── gender.py             # GenderController (ratio-balanced, shuffled)
+│   ├── placement/
+│   │   ├── __init__.py       # strategy registry
+│   │   ├── border_to_center.py
+│   │   ├── center_to_border.py
+│   │   ├── colony_cluster.py
+│   │   ├── linear_gradient.py
+│   │   ├── poisson_disc.py
+│   │   └── resource_gradient.py
 │   ├── season/__init__.py    # SeasonStrategy (owns sun via solar_profile)
 │   └── weather/__init__.py   # WeatherStrategy (climate-aware)
 ├── input/keyboard.py         # KeyboardInput state machine (+ set_time_scale)
@@ -519,4 +533,4 @@ Expected headless invariants:
   interval.
 - The headless loop starts the session directly because there is no input to
   press `SPACE`.
-- Automated tests and lint/typecheck configuration.
+- Lint/typecheck configuration is not yet set up.

@@ -3,6 +3,10 @@
 Generates a semi-random, organic distribution with a strict minimum spacing
 radius scaled dynamically to prevent cell overlap across any map size.
 
+All positions are **collision-free**: beans do not overlap each other, do not
+overlap barriers, and stay inside the world bounds (accounting for bean
+radius).
+
 Tunable attributes:
 * Base Spacing Scale
 * Maximum Retry Limit
@@ -20,9 +24,11 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from sim.domain.beans import Position
+from sim.domain.beans import Bean, Position
+from sim.domain.placement_utils import is_valid_bean_position
+from sim.domain.world import World
 from sim.interfaces.placement import IPlacementStrategy
 from sim.observability import get_logger
 
@@ -43,7 +49,13 @@ class PoissonDiscStrategy(IPlacementStrategy):
         self.seed = seed
 
     def generate_positions(
-        self, n: int, width: float, height: float
+        self,
+        n: int,
+        width: float,
+        height: float,
+        world: Optional[World] = None,
+        existing: Optional[List[Bean]] = None,
+        radius: float = 0.0,
     ) -> List[Position]:
         if n <= 0:
             return []
@@ -53,12 +65,14 @@ class PoissonDiscStrategy(IPlacementStrategy):
         rng = random.Random(self.seed)
         area = width * height
         # Minimum spacing radius scaled to density.
-        radius = math.sqrt(area / max(1, n)) * self.base_spacing_scale
-        radius_sq = radius * radius
+        spacing = math.sqrt(area / max(1, n)) * self.base_spacing_scale
+        # Use the larger of the configured bean radius and the spacing radius.
+        eff_radius = max(radius, spacing)
+        radius_sq = eff_radius * eff_radius
 
         points: List[Position] = []
         # Grid-based spatial hash for fast neighbour queries.
-        cell_size = radius / math.sqrt(2.0)
+        cell_size = max(1.0, eff_radius / math.sqrt(2.0))
         cols = max(1, int(math.ceil(width / cell_size)))
         rows = max(1, int(math.ceil(height / cell_size)))
         grid: List[List[Optional[int]]] = [[-1] * cols for _ in range(rows)]
@@ -82,22 +96,26 @@ class PoissonDiscStrategy(IPlacementStrategy):
                                 return True
             return False
 
-        # Pick a random first point.
         attempts = 0
-        while len(points) < n and attempts < self.max_retry_limit * max(1, n):
+        max_attempts = self.max_retry_limit * max(1, n)
+        while len(points) < n and attempts < max_attempts:
             attempts += 1
             px = rng.uniform(0, width)
             py = rng.uniform(0, height)
-            if not _too_close(px, py):
-                points.append((px, py))
-                gx, gy = _cell_index(px, py)
-                grid[gy][gx] = len(points) - 1
+            if _too_close(px, py):
+                continue
+            # Collision-free check against barriers, borders and beans.
+            if not is_valid_bean_position(px, py, eff_radius, world, existing):
+                continue
+            points.append((px, py))
+            gx, gy = _cell_index(px, py)
+            grid[gy][gx] = len(points) - 1
 
         logger.debug(
-            "placement.poisson_disc requested=%d produced=%d radius=%.3f attempts=%d",
+            "placement.poisson_disc requested=%d produced=%d spacing=%.3f attempts=%d",
             n,
             len(points),
-            radius,
+            spacing,
             attempts,
         )
         return points

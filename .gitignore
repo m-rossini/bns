@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.coverage
+.pytest_cache/
+coverage.xml
+htmlcov/
 
 # Editors / OS
 .vscode/

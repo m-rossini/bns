@@ -11,6 +11,12 @@ PYTHON_BIN := $(VENV)/bin/python
 ARCADE_STAMP := $(VENV)/.arcade-installed
 MAIN_MODULE := sim.main
 
+# Runtime log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+# Override per run: `make run LOG_LEVEL=DEBUG`
+LOG_LEVEL ?= INFO
+BEAN_LOG_LEVEL ?= $(LOG_LEVEL)
+export BEAN_LOG_LEVEL
+
 # Detect container runtime: podman has priority, fall back to docker
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo "")
 CONTAINER_IMAGE := bean-world:latest
@@ -69,12 +75,12 @@ $(ARCADE_STAMP): | venv
 install: $(ARCADE_STAMP)
 
 run-local: $(ARCADE_STAMP)
-	$(PYTHON_BIN) -m $(MAIN_MODULE)
+	BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
 # Bounded headless run (no window, no display server needed)
 run-headless: $(ARCADE_STAMP)
 	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
-		$(PYTHON_BIN) -m $(MAIN_MODULE)
+		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
 # --- Container targets ---
 
@@ -99,6 +105,7 @@ run-container: build
 	$(CONTAINER_RUNTIME) run -d --init \
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
+		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
 		--name $(CONTAINER_NAME) \
 		$(CONTAINER_IMAGE)
 	@echo "Started $(CONTAINER_NAME) detached. Follow it with: make logs"
@@ -128,6 +135,7 @@ run-container-ui: build
 		--security-opt label=disable \
 		--env DISPLAY=$$DISPLAY \
 		--env BEAN_HEADLESS=0 \
+		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
 		--volume /tmp/.X11-unix:/tmp/.X11-unix:ro \
 		$$auth_args \
 		--name $(CONTAINER_NAME) \
@@ -186,6 +194,8 @@ help:
 	@echo "  make stop              Stop and remove the container"
 	@echo ""
 	@echo "  BEAN_HEADLESS_FRAMES=200 make run-container   Override frame count"
+	@echo "  make run LOG_LEVEL=DEBUG                        Verbose logging"
+	@echo "  Log levels: DEBUG, INFO (default), WARNING, ERROR"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean   Remove venv, caches, container, image"

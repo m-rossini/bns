@@ -4,19 +4,26 @@ Composes the calendar and the three optional strategies. Every environmental
 reading is a function of position:
 
 * ``weather_at(x, y)``     — per-cell weather field
-* ``light_at(x, y)``       — sun altitude * local shading * weather dimming
-* ``humidity_at(x, y)``    — seasonal baseline + weather + local variation
-* ``pressure_at(x, y)``    — seasonal baseline + weather + local variation
-* ``temperature_at(x, y)`` — seasonal mean + diurnal light + weather + microclimate
+* ``light_at(x, y)``       — sun altitude * local shading * season * weather * gradient
+* ``humidity_at(x, y)``    — seasonal baseline + weather + climate gradient + noise
+* ``pressure_at(x, y)``    — seasonal baseline + weather + climate gradient + noise
+* ``temperature_at(x, y)`` — seasonal mean + diurnal light + weather + gradient + microclimate
+
+The gradient direction comes from `WorldConfig.orientation` unless a
+`GradientConfig` overrides it. This is what makes two cells in the same season
+read differently, and it is fully configuration-driven (see `EnvironmentConfig`).
 
 With a strategy set to ``None`` the environment still runs, and that reading
 falls back to a documented constant ("static" mode).
 """
 
+import logging
 import math
 from typing import Optional
 
+from sim.config import EnvironmentConfig, LoggingConfig, WeatherConfig
 from sim.domain.calendar import Calendar
+from sim.domain.gradient import Gradient
 from sim.domain.visuals import SeasonPalette
 from sim.interfaces.environment import (
     ICalendar,
@@ -26,15 +33,9 @@ from sim.interfaces.environment import (
     IWeatherStrategy,
 )
 from sim.interfaces.world import IWorld
+from sim.observability import EventLog, get_logger
 
-_WEATHER_TEMP_C = {"clear": 2.0, "cloudy": 0.0, "rain": -2.0, "storm": -4.0, "snow": -5.0}
-_WEATHER_HUMIDITY = {
-    "clear": -0.10, "cloudy": 0.02, "rain": 0.20, "storm": 0.25, "snow": 0.08,
-}
-_WEATHER_PRESSURE_HPA = {
-    "clear": 4.0, "cloudy": -3.0, "rain": -8.0, "storm": -18.0, "snow": -5.0,
-}
-_WEATHER_LIGHT = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow": 0.85}
+logger = get_logger("environment")
 
 _STATIC_LIGHT = 0.7
 _STATIC_PALETTE = SeasonPalette(
@@ -45,6 +46,7 @@ _STATIC_PALETTE = SeasonPalette(
     temperature_swing=7.0,
     humidity=0.5,
     pressure_hpa=1013.0,
+    light_influence=1.0,
 )
 
 
@@ -60,12 +62,56 @@ class Environment(IEnvironment):
         season_strategy: Optional[ISeasonStrategy] = None,
         daynight_strategy: Optional[IDayNightStrategy] = None,
         weather_strategy: Optional[IWeatherStrategy] = None,
+        environment_config: Optional[EnvironmentConfig] = None,
+        weather_config: Optional[WeatherConfig] = None,
+        logging_config: Optional[LoggingConfig] = None,
     ):
         self._calendar = calendar
         self._world = world
         self._season_strategy = season_strategy
         self._daynight_strategy = daynight_strategy
         self._weather_strategy = weather_strategy
+
+        self._env_config = environment_config or EnvironmentConfig()
+        self._weather_config = weather_config or WeatherConfig()
+        logging_config = logging_config or LoggingConfig()
+
+        fallback = world.orientation if world is not None else "north_south"
+
+        def gradient(spec) -> Gradient:
+            return Gradient(
+                orientation=spec.orientation or fallback,
+                start=spec.start,
+                end=spec.end,
+            )
+
+        self._temperature_gradient = gradient(self._env_config.temperature_gradient)
+        self._humidity_gradient = gradient(self._env_config.humidity_gradient)
+        self._pressure_gradient = gradient(self._env_config.pressure_gradient)
+        self._light_gradient = gradient(self._env_config.light_gradient)
+
+        self._event_log = EventLog("environment", enabled=logging_config.business)
+        self._readings_enabled = logging_config.readings
+        self._readings_interval = max(1, logging_config.readings_interval)
+
+        self._last_day = calendar.day
+        self._last_season = calendar.season
+        self._last_weather = self.weather
+        self._last_tick = calendar.tick
+
+        logger.debug(
+            "environment.created cols=%s rows=%s season_strategy=%s "
+            "daynight_strategy=%s weather_strategy=%s gradients=%s/%s/%s/%s",
+            getattr(world, "cols", None),
+            getattr(world, "rows", None),
+            type(season_strategy).__name__ if season_strategy else None,
+            type(daynight_strategy).__name__ if daynight_strategy else None,
+            type(weather_strategy).__name__ if weather_strategy else None,
+            self._temperature_gradient.orientation,
+            self._humidity_gradient.orientation,
+            self._pressure_gradient.orientation,
+            self._light_gradient.orientation,
+        )
 
     # ------------------------------------------------------------------
     # Identity
@@ -77,6 +123,14 @@ class Environment(IEnvironment):
     @property
     def calendar(self) -> ICalendar:
         return self._calendar
+
+    @property
+    def config(self) -> EnvironmentConfig:
+        return self._env_config
+
+    @property
+    def weather_config(self) -> WeatherConfig:
+        return self._weather_config
 
     @property
     def weather_strategy(self) -> Optional[IWeatherStrategy]:
@@ -94,6 +148,16 @@ class Environment(IEnvironment):
         if self._world is not None:
             return self._world.width / 2.0, self._world.height / 2.0
         return 0.0, 0.0
+
+    def _extent(self):
+        if self._world is None:
+            return 1.0, 1.0
+        return max(1.0, self._world.width), max(1.0, self._world.height)
+
+    def _position(self, x: float, y: float) -> float:
+        """Normalised gradient position (0..1) for readings."""
+        width, height = self._extent()
+        return self._temperature_gradient.factor(x, y, width, height)
 
     # ------------------------------------------------------------------
     # Aggregate readings (HUD)
@@ -134,38 +198,61 @@ class Environment(IEnvironment):
         return self._weather_strategy.weather_at(x, y)
 
     def light_at(self, x: float, y: float) -> float:
+        palette = self.palette
         if self._daynight_strategy is None:
             base = _STATIC_LIGHT
         else:
-            base = self._daynight_strategy.light_at(self._calendar, x, y)
+            base = self._daynight_strategy.light_at(
+                self._calendar, x, y, season_factor=palette.light_influence
+            )
 
-        dim = _WEATHER_LIGHT.get(self.weather_at(x, y), 1.0)
-        return _clamp(base * dim, 0.0, 1.0)
+        width, height = self._extent()
+        gradient = self._light_gradient.value(x, y, width, height)
+        dim = self._weather_config.light_factors.get(self.weather_at(x, y), 1.0)
+        return _clamp(base * gradient * dim, 0.0, 1.0)
 
     def humidity_at(self, x: float, y: float) -> float:
-        pal = self.palette
-        humidity = pal.humidity + _WEATHER_HUMIDITY.get(self.weather_at(x, y), 0.0)
-        humidity += 0.05 * math.sin(x / 130.0) * math.cos(y / 110.0)
+        palette = self.palette
+        width, height = self._extent()
+        humidity = palette.humidity
+        humidity += self._weather_config.humidity_offsets.get(
+            self.weather_at(x, y), 0.0
+        )
+        humidity += self._humidity_gradient.value(x, y, width, height)
+        noise = 0.05 * self._env_config.microclimate
+        humidity += noise * math.sin(x / 130.0) * math.cos(y / 110.0)
         return _clamp(humidity, 0.0, 1.0)
 
     def pressure_at(self, x: float, y: float) -> float:
-        pal = self.palette
-        pressure = pal.pressure_hpa + _WEATHER_PRESSURE_HPA.get(
+        palette = self.palette
+        width, height = self._extent()
+        pressure = palette.pressure_hpa
+        pressure += self._weather_config.pressure_offsets.get(
             self.weather_at(x, y), 0.0
         )
-        pressure += 1.5 * math.sin(x / 140.0) * math.cos(y / 120.0)
+        pressure += self._pressure_gradient.value(x, y, width, height)
+        noise = 1.5 * self._env_config.microclimate
+        pressure += noise * math.sin(x / 140.0) * math.cos(y / 120.0)
         return round(pressure, 1)
 
     def temperature_at(self, x: float, y: float) -> float:
-        pal = self.palette
+        palette = self.palette
+        width, height = self._extent()
         light = self.light_at(x, y)
 
-        temperature = pal.base_temperature + pal.temperature_swing * (2.0 * light - 1.0)
-        temperature += _WEATHER_TEMP_C.get(self.weather_at(x, y), 0.0)
+        temperature = palette.base_temperature + palette.temperature_swing * (
+            2.0 * light - 1.0
+        )
+        temperature += self._weather_config.temperature_offsets.get(
+            self.weather_at(x, y), 0.0
+        )
+        temperature += self._temperature_gradient.value(x, y, width, height)
 
-        # Smooth position-dependent variation (about +/- 3 C).
-        microclimate = 2.2 * math.sin(x / 210.0) * math.cos(y / 170.0)
-        microclimate += 0.8 * math.sin((x + y) / 95.0)
+        # Fine-grained variation so neighbouring cells differ even inside one
+        # weather front; scaled by `EnvironmentConfig.microclimate`.
+        amount = self._env_config.microclimate
+        microclimate = 2.2 * amount * math.sin(x / 210.0) * math.cos(y / 170.0)
+        microclimate += 0.8 * amount * math.sin((x + y) / 95.0)
         temperature += microclimate
 
         return round(temperature, 1)
@@ -178,7 +265,76 @@ class Environment(IEnvironment):
         if self._weather_strategy is not None:
             self._weather_strategy.update(self._calendar.tick, self)
 
+        tick = self._calendar.tick
+        day = self._calendar.day
+        season = self._calendar.season
+        weather = self.weather
+
+        if day != self._last_day:
+            self._event_log.event(
+                "environment.day_changed",
+                day=day,
+                season=season,
+                clock=self._calendar.clock,
+                year=self._calendar.year,
+            )
+            self._last_day = day
+
+        if season != self._last_season:
+            self._event_log.event(
+                "environment.season_changed",
+                previous=self._last_season,
+                season=season,
+                day=day,
+                year=self._calendar.year,
+                ticks_per_season=self._calendar.ticks_per_season,
+            )
+            self._last_season = season
+
+        if weather != self._last_weather:
+            self._event_log.event(
+                "environment.weather_changed",
+                previous=self._last_weather,
+                weather=weather,
+                season=season,
+                tick=tick,
+            )
+            self._last_weather = weather
+
+        if (
+            self._readings_enabled
+            and tick - self._last_tick >= self._readings_interval
+        ):
+            self._log_reading(tick, day, season, weather)
+            self._last_tick = tick
+
+    def _log_reading(self, tick: int, day: int, season: str, weather: str) -> None:
+        if not logger.isEnabledFor(logging.DEBUG):
+            return
+        x, y = self._reference_point()
+        logger.debug(
+            "environment.reading tick=%s day=%s clock=%s season=%s phase=%s "
+            "weather=%s temperature=%.1f humidity=%.2f pressure=%.1f light=%.2f "
+            "gradient_position=%.2f",
+            tick,
+            day,
+            self._calendar.clock,
+            season,
+            self.phase,
+            weather,
+            self.temperature_at(x, y),
+            self.humidity_at(x, y),
+            self.pressure_at(x, y),
+            self.light_at(x, y),
+            self._position(x, y),
+        )
+
     def reset(self) -> None:
         self._calendar.reset()
         if self._weather_strategy is not None:
             self._weather_strategy.reset()
+        self._last_day = self._calendar.day
+        self._last_season = self._calendar.season
+        self._last_weather = self.weather
+        self._last_tick = self._calendar.tick
+        self._event_log.event("environment.reset", tick=self._calendar.tick)

@@ -21,6 +21,9 @@ from typing import Dict, List, Sequence, Tuple
 from sim.config import SeasonConfig
 from sim.domain.visuals import SeasonPalette
 from sim.interfaces.environment import ICalendar, ISeasonStrategy
+from sim.observability import get_logger
+
+logger = get_logger("season")
 
 Color = Tuple[int, int, int]
 
@@ -57,6 +60,11 @@ def seasonal_gradient(base: Color, next_base: Color, progress: float) -> Color:
     return mix(base, mix(base, next_base, 0.28), (progress - 0.5) / 0.5)
 
 
+def gradient_color(start: Color, end: Color, progress: float) -> Color:
+    """Explicit ``(start, end)`` colour gradient over a season."""
+    return mix(start, end, _clamp(progress, 0.0, 1.0))
+
+
 class SeasonStrategy(ISeasonStrategy):
     def __init__(self, seasons: Sequence[SeasonConfig], ticks_per_season: int):
         if not seasons:
@@ -87,7 +95,7 @@ class SeasonStrategy(ISeasonStrategy):
 
     def get_season_name(self, calendar: ICalendar) -> str:
         """Return the current season name from the strategy perspective."""
-        return calendar.season
+        return self._definition(calendar.season).name
 
     def weather_weights(self, season: str) -> Dict[str, float]:
         return dict(self._definition(season).weather_weights)
@@ -96,15 +104,20 @@ class SeasonStrategy(ISeasonStrategy):
         season = calendar.season
         definition = self._definition(season)
         next_definition = self._next_definition(season)
+        progress = calendar.season_progress
 
-        ground = seasonal_gradient(
-            definition.ground_color,
-            next_definition.ground_color,
-            calendar.season_progress,
-        )
+        if definition.ground_gradient is not None:
+            start, end = definition.ground_gradient
+            ground = gradient_color(start, end, progress)
+        else:
+            ground = seasonal_gradient(
+                definition.ground_color,
+                next_definition.ground_color,
+                progress,
+            )
         details = tuple(definition.detail_colors) or (shade(ground, 0.8),)
 
-        return SeasonPalette(
+        palette = SeasonPalette(
             name=definition.name,
             ground=ground,
             details=details,
@@ -112,4 +125,13 @@ class SeasonStrategy(ISeasonStrategy):
             temperature_swing=definition.temperature_swing,
             humidity=definition.humidity,
             pressure_hpa=definition.pressure_hpa,
+            light_influence=definition.light_influence,
         )
+        logger.debug(
+            "season.palette season=%s progress=%.3f ground=%s light_influence=%.3f",
+            definition.name,
+            progress,
+            ground,
+            definition.light_influence,
+        )
+        return palette

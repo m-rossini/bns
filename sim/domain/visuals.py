@@ -21,6 +21,8 @@ class SeasonPalette:
     temperature_swing: float
     humidity: float
     pressure_hpa: float
+    #: Season's influence on the day/night light curve (1.0 = neutral).
+    light_influence: float = 1.0
 
 
 @dataclass(frozen=True)

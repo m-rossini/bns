@@ -58,9 +58,11 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
 - **Calendar** — the single time authority: tick → day, clock, season, year.
 - **Seasons** — any number, defined entirely by configuration. Each season has
   a colour gradient, temperature baseline and swing, humidity, pressure, sun
-  intensity, daylight fraction and weather weights. The ground colour is
-  season-driven, not random: green shades mark growing seasons (spring/summer)
-  and brown shades mark dry or dormant seasons (autumn/winter).
+  intensity, daylight fraction, weather weights and a ground-colour meaning.
+  The ground colour is season-driven, not random: green shades mark growing
+  seasons (spring/summer) and brown shades mark dry or dormant seasons
+  (autumn/winter). The meaning is shown in the Environment box legend and is
+  owned by the season strategy's config (`SeasonConfig.ground_meaning`).
 - **Day/night** — sun altitude, dawn/dusk/night phases, moon phase, sky palette,
   and smooth local shading of the light curve.
 - **Weather** — a per-cell field made of a patchy background condition plus

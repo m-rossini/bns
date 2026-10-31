@@ -767,8 +767,8 @@ class ArcadeView(arcade.Window):
                     left + 12, top - 84, _MUTED, font_size=11,
                 )
                 self._text.draw(
-                    "ground: green = growing season   ·   brown = dry / dormant "
-                    "(season-driven, not random)",
+                    f"ground ({palette.ground_meaning}): "
+                    f"{palette.name.lower()} colour, season-driven not random",
                     left + 12, top - 102, _DIM, font_size=9,
                 )
             else:
@@ -822,35 +822,42 @@ class ArcadeView(arcade.Window):
                     _MUTED, font_size=11,
                 )
 
-        # ---- Weather field (fills the remaining stack) -----------------
+        # ---- Weather field (fills the remaining stack, capped) ------------
         remaining = cursor - limit
         if remaining >= 80 and env is not None and world is not None:
             top = cursor
-            h = remaining
+            # Cap the box height so it never swallows the sidebar on tall
+            # windows; census rows are limited by box height anyway.
+            h = min(remaining, 220)
             self._box(left, top, width, h, "Weather field")
             self._draw_weather_census(session, left + 12, top - 34, width - 24, h)
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
-        h = controls_h
-        self._box(left, _MARGIN + h, width, h, "Controls")
+        # Box height gives each key its own row plus a dedicated slider row
+        # at the bottom, so nothing overlaps or clips against the window edge.
+        h = 160
+        box_bottom = _MARGIN
+        box_top = box_bottom + h
+        self._box(left, box_top, width, h, "Controls")
         lines = [
             ("SPACE", "start / restart"),
             ("P", "pause / resume"),
             ("Esc / Q", "quit"),
             ("Click", "inspect cell"),
         ]
-        y = _MARGIN + h - 30
+        # Stack keys from the top down with even spacing.
+        y = box_top - 34
         for key, action in lines:
             self._text.draw(key, left + 12, y, _ACCENT, font_size=11, bold=True)
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
-            y -= 17
+            y -= 20
 
-        # ---- Playback-speed slider (inside the Controls box, bottom) ----
+        # ---- Playback-speed slider (dedicated row at the bottom) ----
         # Slows/speeds the *perceived* ticker only; sim time progression
         # (tick_rate, clock.tick) is unchanged. Value comes from config.
-        slider_y = _MARGIN + 2
+        slider_y = box_bottom + 14      # track, with padding above box edge
         track_w = width - 24
-        track_h = 8
+        track_h = 6
         track_x = left + 12
         thumb_w = 10
         scale = session.clock.time_scale
@@ -863,13 +870,13 @@ class ArcadeView(arcade.Window):
         filled = fraction * track_w
         if filled > 0:
             arcade.draw_lbwh_rectangle_filled(track_x, slider_y, filled, track_h, _SLIDER_TRACK_FILLED)
-        arcade.draw_lbwh_rectangle_filled(thumb_x, slider_y - 2, thumb_w, track_h + 4, _SLIDER_THUMB)
+        arcade.draw_lbwh_rectangle_filled(thumb_x, slider_y, thumb_w, track_h, _SLIDER_THUMB)
         arcade.draw_lbwh_rectangle_outline(
-            thumb_x, slider_y - 2, thumb_w, track_h + 4, _SLIDER_THUMB_EDGE, 1,
+            thumb_x, slider_y, thumb_w, track_h, _SLIDER_THUMB_EDGE, 1,
         )
         self._text.draw(
             f"Speed {scale:.2f}x   (drag to change)",
-            left + 12, slider_y + track_h + 10,
+            left + 12, slider_y + 18,     # label above the track, below the last key
             _MUTED, font_size=10,
         )
 

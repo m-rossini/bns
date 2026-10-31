@@ -98,6 +98,8 @@ class Environment(IEnvironment):
         self._last_season = calendar.season
         self._last_weather = self.weather
         self._last_tick = calendar.tick
+        self._palette_tick: Optional[int] = None
+        self._palette_cache: SeasonPalette = _STATIC_PALETTE
 
         logger.debug(
             "environment.created cols=%s rows=%s season_strategy=%s "
@@ -187,7 +189,11 @@ class Environment(IEnvironment):
     def palette(self) -> SeasonPalette:
         if self._season_strategy is None:
             return _STATIC_PALETTE
-        return self._season_strategy.palette(self._calendar)
+        tick = self._calendar.tick
+        if tick != self._palette_tick:
+            self._palette_cache = self._season_strategy.palette(self._calendar)
+            self._palette_tick = tick
+        return self._palette_cache
 
     # ------------------------------------------------------------------
     # Positional readings
@@ -338,4 +344,5 @@ class Environment(IEnvironment):
         self._last_season = self._calendar.season
         self._last_weather = self.weather
         self._last_tick = self._calendar.tick
+        self._palette_tick = None
         self._event_log.event("environment.reset", tick=self._calendar.tick)

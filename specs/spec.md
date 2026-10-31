@@ -615,11 +615,34 @@ gender ratios and per-gender color mappings. Default: poisson_disc placement,
 average density, 50/50 male/female, male blue `(0, 0, 255)`, female red
 `(255, 0, 0)`.
 
+**Collision-free placement**: every bean position is validated before
+acceptance. Beans do not overlap each other (minimum distance = 2 ×
+`bean_radius`), do not overlap barriers, and stay fully inside the world
+bounds (margin = `bean_radius`). The shared helper
+`sim.domain.placement_utils.is_valid_bean_position()` is used by all
+placement strategies to guarantee these invariants.
+
 ### 9.7 Logging
 
 `LoggingConfig(level="INFO", business=True, readings=True,
 readings_interval=60)`. `BEAN_LOG_LEVEL` overrides `level` at runtime; the
 Makefile exposes it as `LOG_LEVEL`. See §12.
+
+### 9.8 Testing
+
+Tests live in `sim/tests/` and are run with pytest. Coverage is measured with
+`coverage` and reported via `pytest-cov`.
+
+| Make target | Command | Purpose |
+|-------------|---------|---------|
+| `make test-pytest` | `pytest sim/tests/ -v` | Run all tests |
+| `make test-cov` | `pytest sim/tests/ --cov=sim` | Run with coverage report |
+| `make test` | `test-pytest` + `test-cov` | Full local test suite |
+| `make test-container` | `docker run ... pytest ...` | Run tests inside the container (preferred) |
+
+Coverage target: **100% line coverage** on `sim/domain/`,
+`sim/implementations/placement/`, `sim/implementations/gender.py`, and
+`sim/domain/placement_utils.py`.
 
 ---
 
@@ -784,7 +807,10 @@ Environment variables:
   `IGenderController`; `BeanPlacementConfig` drives strategy selection,
   density tier, variance and gender ratios/colors. `DEFAULT_CONFIG` spawns
   ~1300 beans (poisson_disc, average density, 50/50 male/female), drawn as
-  small crosses in gender color.
+  small crosses in gender color. All positions are collision-free (no bean-bean,
+  bean-barrier, or bean-border overlap) via `placement_utils.is_valid_bean_position()`.
+- Automated tests in `sim/tests/` with pytest + coverage: placement strategies,
+  gender controller, spawn controller, config validation.
 - Positional temperature, humidity, pressure and light with configurable
   gradients (N/S, W/E, centre-out, out-centre, diagonals).
 - Rendering: start/playing/paused/end screens, animated sky, seasons, per-cell

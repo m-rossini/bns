@@ -3,6 +3,10 @@
 Seeds distinct bacterial colonies by grouping beans tightly around
 randomized biological mother centroids whose count scales with world area.
 
+All positions are **collision-free**: beans do not overlap each other, do not
+overlap barriers, and stay inside the world bounds (accounting for bean
+radius).
+
 Tunable attributes:
 * Area Per Cluster Metric
 * Cluster Spread Standard Deviation (sigma)
@@ -20,9 +24,11 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
-from sim.domain.beans import Position
+from sim.domain.beans import Bean, Position
+from sim.domain.placement_utils import is_valid_bean_position
+from sim.domain.world import World
 from sim.interfaces.placement import IPlacementStrategy
 from sim.observability import get_logger
 
@@ -43,7 +49,13 @@ class ColonyClusterStrategy(IPlacementStrategy):
         self.seed = seed
 
     def generate_positions(
-        self, n: int, width: float, height: float
+        self,
+        n: int,
+        width: float,
+        height: float,
+        world: Optional[World] = None,
+        existing: Optional[List[Bean]] = None,
+        radius: float = 0.0,
     ) -> List[Position]:
         if n <= 0:
             return []
@@ -65,7 +77,7 @@ class ColonyClusterStrategy(IPlacementStrategy):
         beans_per_cluster = max(1, n // c)
         remainder = n % c
 
-        points: List[Position] = []
+        points: List[Position] = list(existing or [])
         for cluster_idx, (cx, cy) in enumerate(centroids):
             count = beans_per_cluster + (1 if cluster_idx < remainder else 0)
             for _ in range(count):
@@ -74,14 +86,24 @@ class ColonyClusterStrategy(IPlacementStrategy):
                 factor = self.cluster_spread_sigma * math.sqrt(-2.0 * math.log(u1))
                 dx = factor * math.cos(2.0 * math.pi * u2)
                 dy = factor * math.sin(2.0 * math.pi * u2)
-                x = max(0.0, min(width, cx + dx))
-                y = max(0.0, min(height, cy + dy))
+                x = cx + dx
+                y = cy + dy
+                # Clamp into bounds first, then collision-check.
+                x = max(0.0, min(width, x))
+                y = max(0.0, min(height, y))
+                if not is_valid_bean_position(x, y, radius, world, points):
+                    continue
                 points.append((x, y))
+                if len(points) - len(existing or []) >= n:
+                    break
+            if len(points) - len(existing or []) >= n:
+                break
 
+        new_points = points[len(existing or []):]
         logger.debug(
             "placement.colony_cluster requested=%d produced=%d clusters=%d",
             n,
-            len(points),
+            len(new_points),
             c,
         )
-        return points[:n]
+        return new_points[:n]

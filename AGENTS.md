@@ -11,6 +11,7 @@ Start here, then follow the link for the level of detail you need.
 | [`CLAUDE.md`](./CLAUDE.md) | Behaviour and ground rules for agents. |
 | [`TODO.md`](./TODO.md) | Task board for the current change set. |
 | [`skills/git.md`](./skills/git.md) | Local git workflow: branch/worktree → commit → push → PR → merge → clean. |
+| [`skills/container-test.md`](./skills/container-test.md) | Running tests inside the container (preferred verification path). |
 
 ## Reading order
 
@@ -21,5 +22,6 @@ Start here, then follow the link for the level of detail you need.
 ## Ground rules
 
 See [`CLAUDE.md`](./CLAUDE.md). In short: never commit to `main` directly, use
-the git workflow in `skills/git.md`, and keep documentation aligned with the
-code.
+the git workflow in `skills/git.md`, verify tests in the container via
+`skills/container-test.md` (`make test-container`), and keep documentation
+aligned with the code.

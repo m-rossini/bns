@@ -89,7 +89,12 @@ class SpawnController(ISpawnController):
 
         # Step 3: generate positions via the active placement strategy.
         positions = self.placement.generate_positions(
-            n, self.world.width, self.world.height
+            n,
+            self.world.width,
+            self.world.height,
+            world=self.world,
+            existing=[],
+            radius=cfg.bean_radius,
         )
         log_event(
             logger,

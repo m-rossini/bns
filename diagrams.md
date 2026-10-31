@@ -200,6 +200,45 @@ classDiagram
         +generate_positions(n, width, height) list[tuple]
     }
 
+    class SymmetricalStrategy {
+        +name: str
+        +symmetry_axes: int
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class ColonyClusterStrategy {
+        +name: str
+        +area_per_cluster: float
+        +cluster_spread_sigma: float
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class CenterToBorderStrategy {
+        +name: str
+        +falloff_exponent: float
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class BorderToCenterStrategy {
+        +name: str
+        +ring_thickness_ratio: float
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class LinearGradientStrategy {
+        +name: str
+        +direction_angle: float
+        +bias_strength: float
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class ResourceGradientStrategy {
+        +name: str
+        +noise_frequency: float
+        +threshold: float
+        +generate_positions(n, width, height) list[tuple]
+    }
+
     class GenderController {
         +gender_names: tuple
         +colors: dict
@@ -294,6 +333,12 @@ classDiagram
     WeatherStrategy ..|> IWeatherStrategy
     BarrierStrategy ..|> IBarrierStrategy
     PoissonDiscStrategy ..|> IPlacementStrategy
+    SymmetricalStrategy ..|> IPlacementStrategy
+    ColonyClusterStrategy ..|> IPlacementStrategy
+    CenterToBorderStrategy ..|> IPlacementStrategy
+    BorderToCenterStrategy ..|> IPlacementStrategy
+    LinearGradientStrategy ..|> IPlacementStrategy
+    ResourceGradientStrategy ..|> IPlacementStrategy
     GenderController ..|> IGenderController
     Environment ..|> IEnvironment
 

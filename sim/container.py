@@ -7,24 +7,37 @@ calendar needs the configured season names. Season and day/night are siblings
 that both read the calendar; neither owns the other.
 """
 
-from typing import Optional, Type, Union
+from typing import List, Optional, Type, Union
 
 from sim.components import GameSession
-from sim.config import SimulationConfig
+from sim.config import BEAN_DENSITY_THRESHOLDS, SimulationConfig
 from sim.domain.calendar import Calendar
 from sim.domain.environment import Environment
 from sim.domain.session import GameSession as ConcreteGameSession
+from sim.domain.spawn_controller import SpawnController
 from sim.domain.world import World
 from sim.implementations.barrier import BarrierStrategy
 from sim.implementations.daynight import DayNightStrategy
+from sim.implementations.gender import GenderController
+from sim.implementations.placement import (
+    BorderToCenterStrategy,
+    CenterToBorderStrategy,
+    ColonyClusterStrategy,
+    LinearGradientStrategy,
+    PoissonDiscStrategy,
+    ResourceGradientStrategy,
+    SymmetricalStrategy,
+)
 from sim.implementations.season import SeasonStrategy
 from sim.implementations.weather import WeatherStrategy
 from sim.interfaces.barrier import IBarrierStrategy
+from sim.interfaces.gender import IGenderController
 from sim.interfaces.environment import (
     IDayNightStrategy,
     ISeasonStrategy,
     IWeatherStrategy,
 )
+from sim.interfaces.placement import IPlacementStrategy, ISpawnController
 from sim.observability import get_logger
 
 logger = get_logger("container")
@@ -32,6 +45,16 @@ logger = get_logger("container")
 _DAYNIGHT_NAMES = {"daynight", "daynightstrategy", "default"}
 _SEASON_NAMES = {"season", "seasonstrategy", "default"}
 _WEATHER_NAMES = {"weather", "weatherstrategy", "default"}
+
+_PLACEMENT_NAMES = {
+    "poisson_disc": PoissonDiscStrategy,
+    "symmetrical": SymmetricalStrategy,
+    "colony_cluster": ColonyClusterStrategy,
+    "center_to_border": CenterToBorderStrategy,
+    "border_to_center": BorderToCenterStrategy,
+    "linear_gradient": LinearGradientStrategy,
+    "resource_gradient": ResourceGradientStrategy,
+}
 
 Strategy = Union[IWeatherStrategy, ISeasonStrategy, IDayNightStrategy]
 
@@ -46,9 +69,17 @@ class Container:
         self.session = self._build_session()
         self.debug = config.debug
         self._place_barriers()
+        self.placement_strategy: IPlacementStrategy = self._build_placement_strategy(
+            config
+        )
+        self.gender_controller: IGenderController = self._build_gender_controller(
+            config
+        )
+        self.spawn_controller: ISpawnController = self._build_spawn_controller(config)
+        self.beans = self._spawn_beans()
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
-            "seasons=%s strategies=%s/%s/%s barriers=%s",
+            "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s beans=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -60,6 +91,8 @@ class Container:
             config.environment.daynight_strategy,
             config.environment.weather_strategy,
             len(self.world.barriers),
+            config.bean_placement.strategy_name,
+            len(self.beans),
         )
 
     # ------------------------------------------------------------------
@@ -80,6 +113,72 @@ class Container:
         """Generate and register the strategy's barriers (validated by it)."""
         for barrier in self.barrier_strategy.create_barriers(self.world):
             self.world.add_barrier(barrier)
+
+    # ------------------------------------------------------------------
+    # Bean placement
+    # ------------------------------------------------------------------
+    def _build_placement_strategy(
+        self, config: SimulationConfig
+    ) -> IPlacementStrategy:
+        bp = config.bean_placement
+        cls = _PLACEMENT_NAMES.get(bp.strategy_name)
+        if cls is None:
+            raise ValueError(
+                f"Unknown placement strategy {bp.strategy_name!r}. "
+                f"Use one of: {sorted(_PLACEMENT_NAMES)}"
+            )
+        if cls is PoissonDiscStrategy:
+            return cls(
+                base_spacing_scale=bp.base_spacing_scale,
+                max_retry_limit=bp.max_retry_limit,
+                seed=bp.seed,
+            )
+        if cls is SymmetricalStrategy:
+            return cls(symmetry_axes=bp.symmetry_axes, seed=bp.seed)
+        if cls is ColonyClusterStrategy:
+            return cls(
+                area_per_cluster=bp.area_per_cluster,
+                cluster_spread_sigma=bp.cluster_spread_sigma,
+                seed=bp.seed,
+            )
+        if cls is CenterToBorderStrategy:
+            return cls(falloff_exponent=bp.falloff_exponent, seed=bp.seed)
+        if cls is BorderToCenterStrategy:
+            return cls(ring_thickness_ratio=bp.ring_thickness_ratio, seed=bp.seed)
+        if cls is LinearGradientStrategy:
+            return cls(
+                direction_angle=0.0, bias_strength=bp.bias_strength, seed=bp.seed
+            )
+        if cls is ResourceGradientStrategy:
+            threshold = BEAN_DENSITY_THRESHOLDS.get(bp.density_tier, 0.50)
+            return cls(
+                noise_frequency=bp.noise_frequency,
+                threshold=threshold,
+                seed=bp.seed,
+            )
+        return cls(seed=bp.seed)
+
+    def _build_gender_controller(
+        self, config: SimulationConfig
+    ) -> IGenderController:
+        return GenderController(config.bean_placement)
+
+    def _build_spawn_controller(
+        self, config: SimulationConfig
+    ) -> ISpawnController:
+        return SpawnController(
+            config=config,
+            world=self.world,
+            session=self.session,
+            placement_strategy=self.placement_strategy,
+            gender_controller=self.gender_controller,
+        )
+
+    def _spawn_beans(self) -> List:
+        """Run the spawn controller and store resulting beans in the session."""
+        beans = self.spawn_controller.spawn_beans()
+        self.session.beans = beans
+        return beans
 
     # ------------------------------------------------------------------
     # Calendar

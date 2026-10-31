@@ -13,8 +13,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 7 | Grid rendering derived from `cell_size` / world cols-rows | `feat/rendering` | [x] |
 | 8 | `diagrams.md` with Mermaid class + sequence diagrams, linked from README | `feat/docs` | [x] |
 | 9 | Align `spec.md`, `AGENTS.md` and `CLAUDE.md` with the code | `feat/docs` | [x] |
-| 10 | Verify: compile, headless run, windowed screenshots, container verify | all | [~] |
-| 11 | Commit → push → PR → merge → clean per `skills/git.md` | all | [~] |
+| 10 | Verify: compile, headless run, windowed screenshots, container verify | all | [x] |
+| 11 | Commit → push → PR → merge → clean per `skills/git.md` | all | [x] |
 
 ## Verification log
 
@@ -33,9 +33,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Container `DISPLAY=:0 make run-container-ui` — window created,
   `app.start` / `app.window_created` logged.
 - Keyboard state machine — SPACE/P/P/Q/Esc verified.
+- Post-merge `main` (`b47ee03`): `make test` passes and the worktree is clean.
 
 ## Worktrees
 
-- `feat/climate-logging` → `/tmp/opencode/wt-climate` — merged in PR #20.
-- `feat/rendering` → `/tmp/opencode/wt-render` — merged in PR #21.
-- `feat/docs` → `/tmp/opencode/wt-docs` — README, diagrams, spec, agent docs.
+- `feat/climate-logging` → merged in PR #20; worktree removed.
+- `feat/rendering` → merged in PR #21; worktree removed.
+- `feat/docs` → merged in PR #22; worktree removed.
+- `main` at `b47ee03`, clean, no worktrees.

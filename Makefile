@@ -126,6 +126,7 @@ test-container: build
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=300 \
 		--env BEAN_LOG_LEVEL=INFO \
+		--env COVERAGE_FILE=/tmp/.coverage \
 		-v $$(pwd):/app:ro \
 		-w /app \
 		$(CONTAINER_IMAGE) \

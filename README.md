@@ -44,9 +44,12 @@ Requires Python 3.10+ and `arcade` (installed by `make install`).
 | `Q` / `Esc` | Quit (works from every state) |
 | Left click | Inspect a cell; the selection stays pinned |
 | Click outside the world | Clear the pinned selection |
+| Drag the speed slider (sidebar "Controls") | Slow / speed the perceived ticker |
 
 The simulation clock only advances while the session is `PLAYING`. `START` and
-`PAUSED` freeze simulation time while still redrawing the screen.
+`PAUSED` freeze simulation time while still redrawing the screen. The speed
+slider changes *perception* only: it scales how fast the ticker appears to run
+without touching `tick_rate` or sim-time progression (`clock.tick`).
 
 ---
 
@@ -62,6 +65,19 @@ The simulation clock only advances while the session is `PLAYING`. `START` and
   moving circular fronts. Neighbouring cells can show different conditions.
 - **Environment** — composes the three strategies into positional readings:
   temperature (°C), light (0..1), humidity (0..1) and atmospheric pressure (hPa).
+- **Barriers** — static, cell-aligned rectangular obstacles owned by a barrier
+  strategy (`IBarrierStrategy` + `BarrierStrategy`). Each barrier has a
+  configurable colour (default yellow) and may span at most 3 grid cells in
+  either direction (3×3, 3×1, 1×2, …). The container generates a deterministic
+  set at startup and `World.add_barrier` validates spans and bounds.
+- **Season-owned sun** — `SeasonStrategy.solar_profile()` publishes how much sun
+  the world gets (`sun_intensity`, `daylight_fraction`), blending into the next
+  season over the final quarter of the season. Day/night and weather derive
+  their values from it.
+- **Climate-aware weather** — `IWeatherStrategy.update(tick, ClimateContext)`
+  receives season, world geometry, temperature, humidity, pressure and the
+  solar profile, and reshapes the season's weather weights (rain falls as snow
+  below freezing, storms need warmth and moisture, etc.).
 - **Rendering** — a full-height world on the right and a stack of information
   boxes on the left. The grid is drawn from the configured cell size.
 
@@ -78,23 +94,29 @@ sim/
 ├── main.py                   # entry point, fixed-step loop, headless mode
 ├── domain/
 │   ├── calendar.py           # tick -> day / clock / season / year
+│   ├── climate.py            # SolarProfile, ClimateContext
 │   ├── environment.py        # positional readings + gradient composition
 │   ├── gradient.py           # orientation-aware positional gradients
 │   ├── session.py            # concrete GameSession
-│   ├── visuals.py            # SeasonPalette, SkyPalette, CelestialState
-│   └── world.py              # bounds, cells, orientation, wrap/clamp
+│   ├── visuals.py            # SeasonPalette, SkyPalette, CelestialState, SolarProfile
+│   └── world.py              # bounds, cells, orientation, wrap/clamp, barriers
 ├── interfaces/
+│   ├── barrier.py            # IBarrierStrategy
 │   ├── environment.py        # ICalendar, ISeasonStrategy, IDayNightStrategy,
 │   │                         # IWeatherStrategy, IEnvironment
 │   ├── renderer.py           # IRenderer protocol
 │   └── world.py              # IWorld
 ├── implementations/
+│   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
 │   ├── daynight/__init__.py  # DayNightStrategy
-│   ├── season/__init__.py    # SeasonStrategy
-│   └── weather/__init__.py   # WeatherStrategy
-├── input/keyboard.py         # KeyboardInput state machine
-├── rendering/arcade_view.py  # Arcade window, HUD, cached Text rendering
-├── time/game_clock.py        # pause-aware fixed-step accumulator
+│   ├── season/__init__.py    # SeasonStrategy (owns sun via solar_profile)
+│   └── weather/__init__.py   # WeatherStrategy (climate-aware)
+├── input/keyboard.py         # KeyboardInput state machine (+ set_time_scale)
+├── rendering/
+│   ├── __init__.py
+│   ├── arcade_view.py        # Arcade window, HUD, cached Text rendering
+│   └── layout.py             # WorldLayout: single draw + hit-test layout
+├── time/game_clock.py        # pause-aware fixed-step accumulator + set_time_scale
 └── __init__.py
 ```
 
@@ -107,12 +129,14 @@ sequence diagrams.
 
 `Calendar` owns the tick. `SeasonStrategy` and `DayNightStrategy` are siblings
 that both read it; neither owns the other. `Environment` owns the composition
-and is the only object that produces positional readings.
+and is the only object that produces positional readings. `SeasonStrategy`
+publishes a `SolarProfile` (how much sun the world gets) which `DayNightStrategy`
+turns into light and `WeatherStrategy` uses to shape its climate.
 
 ```text
-Calendar ──> SeasonStrategy ──┐
-    │        DayNightStrategy ├──> Environment ──> ArcadeView
-    └──────> WeatherStrategy ─┘
+Calendar ──> SeasonStrategy ── SolarProfile ──┐
+    │        DayNightStrategy ───────────────┼─> Environment ──> ArcadeView
+    └──────> WeatherStrategy ◄────────────────┘
 ```
 
 ### World and cells
@@ -125,7 +149,7 @@ cols = round(width / cell_size)
 rows = round(height / cell_size)
 ```
 
-Defaults: `1200 x 800` world units, `cell_size=50` → `24 x 16 = 384` cells.
+Defaults: `1200 x 800` world units, `cell_size=10` → `120 x 80 = 9600` cells.
 Weather, light and readings are sampled per cell. The view applies one uniform
 world→screen scale; it never assumes a pixel size for a cell.
 
@@ -140,9 +164,10 @@ the only object `main()` reads.
 | Dataclass | Owns |
 |-----------|------|
 | `WorldConfig` | size, cell size, orientation, wrap |
-| `TimeConfig` | ticks per day / season, start tick |
-| `SeasonConfig` | one season: colours, gradient, climate baseline, light influence, weather weights |
-| `DayNightConfig` | sun/moon speeds, shading, season-light strength, thresholds, sky colours |
+| `TimeConfig` | ticks per day / season, start tick, initial/min/max playback scale |
+| `BarrierConfig` | barrier colour (default yellow), max span cells, count, seed |
+| `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights |
+| `DayNightConfig` | sun/moon speeds, shading, thresholds, sky colours |
 | `WeatherConfig` | field interval, seed, front count/radius/drift, condition effects |
 | `EnvironmentConfig` | strategy class names + climate gradients + microclimate scale |
 | `LoggingConfig` | level, format, business/readings switches |
@@ -163,7 +188,8 @@ DEFAULT_CONFIG.seasons = [
         temperature_swing=3.0,
         humidity=0.85,
         pressure_hpa=1006.0,
-        light_influence=0.9,
+        sun_intensity=0.95,
+        daylight_fraction=0.50,
         weather_weights={"clear": 15, "cloudy": 25, "rain": 50, "storm": 10, "snow": 0},
     ),
     SeasonConfig(
@@ -173,11 +199,16 @@ DEFAULT_CONFIG.seasons = [
         temperature_swing=9.0,
         humidity=0.25,
         pressure_hpa=1018.0,
-        light_influence=1.1,
+        sun_intensity=1.15,
+        daylight_fraction=0.60,
         weather_weights={"clear": 70, "cloudy": 25, "rain": 5, "storm": 0, "snow": 0},
     ),
 ]
 ```
+
+`SeasonStrategy.solar_profile(calendar)` blends the current season's
+`sun_intensity` and `daylight_fraction` into the next season's over the final
+quarter of the season, so the hand-off is continuous.
 
 `SeasonStrategy.get_season_name(calendar)` is the interface point; alternate
 season implementations may name or order seasons however they like.
@@ -249,8 +280,8 @@ If `ground_gradient` is `None`, the ground colour falls back to
 ### How a reading is composed
 
 ```text
-light(x, y)       = sun_altitude * local_shading * season_light
-                    * light_gradient(x, y) * weather_light_factor
+light(x, y)       = sun_arc(season solar profile) * local_shading
+                    * sun_intensity * light_gradient(x, y) * weather_light_factor
 temperature(x, y) = season_base + swing * (2*light - 1)
                     + weather_temperature_offset
                     + temperature_gradient(x, y) + microclimate(x, y)
@@ -260,9 +291,10 @@ pressure(x, y)    = season_pressure + weather_pressure_offset
                     + pressure_gradient(x, y) + microclimate(x, y)
 ```
 
-`SeasonConfig.light_influence` (Summer `1.12`, Winter `0.78` by default) is
-applied by the day/night strategy, scaled by
-`DayNightConfig.season_light_influence` (1.0 = full effect, 0 = ignore).
+The season's `SolarProfile` (`sun_intensity`, `daylight_fraction`) drives the
+day/night light curve; the day/night strategy no longer applies a
+`light_influence` multiplier — that came from `SeasonConfig.light_influence`
+and `DayNightConfig.season_light_influence`, both removed.
 
 The per-condition offsets live in `WeatherConfig` (`temperature_offsets`,
 `humidity_offsets`, `pressure_offsets`, `light_factors`) and default to
@@ -290,8 +322,13 @@ A new field is built every `change_interval` ticks, deterministically from
    mask is below `background_coverage`;
 2. every **front** whose radius covers the cell.
 
-Severity order: `clear < cloudy < rain = snow < storm`. Snow only appears in
-seasons whose `weather_weights` allow it.
+The strategy receives a `ClimateContext` (season, world geometry, temperature,
+humidity, pressure, solar profile) and reshapes the season's weights with
+`ClimateContext.adjusted_weather_weights()`: rain falls as snow below freezing,
+storms need warmth and moisture, clear skies dominate dry air. Snow still only
+appears in seasons whose `weather_weights` allow it.
+
+Severity order: `clear < cloudy < rain = snow < storm`.
 
 ---
 
@@ -341,8 +378,10 @@ BEAN_LOG_LEVEL=WARNING python -m sim.main
 | `environment.reading` | DEBUG sample | temperature, humidity, pressure, light, gradient position |
 | `weather.field_rebuilt` | every interval | base, coverage, front count, radius range |
 | `weather.front` | DEBUG | index, kind, position, radius |
-| `season.palette` | DEBUG | season, progress, ground colour, light influence |
+| `season.palette` | DEBUG | season, progress, ground colour, sun intensity, daylight fraction |
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
+| `barrier.generated` | wiring | count, max_span_cells, color |
+| `session.time_scale` | slider | scale |
 
 Example (`LOG_LEVEL=DEBUG`):
 
@@ -361,18 +400,34 @@ Example (`LOG_LEVEL=DEBUG`):
 - **Layout** — a fixed left sidebar (`300..360 px`) holds stacked boxes: Time,
   Day, Season, Environment, Inspector, Weather field, Controls. The world uses
   the full height on the right and never sits under a box.
+- **WorldLayout** — a single layout object (`sim/rendering/layout.py`) owns the
+  world → screen projection and the cell grid. Both drawing (grid, cells,
+  markers, barriers) and hit-testing (mouse motion/press) use this one layout,
+  so the selected cell, the orange marker and the cursor always agree. Cell
+  rectangles are integer-snapped so they land on whole pixels.
 - **Day and season bars are separate** boxes, not a joined bar.
 - **Inspector** — click a cell to pin it. The orange outline and the readings
   use the same integer cell index, so they always agree. A crosshair marks the
   cell centre.
 - **Grid** — one line per cell boundary, derived from `world.cell_size` and
   `world.cols` / `world.rows`. The drawn world spans `cols*cell_size` by
-  `rows*cell_size`, so lines always land on cell edges.
+  `rows*cell_size`, so lines always land on cell edges. Cells are drawn in
+  screen units that honour `cell_size`, ready for beans to be drawn per cell.
+- **Barriers** — drawn as filled cell-aligned rectangles in the barrier
+  strategy's colour (default yellow), with a dark outline.
+- **Playback-speed slider** — in the Controls box. Drag to slow / speed the
+  perceived ticker; it sets `GameClock.time_scale` (clamped to
+  `time_scale_min`/`time_scale_max`) and never changes `tick_rate` or
+  sim-time progression. The initial value comes from
+  `TimeConfig.initial_time_scale`.
 - **Text** — all text uses cached `arcade.Text` objects. `arcade.draw_text` is
   never called; it is extremely slow and emits a `PerformanceWarning`.
 - **Pointer mapping** — screen layout uses the active viewport size and mouse
   coordinates are scaled from the window size, so clicks line up on HiDPI or
   scaled displays. Layout is recomputed when the viewport changes.
+
+The default window is sized for 1:1 world rendering (1 world unit = 1 screen
+pixel) plus the sidebar, so the grid is crisp at startup.
 
 The weather field box shows the live census (cells and percentage per
 condition); rows are limited to the panel height and overflow is summarised as
@@ -436,11 +491,13 @@ Expected headless invariants:
 
 ## Known limitations
 
-- Beans, movement, collision and barriers are not implemented yet. `Barrier`
-  and `World.add_barrier` exist as extension points but `DEFAULT_CONFIG` does
-  not create any.
+- Beans, movement, collision are not implemented yet; the systems hook in
+  `main.py` is a placeholder. Barriers ARE implemented: `DEFAULT_CONFIG`
+  creates 6 yellow barriers (validated at ≤ 3 cells per direction) and the view
+  draws them.
 - Weather fronts are rebuilt from a seed every interval; `front_drift_cells`
   can move them between rebuilds but they do not animate continuously within an
   interval.
 - The headless loop starts the session directly because there is no input to
   press `SPACE`.
+- Automated tests and lint/typecheck configuration.

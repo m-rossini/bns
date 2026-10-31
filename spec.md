@@ -37,31 +37,35 @@ bns/
     ├── domain/
     │   ├── __init__.py
     │   ├── calendar.py        # tick -> day / clock / season / year
+    │   ├── climate.py         # SolarProfile, ClimateContext
     │   ├── environment.py     # positional readings + gradient composition
     │   ├── gradient.py        # orientation-aware positional gradients
     │   ├── session.py         # concrete GameSession
-    │   ├── visuals.py         # SeasonPalette, SkyPalette, CelestialState
-    │   └── world.py           # bounds, cells, orientation, wrap/clamp
+    │   ├── visuals.py         # SeasonPalette, SkyPalette, CelestialState, SolarProfile
+    │   └── world.py           # bounds, cells, orientation, wrap/clamp, barriers
     ├── implementations/
     │   ├── __init__.py
+    │   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
     │   ├── daynight/__init__.py   # DayNightStrategy
-    │   ├── season/__init__.py     # SeasonStrategy
-    │   └── weather/__init__.py    # WeatherStrategy
+    │   ├── season/__init__.py     # SeasonStrategy (owns sun via solar_profile)
+    │   └── weather/__init__.py    # WeatherStrategy (climate-aware)
     ├── input/
     │   ├── __init__.py
-    │   └── keyboard.py        # KeyboardInput state machine
+    │   └── keyboard.py        # KeyboardInput state machine (+ set_time_scale)
     ├── interfaces/
     │   ├── __init__.py
+    │   ├── barrier.py         # IBarrierStrategy
     │   ├── environment.py     # ICalendar, ISeasonStrategy, IDayNightStrategy,
     │   │                      # IWeatherStrategy, IEnvironment
     │   ├── renderer.py        # IRenderer protocol
     │   └── world.py           # IWorld
     ├── rendering/
     │   ├── __init__.py
-    │   └── arcade_view.py     # Arcade window, HUD, cached Text rendering
+    │   ├── arcade_view.py     # Arcade window, HUD, cached Text rendering
+    │   └── layout.py          # WorldLayout: single draw + hit-test layout
     └── time/
         ├── __init__.py
-        └── game_clock.py      # advance_clock() fixed-step accumulator
+        └── game_clock.py      # advance_clock() fixed-step accumulator + set_time_scale
 ```
 
 There is no `sim/config_defaults.py`: `DEFAULT_CONFIG` lives at the bottom of
@@ -81,7 +85,7 @@ cols = round(width / cell_size)
 rows = round(height / cell_size)
 ```
 
-Defaults: `1200 x 800` world units, `cell_size = 50` → `24 x 16 = 384` cells.
+Defaults: `1200 x 800` world units, `cell_size = 10` → `120 x 80 = 9600` cells.
 
 - `World.cell_index(x, y)` maps a world position to `(col, row)`, clamped to
   the grid.
@@ -131,6 +135,12 @@ Fields: `real_dt`, `sim_dt`, `accumulator`, `tick`, `paused` (default `True`),
 `advance_clock(clock, real_dt, fixed_step) -> int` returns the number of ticks
 executed this frame. When `paused` it returns `0` and keeps the accumulator.
 
+`time_scale` changes *perception only*: it scales how fast simulated time seems
+to pass without changing `tick_rate` or the fixed-step accumulation. Use
+`set_time_scale(clock, value, vmin, vmax)` to set it, clamped to
+`[vmin, vmax]`; `initial_time_scale(...)` returns the configured value clamped
+to its range.
+
 ### 3.3 GameSession (`sim/components.py` + `sim/domain/session.py`)
 
 Top-level logical state container: `state`, `world`, `environment`, `clock`,
@@ -145,18 +155,31 @@ static barriers.
 - `cols`, `rows` (derived)
 - `orientation` — the default climate-gradient direction
 - `wrap_around`
+- `barrier_strategy` — the `IBarrierStrategy` that owns colour and span rules
 - `barriers: list[Barrier]`
-- `add_barrier(barrier)` / `remove_barrier(barrier_id)`
+- `add_barrier(barrier)` — validates against `barrier_strategy` (span ≤ max
+  cells per direction, inside bounds) before appending
+- `remove_barrier(barrier_id)`
 - `is_inside(x, y)` / `clamp_or_wrap(x, y)`
 - `cell_index(x, y)` / `cell_center(col, row)`
 
-`DEFAULT_CONFIG` creates no barriers; the type and methods are extension
-points for the bean systems.
+`DEFAULT_CONFIG` creates 6 yellow barriers via the barrier strategy; the
+view draws them. The type and methods are extension points for the bean
+systems.
 
 ### 3.5 Barrier (`sim/components.py`)
 
 Static obstacle: `id`, `kind` (`"rect"` or `"circle"`), `x`, `y`, `width`,
-`height`, `radius`.
+`height`, `radius`, `color`.
+
+Rules live in the barrier strategy (`IBarrierStrategy`):
+
+- `color` — fill colour; default yellow `(255, 208, 64)`, configurable.
+- `max_span_cells` — a barrier may span at most this many grid cells per
+  direction (default 3), so 3×3, 3×1, 1×2 and 2×2 are valid while 4×1 is
+  rejected.
+- `BarrierStrategy.create_barriers(world)` — deterministic placement from a
+  seed, with bounds and span validation.
 
 ### 3.6 Environment (`sim/domain/environment.py`)
 
@@ -214,29 +237,40 @@ class ICalendar(ABC):
     season_progress, day_of_season, year
     advance(ticks=1), reset()
 
-class IWeatherStrategy(ABC):
-    weather                     # aggregate condition for the HUD
-    weather_at(x, y)            # per-cell
-    weather_at_cell(col, row)
-    update(tick, environment)
-    reset()
-
 class ISeasonStrategy(ABC):
     ticks_per_season, season_names
     palette(calendar) -> SeasonPalette
+    solar_profile(calendar) -> SolarProfile   # how much sun the world gets
     get_season_name(calendar) -> str
     weather_weights(season) -> dict
 
 class IDayNightStrategy(ABC):
     ticks_per_day
-    light_at(calendar, x, y, season_factor=1.0) -> float
-    phase(calendar) -> str
-    celestial(calendar) -> CelestialState
+    light_at(calendar, x, y, solar=None) -> float   # consumes SolarProfile
+    phase(calendar, solar=None) -> str
+    celestial(calendar, solar=None) -> CelestialState
     sky_palette() -> SkyPalette
+
+class IWeatherStrategy(ABC):
+    weather                     # aggregate condition for the HUD
+    weather_at(x, y)            # per-cell
+    weather_at_cell(col, row)
+    update(tick, climate)       # climate: ClimateContext
+    reset()
+
+class IBarrierStrategy(ABC):
+    color                       # fill colour (default yellow)
+    max_span_cells              # span cap per direction (default 3)
+    span_cells(barrier, world) -> (cols, rows)
+    validate(barrier, world)    # raises ValueError on rule breach
+    create_barriers(world) -> list[Barrier]
 
 class IEnvironment(ABC):
     tick, calendar, weather_strategy, season_strategy, daynight_strategy
     season, phase, weather, light_level, palette
+    solar                       # SolarProfile from the season strategy
+    celestial                   # CelestialState from day/night
+    climate_context() -> ClimateContext   # snapshot for the weather strategy
     weather_at(x, y), light_at(x, y), humidity_at(x, y),
     pressure_at(x, y), temperature_at(x, y)
     advance_tick(), reset()
@@ -245,8 +279,9 @@ class IEnvironment(ABC):
 ### 4.2 `sim/interfaces/world.py`
 
 `IWorld` — `width`, `height`, `cell_size`, `cols`, `rows`, `orientation`,
-`wrap_around`, `barriers`, `add_barrier` / `remove_barrier`, `is_inside`,
-`clamp_or_wrap`, `cell_index`, `cell_center`.
+`wrap_around`, `barrier_strategy`, `barriers`, `add_barrier` /
+`remove_barrier`, `set_barrier_strategy`, `is_inside`, `clamp_or_wrap`,
+`cell_index`, `cell_center`.
 
 ### 4.3 `sim/interfaces/renderer.py`
 
@@ -263,12 +298,14 @@ class IEnvironment(ABC):
 
 ### 5.1 DayNightStrategy
 
+- Consumes the season's `SolarProfile` (peak `sun_intensity` and
+  `daylight_fraction`) instead of a `season_factor` multiplier.
+- Places the sun inside the season's daylight window (centred on 0.5 day
+  fraction); altitude 0 at night.
 - Sun and moon run independent cycles (`sun_speed`, `moon_speed`,
   `moon_phase_offset`), so they are not locked to one global cycle.
-- `light_at` = sun altitude × smooth local shading × season multiplier.
+- `light_at` = sun arc × smooth local shading × sun intensity.
   `local_shading` and `shading_scale_x/y` shape the terrain/cover variation.
-- `season_light_influence` (0..1) controls how strongly the season's
-  `SeasonConfig.light_influence` scales the curve.
 - `phase`: `night`, `dawn`, `day`, `dusk` using `night_threshold` and
   `twilight_threshold`.
 - `celestial`: sun/moon arc progress, visibility and moon illumination.
@@ -279,9 +316,12 @@ class IEnvironment(ABC):
 - Seasons are a **list** in configuration: one, two, four or eight need no code
   change.
 - Default order: `Spring → Summer → Autumn → Winter`, 4 days each.
+- Owns **how much sun** the world gets: `solar_profile(calendar)` blends the
+  current season's `sun_intensity` and `daylight_fraction` into the next
+  season's over the final quarter of the season, so the hand-off is continuous.
 - `palette(calendar)` returns `SeasonPalette` with the season name, ground
-  colour, detail colours, temperature baseline/swing, humidity, pressure and
-  light influence.
+  colour, detail colours, temperature baseline/swing, humidity, pressure,
+  `sun_intensity`, `daylight_fraction`.
 - Ground colour: if `SeasonConfig.ground_gradient` is set, it is interpolated
   `start → end` over the season's progress. Otherwise `ground_color` blends
   toward the next season's colour.
@@ -293,6 +333,10 @@ class IEnvironment(ABC):
   `front_count` circular **fronts**.
 - A new field is built every `change_interval` ticks (`600` = 20 s), derived
   deterministically from `(seed, interval, season)`.
+- `update(tick, climate)` receives a `ClimateContext` (season, world geometry,
+  temperature, humidity, pressure, solar profile) and reshapes the season's
+  weights via `ClimateContext.adjusted_weather_weights()`: rain falls as snow
+  below freezing, storms need warmth and moisture, clear skies dominate dry air.
 - Front radius comes from `front_radius_min_cells` / `front_radius_max_cells`
   (in cells; `0` = derive from the grid).
 - `front_drift_cells` optionally shifts fronts between rebuilds.
@@ -300,6 +344,18 @@ class IEnvironment(ABC):
   front covering it. Severity: `clear < cloudy < rain = snow < storm`.
 - Conditions: `clear`, `cloudy`, `rain`, `storm`, `snow`. Snow only appears in
   seasons whose weights allow it.
+
+### 5.4 BarrierStrategy
+
+- Implements `IBarrierStrategy`; owns colour and span rules.
+- Default colour yellow `(255, 208, 64)`, configurable via `BarrierConfig.color`.
+- `max_span_cells` caps span per direction (default 3); `min_span_cells`
+  (default 1); `count` barriers generated from `seed` with a `margin_cells`
+  border margin.
+- Barriers are axis-aligned rectangles snapped to the cell grid; placement is
+  deterministic and non-overlapping (best-effort reshuffle).
+- `validate()` rejects unknown kinds, non-positive sizes, out-of-bounds, and
+  spans exceeding `max_span_cells`.
 
 ---
 
@@ -328,17 +384,33 @@ Rendering contract:
 - **Text** — every string is drawn with cached `arcade.Text` objects.
   `arcade.draw_text` is never called: it re-lays out and re-uploads a texture
   per call, is slow and raises `PerformanceWarning`.
+- **WorldLayout** — a single layout object (`sim/rendering/layout.py`) owns the
+  world → screen projection and the cell grid. Drawing (grid, cells, markers,
+  barriers) and hit-testing (mouse motion/press) share this one layout, so the
+  selected cell, the orange marker and the cursor always agree. Cell steps are
+  integer-snapped to whole pixels.
 - **Grid** — one line per cell boundary, derived from `world.cell_size`,
   `world.cols` and `world.rows`. The drawn world spans `cols*cell_size` by
-  `rows*cell_size`, so lines always land on cell edges.
+  `rows*cell_size`, so lines always land on cell edges. Cells render in screen
+  units that honour `cell_size`, ready for beans to be drawn per cell.
+- **Barriers** — drawn as filled cell-aligned rectangles in the barrier
+  strategy's colour (default yellow), with a dark outline.
 - **Selection** — stored as an integer `(col, row)`. The orange marker, the
   crosshair and the readings all derive from it, so they cannot disagree.
 - **Pointer mapping** — layout uses the active viewport size and mouse
   coordinates are scaled from the window size, so clicks line up on HiDPI or
   scaled displays. The layout is recomputed when the viewport changes.
+- **Playback-speed slider** — in the Controls box. Drag to slow / speed the
+  perceived ticker; it sets `GameClock.time_scale` (clamped to
+  `time_scale_min`/`time_scale_max`) and never changes `tick_rate` or
+  sim-time progression (`clock.tick`). Initial value from
+  `TimeConfig.initial_time_scale`.
 - **Weather field box** — live census of cells and percentage per condition;
   rows are limited to the panel height and overflow is summarised as
   `+N more conditions`.
+
+The default window is sized for 1:1 world rendering (1 world unit = 1 screen
+pixel) plus the sidebar, so the grid is crisp at startup.
 
 `ArcadeView` never mutates domain state: it reads a snapshot of `GameSession`.
 Hover and selection are view-local.
@@ -365,6 +437,11 @@ correct screenshot.
 | PAUSED | `Q` / `Esc` | → END, reason `user quit` |
 | END | `SPACE` | restart: fresh clock, environment reset |
 | END | `Q` / `Esc` | set `exit_requested`; the loop closes the window |
+
+`KeyboardInput.set_time_scale(value)` clamps `GameClock.time_scale` to
+`[time_scale_min, time_scale_max]` and emits `session.time_scale`. It changes
+perception only: `tick_rate` and `clock.tick` are untouched. The slider in the
+view calls this via the input handler.
 
 Key codes are GLFW codes: `SPACE=32`, `P=112`, `Q=113`, `Esc=65307`.
 
@@ -409,11 +486,12 @@ Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
 
 | Dataclass | Owns |
 |-----------|------|
-| `WorldConfig` | `width=1200`, `height=800`, `cell_size=50`, `orientation`, `wrap_around` |
-| `TimeConfig` | `ticks_per_day=1200`, `ticks_per_season=4800`, `start_tick=0` |
+| `WorldConfig` | `width=1200`, `height=800`, `cell_size=10`, `orientation`, `wrap_around` |
+| `TimeConfig` | `ticks_per_day=1200`, `ticks_per_season=4800`, `start_tick=0`, `initial_time_scale=1.0`, `time_scale_min=0.1`, `time_scale_max=4.0` |
+| `BarrierConfig` | `color=(255,208,64)` yellow, `max_span_cells=3`, `min_span_cells=1`, `count=6`, `seed=4242`, `margin_cells=1` |
 | `GradientConfig` | `start`, `end`, `orientation` (empty inherits the world) |
-| `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `light_influence`, weather weights |
-| `DayNightConfig` | sun/moon, shading, season-light strength, thresholds, sky colours |
+| `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `sun_intensity`, `daylight_fraction`, weather weights |
+| `DayNightConfig` | sun/moon, shading, thresholds, sky colours |
 | `WeatherConfig` | interval, seed, front count/radius/drift, coverage, condition offsets |
 | `EnvironmentConfig` | strategy names, four climate gradients, `microclimate` |
 | `LoggingConfig` | level, format, date format, business/readings switches |
@@ -431,14 +509,20 @@ SeasonConfig(
     temperature_swing=7.0,
     humidity=0.55,
     pressure_hpa=1012.0,
-    light_influence=1.0,
+    sun_intensity=0.95,
+    daylight_fraction=0.50,
     weather_weights={"clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0},
 )
 ```
 
-Defaults: Spring, Summer (`1.12` light), Autumn (`0.92`), Winter (`0.78`).
+Defaults: Spring (`0.95` sun / `0.50` daylight), Summer (`1.15` / `0.60`),
+Autumn (`0.82` / `0.45`), Winter (`0.55` / `0.34`). `SeasonStrategy`
+publishes a `SolarProfile` blending these across the season boundary.
 `ground_gradient=None` falls back to blending `ground_color` toward the next
 season.
+
+The `light_influence`/`season_light_influence` fields are removed: the season
+strategy owns the sun via `solar_profile()` and day/night consumes it.
 
 ### 9.3 Positional gradients
 
@@ -485,15 +569,31 @@ Physical effects per condition (defaults):
 | storm | −4.0 | +0.25 | −18.0 | 0.50 |
 | snow | −5.0 | +0.08 | −5.0 | 0.85 |
 
-### 9.5 Logging
+### 9.5 Barriers
+
+```python
+BarrierConfig(
+    color=(255, 208, 64),     # yellow
+    max_span_cells=3,         # ≤ 3 cells per direction
+    min_span_cells=1,
+    count=6,
+    seed=4242,
+    margin_cells=1,
+)
+```
+
+`BarrierStrategy` owns colour and span limits; `World.add_barrier` validates
+against it. Six yellow barriers are generated by `DEFAULT_CONFIG`.
+
+### 9.6 Logging
 
 `LoggingConfig(level="INFO", business=True, readings=True,
 readings_interval=60)`. `BEAN_LOG_LEVEL` overrides `level` at runtime; the
-Makefile exposes it as `LOG_LEVEL`. See §11.
+Makefile exposes it as `LOG_LEVEL`. See §12.
 
 ---
 
-## 10. Dependency injection (`sim/container.py`)
+## 11. Dependency injection (`sim/container.py`)
 
 `Container(config: SimulationConfig)` builds, in order:
 
@@ -511,7 +611,7 @@ Unknown names raise `ValueError`.
 
 ---
 
-## 11. Logging and instrumentation (`sim/observability.py`)
+## 12. Logging and instrumentation (`sim/observability.py`)
 
 Two streams, both under the `bean.*` logger namespace:
 
@@ -539,9 +639,9 @@ Reading samples are emitted only at `DEBUG` and at most once per
 
 ---
 
-## 12. Containers and tooling
+## 13. Containers and tooling
 
-### 12.1 Containerfile
+### 13.1 Containerfile
 
 `Dockerfile` is not the source of truth; `Containerfile` is, and both podman
 and docker understand it.
@@ -563,7 +663,7 @@ no display server. `xvfb-run` must not be PID 1: Xvfb skips its SIGUSR1
 readiness signal when its parent is init, so prefer `make run-container-ui`,
 which bind-mounts the host X11 socket.
 
-### 12.2 Makefile targets
+### 13.2 Makefile targets
 
 | Target | Description |
 |--------|-------------|
@@ -602,7 +702,7 @@ cheapest end-to-end check.
 
 ---
 
-## 13. How to run
+## 14. How to run
 
 ```bash
 # Local, windowed
@@ -633,23 +733,34 @@ Environment variables:
 
 ---
 
-## 14. Current status
+## 15. Current status
 
 ### Implemented
 
 - Domain: `GameSession`, `GameClock`, `GameState`, `World`, `Environment`,
-  `Calendar`, `Gradient`, `Barrier`.
+  `Calendar`, `Gradient`, `Barrier`, `SolarProfile`, `ClimateContext`,
+  `WorldLayout`.
 - DI container wiring configuration to domain objects, with strategy
-  resolution and static fallbacks.
+  resolution, static fallbacks and barrier placement.
 - Environment strategies: day/night, seasons, weather — each optional.
+- Season strategy owns the sun: `solar_profile()` blends `sun_intensity` and
+  `daylight_fraction` across the season boundary.
+- Day/night consumes `SolarProfile`; weather receives a `ClimateContext` and
+  reshapes season weights by temperature, humidity, pressure and sun.
+- Barrier strategy (`IBarrierStrategy` + `BarrierStrategy`): configurable
+  colour (default yellow), span capped at 3 cells per direction, validated on
+  `World.add_barrier`. `DEFAULT_CONFIG` creates 6 yellow barriers.
 - Positional temperature, humidity, pressure and light with configurable
   gradients (N/S, W/E, centre-out, out-centre, diagonals).
-- Season colour gradients as tuples and season-aware light influence.
 - Rendering: start/playing/paused/end screens, animated sky, seasons, per-cell
-  weather, HUD sidebar, cell-aligned grid, pinned inspector.
+  weather, HUD sidebar, cell-aligned grid honouring `cell_size`, pinned
+  inspector, barrier drawing, playback-speed slider.
+- `WorldLayout`: single source of truth for draw + hit-test; pointer/click
+  align exactly with the selected cell and orange marker.
+- Default 1:1 window sizing; integer-snapped cell rectangles.
 - Cached `arcade.Text` rendering; no `draw_text` `PerformanceWarning`.
-- Pointer mapping that agrees with the highlighted cell on scaled displays.
-- Input: `SPACE` / `P` / `Q` / `Esc`, hover and click-to-inspect.
+- Input: `SPACE` / `P` / `Q` / `Esc`, hover and click-to-inspect, slider sets
+  `GameClock.time_scale` (perception only).
 - Pause-aware fixed-step clock and a bounded headless mode.
 - Structured operational and business logging with a runtime level.
 - Container image plus Makefile targets, including `make verify`.
@@ -659,4 +770,3 @@ Environment variables:
 - Bean entities and simulation systems (movement, collision, eating,
   reproduction) — the systems hook in `main.py` is a placeholder.
 - Automated tests and lint/typecheck configuration.
-- Barriers are supported by `World` but not created by `DEFAULT_CONFIG`.

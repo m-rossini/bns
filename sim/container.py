@@ -23,6 +23,9 @@ from sim.interfaces.environment import (
     ISeasonStrategy,
     IWeatherStrategy,
 )
+from sim.observability import get_logger
+
+logger = get_logger("container")
 
 _DAYNIGHT_NAMES = {"daynight", "daynightstrategy", "default"}
 _SEASON_NAMES = {"season", "seasonstrategy", "default"}
@@ -39,6 +42,20 @@ class Container:
         self.environment = self._build_environment(config)
         self.session = self._build_session()
         self.debug = config.debug
+        logger.info(
+            "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
+            "seasons=%s strategies=%s/%s/%s",
+            self.world.width,
+            self.world.height,
+            self.world.cols,
+            self.world.rows,
+            self.world.cell_size,
+            config.tick_rate,
+            self.calendar.season_names,
+            config.environment.season_strategy,
+            config.environment.daynight_strategy,
+            config.environment.weather_strategy,
+        )
 
     # ------------------------------------------------------------------
     # World
@@ -109,6 +126,9 @@ class Container:
             season_strategy=season,
             daynight_strategy=daynight,
             weather_strategy=weather,
+            environment_config=config.environment,
+            weather_config=config.weather,
+            logging_config=config.logging,
         )
 
     # ------------------------------------------------------------------

@@ -43,7 +43,7 @@ GRADIENT_ORIENTATIONS: Tuple[str, ...] = (
 class WorldConfig:
     width: float = 1200.0
     height: float = 800.0
-    cell_size: float = 50.0
+    cell_size: float = 10.0
     #: Direction used by climate gradients. Empty string = north_south.
     orientation: str = "north_south"
     wrap_around: bool = False
@@ -59,11 +59,19 @@ class WorldConfig:
 
 @dataclass
 class TimeConfig:
-    """Tick -> date conversion. The calendar is the only time authority."""
+    """Tick -> date conversion. The calendar is the only time authority.
+
+    ``time_scale`` is the playback/perception multiplier applied by the
+    ticker: it slows or speeds how fast simulated time *appears* to pass
+    without touching the fixed-step tick accumulation or ``tick_rate``.
+    """
 
     ticks_per_day: int = 1200          # 40 s per day at 30 ticks/s
     ticks_per_season: int = 4800       # 4 days per season
     start_tick: int = 0
+    initial_time_scale: float = 1.0    # perceived speed at startup (1.0 = real time)
+    time_scale_min: float = 0.1        # slowest the slider can go
+    time_scale_max: float = 4.0        # fastest the slider can go
 
 
 @dataclass(frozen=True)
@@ -251,13 +259,16 @@ DEFAULT_CONFIG = SimulationConfig(
     world=WorldConfig(
         width=1200.0,
         height=800.0,
-        cell_size=50.0,  # 24 x 16 cells
+        cell_size=10.0,  # 120 x 80 cells
         orientation="north_south",
         wrap_around=False,
     ),
     time=TimeConfig(
         ticks_per_day=1200,     # 40 s per day at 30 ticks/s
         ticks_per_season=4800,  # 4 days per season
+        initial_time_scale=1.0,
+        time_scale_min=0.1,
+        time_scale_max=4.0,
     ),
     seasons=[
         SeasonConfig(

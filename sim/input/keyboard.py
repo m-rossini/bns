@@ -22,6 +22,10 @@ KEY_P = 112
 KEY_Q = 113
 KEY_ESCAPE = 65307
 
+# Playback-speed range (kept in sync with the view's slider and TimeConfig).
+TIME_SCALE_MIN = 0.1
+TIME_SCALE_MAX = 4.0
+
 
 def _emit(session: GameSession, event: str, level: int = logging.INFO, **fields) -> None:
     log_event(
@@ -84,6 +88,23 @@ class KeyboardInput:
             elif key in (KEY_ESCAPE, KEY_Q):
                 _emit(session, "session.closed", key=key)
                 session.exit_requested = True
+
+    def set_time_scale(self, value: float) -> None:
+        """Set the playback time scale (perception only, clamped).
+
+        This does not change ``tick_rate`` or sim-time progression; it only
+        scales how fast the ticker appears to run.
+        """
+        from sim.time.game_clock import set_time_scale
+
+        applied = set_time_scale(
+            self.session.clock, value, vmin=TIME_SCALE_MIN, vmax=TIME_SCALE_MAX
+        )
+        _emit(
+            self.session,
+            "session.time_scale",
+            scale=applied,
+        )
 
     @staticmethod
     def _quit(session: GameSession) -> None:

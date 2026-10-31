@@ -31,6 +31,7 @@ import arcade
 
 from sim.components import GameSession, GameState
 from sim.domain.visuals import SeasonPalette, SkyPalette
+from sim.rendering.layout import WorldLayout, build_layout
 
 logger = logging.getLogger("bean.ui")
 
@@ -71,6 +72,17 @@ _SIDEBAR_MIN = 300.0
 _SIDEBAR_MAX = 360.0
 _TEXT_CACHE_LIMIT = 1024
 
+# Playback-speed slider colours (UI chrome).
+_SLIDER_TRACK = (38, 44, 56, 230)
+_SLIDER_TRACK_FILLED = (120, 230, 150, 230)
+_SLIDER_THUMB = (238, 240, 245)
+_SLIDER_THUMB_EDGE = (120, 230, 150)
+
+# Playback-speed slider range (matches `TimeConfig` defaults). The slider only
+# changes perceived speed, never `tick_rate` or sim-time progression.
+_TIME_SCALE_MIN = 0.1
+_TIME_SCALE_MAX = 4.0
+
 
 def _mix(a, b, t: float):
     t = max(0.0, min(1.0, t))
@@ -79,6 +91,11 @@ def _mix(a, b, t: float):
 
 def _shade(color, factor: float):
     return tuple(max(0, min(255, int(round(c * factor)))) for c in color[:3])
+
+
+def _point_in_rect(x: float, y: float, rect: Tuple[float, float, float, float]) -> bool:
+    lx, ly, lw, lh = rect
+    return lx <= x <= lx + lw and ly <= y <= ly + lh
 
 
 class _TextCache:
@@ -176,15 +193,13 @@ class ArcadeView(arcade.Window):
             self._world_width = 1200.0
             self._world_height = 800.0
 
-        self._scale = 1.0
-        self._left = 0.0
-        self._bottom = 0.0
-        self._right = self._world_width
-        self._top = self._world_height
+        self._layout: Optional[WorldLayout] = None
         self._layout_size: Optional[Tuple[int, int]] = None
 
         self._hover_cell: Optional[Tuple[int, int]] = None
         self._selected_cell: Optional[Tuple[int, int]] = None
+        self._slider_rect: Optional[Tuple[float, float, float, float]] = None
+        self._slider_dragging = False
         self._census_cache: Optional[tuple] = None
         self._census_counts: Dict[str, int] = {}
 
@@ -212,18 +227,23 @@ class ArcadeView(arcade.Window):
         return max(1.0, float(w)), max(1.0, float(h))
 
     def _mouse_to_screen(self, x: float, y: float) -> Tuple[float, float]:
-        """Scale window (logical) mouse coordinates into viewport pixels."""
-        vw, vh = self._viewport_size()
-        ww, wh = self.get_size()
-        if ww <= 0 or wh <= 0:
-            return float(x), float(y)
-        return x * vw / ww, y * vh / wh
+        """Window (logical) mouse coordinates.
+
+        Hit-testing and drawing share one logical-coordinate layout
+        (`WorldLayout`), so no viewport/scale conversion is applied here.
+        """
+        return float(x), float(y)
 
     def _ensure_layout(self) -> None:
         size = self._viewport_size()
-        if size != self._layout_size:
+        if size != self._layout_size or self._layout is None:
             self._layout_size = size
-            self._recompute_layout()
+            sidebar = self._sidebar_width()
+            self._layout = build_layout(
+                size[0], size[1],
+                self.session.world,
+                sidebar_width=sidebar,
+            )
 
     # ------------------------------------------------------------------
     # Environment accessors
@@ -356,30 +376,21 @@ class ArcadeView(arcade.Window):
     def _recompute_layout(self) -> None:
         sw, sh = self._viewport_size()
         sidebar = self._sidebar_width()
-        area_left = sidebar + 2 * _MARGIN
-        area_bottom = _MARGIN
-        area_w = max(1.0, sw - area_left - _MARGIN)
-        area_h = max(1.0, sh - 2 * _MARGIN)
-
-        self._scale = min(area_w / self._world_width, area_h / self._world_height)
-        drawn_w = self._world_width * self._scale
-        drawn_h = self._world_height * self._scale
-        self._left = area_left + (area_w - drawn_w) / 2
-        self._bottom = area_bottom + (area_h - drawn_h) / 2
-        self._right = self._left + drawn_w
-        self._top = self._bottom + drawn_h
+        self._layout = build_layout(
+            sw, sh, self.session.world, sidebar_width=sidebar
+        )
 
     def _screen_to_world(self, sx: float, sy: float):
-        if self._scale <= 0:
+        self._ensure_layout()
+        if self._layout is None:
             return None
-        wx = (sx - self._left) / self._scale
-        wy = (sy - self._bottom) / self._scale
-        if 0.0 <= wx <= self._world_width and 0.0 <= wy <= self._world_height:
-            return wx, wy
-        return None
+        return self._layout.screen_to_world(sx, sy)
 
     def _world_to_screen(self, wx: float, wy: float):
-        return (self._left + wx * self._scale, self._bottom + wy * self._scale)
+        self._ensure_layout()
+        if self._layout is None:
+            return (0.0, 0.0)
+        return self._layout.world_to_screen(wx, wy)
 
     # ------------------------------------------------------------------
     # Backdrop (start / end screens)
@@ -444,14 +455,18 @@ class ArcadeView(arcade.Window):
     # World rendering
     # ------------------------------------------------------------------
     def _draw_world(self, session: GameSession) -> None:
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
         palette = self._palette()
         env = session.environment
         ambient = self._ambient(session)
         base = _shade(palette.ground, 0.32 + 0.68 * ambient)
 
         arcade.draw_lbwh_rectangle_filled(
-            self._left, self._bottom,
-            self._right - self._left, self._top - self._bottom,
+            layout.left, layout.bottom,
+            layout.right - layout.left, layout.top - layout.bottom,
             base,
         )
 
@@ -460,22 +475,26 @@ class ArcadeView(arcade.Window):
             self._draw_details(session, palette, ambient)
             self._draw_precipitation(session)
 
+        self._draw_barriers(session)
         self._draw_grid(session)
         self._draw_selection(session)
 
     def _draw_weather_cells(self, session: GameSession, palette, ambient: float) -> None:
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
         env = session.environment
         if env is None:
             return
-        cell = self._cell_size * self._scale
+        cell = layout.cell_step
         if cell < 2:
             return
 
-        for col in range(self._cols):
-            for row in range(self._rows):
-                cx = (col + 0.5) * self._cell_size
-                cy = (row + 0.5) * self._cell_size
-                wx, wy = self._world_to_screen(cx, cy)
+        for col in range(layout.cols):
+            for row in range(layout.rows):
+                cx, cy = layout.cell_center(col, row)
+                wx, wy = layout.world_to_screen(cx, cy)
                 tint = _WEATHER_TINT.get(env.weather_at(cx, cy))
                 if tint is None:
                     continue
@@ -498,31 +517,33 @@ class ArcadeView(arcade.Window):
             )
 
     def _draw_precipitation(self, session: GameSession) -> None:
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
         env = session.environment
         if env is None:
             return
 
         tick = env.tick
-        cell = self._cell_size * self._scale
+        cell = layout.cell_step
         if cell < 3:
             return
 
-        for col in range(self._cols):
-            for row in range(self._rows):
-                cx = (col + 0.5) * self._cell_size
-                cy = (row + 0.5) * self._cell_size
+        for col in range(layout.cols):
+            for row in range(layout.rows):
+                cx, cy = layout.cell_center(col, row)
                 condition = env.weather_at(cx, cy)
                 if condition not in ("rain", "storm", "snow"):
                     continue
 
-                left = self._left + col * cell
-                bottom = self._bottom + row * cell
+                sl, sb = layout.cell_screen_rect(col, row)[:2]
                 count = 5 if condition == "storm" else 3
                 speed = 3.4 if condition == "storm" else 2.2
 
                 for i in range(count):
-                    px = left + ((i * 37.0 + col * 13.0) % max(1.0, cell))
-                    py = bottom + ((tick * speed + i * 41.0 + row * 17.0) % max(1.0, cell))
+                    px = sl + ((i * 37.0 + col * 13.0) % max(1.0, cell))
+                    py = sb + ((tick * speed + i * 41.0 + row * 17.0) % max(1.0, cell))
                     if condition == "snow":
                         arcade.draw_circle_filled(px, py, 1.6, (240, 246, 255, 210))
                     else:
@@ -530,25 +551,52 @@ class ArcadeView(arcade.Window):
                             px, py, px - 2, py - 8, (170, 200, 240, 160), 1
                         )
 
+    def _draw_barriers(self, session: GameSession) -> None:
+        """Draw each barrier as a filled, cell-aligned rectangle in its colour.
+
+        Barrier colour comes from the barrier strategy (default yellow); the
+        view never hardcodes it.
+        """
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
+        world = session.world
+        if world is None:
+            return
+        for barrier in world.barriers:
+            if barrier.kind != "rect":
+                continue
+            sx, sy = layout.world_to_screen(barrier.x, barrier.y)
+            bw = barrier.width * layout.scale
+            bh = barrier.height * layout.scale
+            color = getattr(barrier, "color", (255, 208, 64))
+            arcade.draw_lbwh_rectangle_filled(sx, sy, bw, bh, color)
+            arcade.draw_lbwh_rectangle_outline(sx, sy, bw, bh, (0, 0, 0, 110), 1)
+
     def _draw_grid(self, session: GameSession) -> None:
         """Draw one line per cell boundary, derived from `world.cell_size`."""
-        step = self._cell_size * self._scale
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
+        step = layout.cell_step
         if step < 6:
             return
         color = _shade(self._palette().ground, 0.55)
-        grid_right = self._left + self._cols * step
-        grid_top = self._bottom + self._rows * step
+        grid_right = layout.left + layout.cols * step
+        grid_top = layout.bottom + layout.rows * step
 
-        for col in range(1, self._cols):
-            sx = self._left + col * step
-            arcade.draw_line(sx, self._bottom, sx, grid_top, (*color, 90), 1)
-        for row in range(1, self._rows):
-            sy = self._bottom + row * step
-            arcade.draw_line(self._left, sy, grid_right, sy, (*color, 90), 1)
+        for col in range(1, layout.cols):
+            sx = layout.left + col * step
+            arcade.draw_line(sx, layout.bottom, sx, grid_top, (*color, 90), 1)
+        for row in range(1, layout.rows):
+            sy = layout.bottom + row * step
+            arcade.draw_line(layout.left, sy, grid_right, sy, (*color, 90), 1)
 
         arcade.draw_lbwh_rectangle_outline(
-            self._left, self._bottom,
-            grid_right - self._left, grid_top - self._bottom,
+            layout.left, layout.bottom,
+            grid_right - layout.left, grid_top - layout.bottom,
             (245, 246, 250, 170), 2,
         )
 
@@ -564,10 +612,12 @@ class ArcadeView(arcade.Window):
             self._draw_cell_marker(self._hover_cell, _HOVER, 1)
 
     def _draw_cell_marker(self, cell: Tuple[int, int], color, width: float) -> None:
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
         col, row = cell
-        left = self._left + col * self._cell_size * self._scale
-        bottom = self._bottom + row * self._cell_size * self._scale
-        size = self._cell_size * self._scale
+        left, bottom, size, _ = layout.cell_screen_rect(col, row)
         arcade.draw_lbwh_rectangle_outline(left, bottom, size, size, color, width)
 
     # ------------------------------------------------------------------
@@ -777,6 +827,33 @@ class ArcadeView(arcade.Window):
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
             y -= 17
 
+        # ---- Playback-speed slider ----------------------------------
+        # Slows/speeds the *perceived* ticker only; sim time progression
+        # (tick_rate, clock.tick) is unchanged. Value comes from config.
+        slider_y = _MARGIN + 16
+        track_w = width - 24
+        track_h = 8
+        track_x = left + 12
+        thumb_w = 10
+        scale = session.clock.time_scale
+        fraction = (scale - _TIME_SCALE_MIN) / max(1e-6, _TIME_SCALE_MAX - _TIME_SCALE_MIN)
+        fraction = max(0.0, min(1.0, fraction))
+        thumb_x = track_x + fraction * track_w - thumb_w / 2.0
+        self._slider_rect = (track_x, slider_y, track_w, track_h)
+
+        arcade.draw_lbwh_rectangle_filled(track_x, slider_y, track_w, track_h, _SLIDER_TRACK)
+        filled = fraction * track_w
+        if filled > 0:
+            arcade.draw_lbwh_rectangle_filled(track_x, slider_y, filled, track_h, _SLIDER_TRACK_FILLED)
+        arcade.draw_lbwh_rectangle_filled(thumb_x, slider_y - 2, thumb_w, track_h + 4, _SLIDER_THUMB)
+        arcade.draw_lbwh_rectangle_outline(
+            thumb_x, slider_y - 2, thumb_w, track_h + 4, _SLIDER_THUMB_EDGE, 1,
+        )
+        self._text.draw(
+            f"Speed {scale:.2f}x   (drag to change)", left + 12, slider_y + track_h + 10,
+            _MUTED, font_size=10,
+        )
+
     def _draw_weather_census(self, session: GameSession, left: float, top: float,
                              width: float, box_height: float) -> None:
         """How many cells show each condition: proves the field is not uniform."""
@@ -887,9 +964,42 @@ class ArcadeView(arcade.Window):
         self._layout_size = None
         self._recompute_layout()
 
+    def _slider_hit(self, sx: float, sy: float) -> bool:
+        if self._slider_rect is None:
+            return False
+        lx, ly, lw, lh = self._slider_rect
+        scale = self.session.clock.time_scale
+        fraction = (scale - _TIME_SCALE_MIN) / max(1e-6, _TIME_SCALE_MAX - _TIME_SCALE_MIN)
+        fraction = max(0.0, min(1.0, fraction))
+        thumb_w = 10
+        thumb_x = lx + fraction * lw - thumb_w / 2.0
+        thumb_rect = (thumb_x, ly - 2, thumb_w, lh + 4)
+        return _point_in_rect(sx, sy, (lx, ly, lw, lh)) or _point_in_rect(sx, sy, thumb_rect)
+
+    def _slider_scale_from_x(self, sx: float) -> float:
+        if self._slider_rect is None:
+            return self.session.clock.time_scale
+        lx, ly, lw, lh = self._slider_rect
+        fraction = (sx - lx) / max(1e-6, lw)
+        fraction = max(0.0, min(1.0, fraction))
+        return _TIME_SCALE_MIN + fraction * (_TIME_SCALE_MAX - _TIME_SCALE_MIN)
+
+    def _apply_slider_scale(self, sx: float) -> None:
+        """Set playback speed via the input handler (perception only)."""
+        value = self._slider_scale_from_x(sx)
+        handler = self._input
+        if handler is not None and hasattr(handler, "set_time_scale"):
+            handler.set_time_scale(value)
+        else:
+            from sim.time.game_clock import set_time_scale
+            set_time_scale(self.session.clock, value, vmin=_TIME_SCALE_MIN, vmax=_TIME_SCALE_MAX)
+
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
+        sx, sy = self._mouse_to_screen(x, y)
+        if self._slider_dragging and self._slider_rect is not None:
+            self._apply_slider_scale(sx)
+            return
         if self.session.state in (GameState.PLAYING, GameState.PAUSED):
-            sx, sy = self._mouse_to_screen(x, y)
             world_xy = self._screen_to_world(sx, sy)
             world = self.session.world
             if world_xy is not None and world is not None:
@@ -903,6 +1013,11 @@ class ArcadeView(arcade.Window):
         if self.session.state not in (GameState.PLAYING, GameState.PAUSED):
             return
         sx, sy = self._mouse_to_screen(x, y)
+        if self._slider_hit(sx, sy):
+            self._slider_dragging = True
+            self._apply_slider_scale(sx)
+            return
+        self._slider_dragging = False
         world_xy = self._screen_to_world(sx, sy)
         world = self.session.world
         if world_xy is not None and world is not None:
@@ -923,6 +1038,9 @@ class ArcadeView(arcade.Window):
                 )
         elif button == arcade.MOUSE_BUTTON_LEFT:
             self._selected_cell = None
+
+    def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
+        self._slider_dragging = False
 
 
 def _season_color(palette: SeasonPalette, ambient: float):

@@ -69,7 +69,7 @@ classDiagram
         +cell_size: float
         +cols: int
         +rows: int
-        +orientation: str
+        +orientation: GradientOrientation
         +wrap_around: bool
         +barrier_strategy: IBarrierStrategy
         +cell_index(x, y) tuple
@@ -111,7 +111,7 @@ classDiagram
     }
 
     class Gradient {
-        +orientation: str
+        +orientation: GradientOrientation
         +start: float
         +end: float
         +factor(x, y, w, h) float
@@ -585,7 +585,7 @@ classDiagram
         +width: float
         +height: float
         +cell_size: float
-        +orientation: str
+        +orientation: GradientOrientation
         +wrap_around: bool
     }
 
@@ -618,6 +618,7 @@ classDiagram
         +pressure_hpa: float
         +sun_intensity: float
         +daylight_fraction: float
+        +ground_meaning: str
         +weather_weights: dict
     }
 
@@ -670,7 +671,7 @@ classDiagram
     class GradientConfig {
         +start: float
         +end: float
-        +orientation: str
+        +orientation: GradientOrientation
     }
 
     class LoggingConfig {

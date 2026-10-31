@@ -23,7 +23,7 @@ import logging
 import math
 from typing import Optional
 
-from sim.config import EnvironmentConfig, LoggingConfig, WeatherConfig
+from sim.config import EnvironmentConfig, GradientOrientation, LoggingConfig, WeatherConfig
 from sim.domain.calendar import Calendar
 from sim.domain.climate import DEFAULT_WEATHER_WEIGHTS, ClimateContext
 from sim.domain.gradient import Gradient
@@ -88,7 +88,11 @@ class Environment(IEnvironment):
         self._weather_config = weather_config or WeatherConfig()
         logging_config = logging_config or LoggingConfig()
 
-        fallback = world.orientation if world is not None else "north_south"
+        fallback = (
+            world.orientation
+            if world is not None
+            else GradientOrientation.NORTH_SOUTH
+        )
 
         def gradient(spec) -> Gradient:
             return Gradient(

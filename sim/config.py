@@ -22,21 +22,34 @@ Colour gradients use a plain ``(start_colour, end_colour)`` tuple, e.g.
 """
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 Color = Tuple[int, int, int]
 
-#: Valid values for `GradientConfig.orientation` and `WorldConfig.orientation`.
-GRADIENT_ORIENTATIONS: Tuple[str, ...] = (
-    "north_south",
-    "south_north",
-    "west_east",
-    "east_west",
-    "centre_out",
-    "out_centre",
-    "diagonal_up",
-    "diagonal_down",
-)
+
+class GradientOrientation(str, Enum):
+    """Direction of a positional gradient across the world.
+
+    Using a :class:`str` enum keeps values serialisable as plain strings while
+    giving the type system and config validation a real, closed set of options.
+    ``GRADIENT_ORIENTATIONS`` is the tuple of all members.
+    """
+
+    NORTH_SOUTH = "north_south"   # south edge (0) -> north edge (1)
+    SOUTH_NORTH = "south_north"   # north edge (0) -> south edge (1)
+    WEST_EAST = "west_east"       # west edge (0)  -> east edge (1)
+    EAST_WEST = "east_west"       # east edge (0)  -> west edge (1)
+    CENTRE_OUT = "centre_out"     # world centre (0) -> edges/corners (1)
+    OUT_CENTRE = "out_centre"     # edges/corners (1) -> world centre (0)
+    DIAGONAL_UP = "diagonal_up"   # south-west (0) -> north-east (1)
+    DIAGONAL_DOWN = "diagonal_down"  # north-west (0) -> south-east (1)
+
+
+#: All valid gradient orientations. The single source of truth; every
+#: orientation field accepts one of these (or a matching string which is
+#: normalised to the enum).
+GRADIENT_ORIENTATIONS: Tuple[GradientOrientation, ...] = tuple(GradientOrientation)
 
 
 @dataclass
@@ -44,9 +57,13 @@ class WorldConfig:
     width: float = 1200.0
     height: float = 800.0
     cell_size: float = 10.0
-    #: Direction used by climate gradients. Empty string = north_south.
-    orientation: str = "north_south"
+    #: Direction used by climate gradients. Empty / default means north_south.
+    orientation: GradientOrientation = GradientOrientation.NORTH_SOUTH
     wrap_around: bool = False
+
+    def __post_init__(self) -> None:
+        if isinstance(self.orientation, str):
+            self.orientation = GradientOrientation(self.orientation)
 
     @property
     def cols(self) -> int:
@@ -78,7 +95,7 @@ class TimeConfig:
 class GradientConfig:
     """Linear ``start -> end`` gradient across the world.
 
-    ``orientation`` is one of `GRADIENT_ORIENTATIONS`; an empty string means
+    ``orientation`` is one of `GRADIENT_ORIENTATIONS`; an empty/default means
     "inherit `WorldConfig.orientation`". The value at a position is
     ``start + (end - start) * factor`` where ``factor`` runs 0..1 along the
     chosen direction.
@@ -86,7 +103,13 @@ class GradientConfig:
 
     start: float = 0.0
     end: float = 1.0
-    orientation: str = ""
+    orientation: Optional[GradientOrientation] = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.orientation, str):
+            object.__setattr__(
+                self, "orientation", GradientOrientation(self.orientation)
+            )
 
 
 @dataclass
@@ -96,9 +119,13 @@ class SeasonConfig:
     ``ground_gradient`` is an explicit ``(start, end)`` colour pair evaluated
     over the season's progress. Leave it ``None`` to derive the ground colour
     from ``ground_color`` and the next season's colour instead.
+
+    ``name`` must be given explicitly for every season; there is no hardcoded
+    default season, so the config stays generic and specific seasons carry
+    their own names.
     """
 
-    name: str = "Spring"
+    name: str
     ground_color: Color = (96, 170, 88)
     ground_gradient: Optional[Tuple[Color, Color]] = None
     detail_colors: List[Color] = field(default_factory=list)
@@ -296,7 +323,7 @@ DEFAULT_CONFIG = SimulationConfig(
         width=1200.0,
         height=800.0,
         cell_size=10.0,  # 120 x 80 cells
-        orientation="north_south",
+        orientation=GradientOrientation.NORTH_SOUTH,
         wrap_around=False,
     ),
     time=TimeConfig(

@@ -226,7 +226,7 @@ Climate readings are not uniform. Each reading has a `GradientConfig`:
 class GradientConfig:
     start: float = 0.0        # value at the "start" edge
     end: float = 1.0          # value at the "end" edge
-    orientation: str = ""     # "" inherits WorldConfig.orientation
+    orientation: Optional[GradientOrientation] = None  # None inherits WorldConfig.orientation
 ```
 
 Defaults in `DEFAULT_CONFIG.environment`:
@@ -238,32 +238,28 @@ Defaults in `DEFAULT_CONFIG.environment`:
 | Pressure | `GradientConfig(-6.0, 6.0)` | ±6 hPa |
 | Light | `GradientConfig(0.88, 1.08)` | ±10 % multiplicative |
 
-Supported orientations:
+Supported orientations (members of `GradientOrientation`):
 
 | Orientation | Direction |
 |-------------|-----------|
-| `north_south` | south → north |
-| `south_north` | north → south |
-| `west_east` | west → east |
-| `east_west` | east → west |
-| `centre_out` | centre → edges/corners |
-| `out_centre` | edges/corners → centre |
-| `diagonal_up` | south-west → north-east |
-| `diagonal_down` | north-west → south-east |
+| `NORTH_SOUTH` (`north_south`) | south → north |
+| `SOUTH_NORTH` (`south_north`) | north → south |
+| `WEST_EAST` (`west_east`) | west → east |
+| `EAST_WEST` (`east_west`) | east → west |
+| `CENTRE_OUT` (`centre_out`) | centre → edges/corners |
+| `OUT_CENTRE` (`out_centre`) | edges/corners → centre |
+| `DIAGONAL_UP` (`diagonal_up`) | south-west → north-east |
+| `DIAGONAL_DOWN` (`diagonal_down`) | north-west → south-east |
 
 Change the world-wide direction once:
-
-```python
-DEFAULT_CONFIG.world.orientation = "west_east"
-```
 
 Or override one reading independently:
 
 ```python
-from sim.config import GradientConfig
+from sim.config import GradientConfig, GradientOrientation
 
 DEFAULT_CONFIG.environment.temperature_gradient = GradientConfig(
-    -6.0, 6.0, orientation="centre_out"
+    -6.0, 6.0, orientation=GradientOrientation.CENTRE_OUT
 )
 DEFAULT_CONFIG.environment.microclimate = 0.5   # damp the small sin/cos noise
 ```

@@ -7,10 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Area Per Cluster Metric
-* Cluster Spread Standard Deviation (sigma)
-
 Calculus:
     C = max(1, Round(A / AreaPerCluster))  total clusters
     Centroids chosen randomly within bounds.
@@ -26,6 +22,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import ColonyClusterConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -38,14 +35,10 @@ logger = get_logger("placement.colony_cluster")
 class ColonyClusterStrategy(IPlacementStrategy):
     name = "colony_cluster"
 
-    def __init__(
-        self,
-        area_per_cluster: float = 2000.0,
-        cluster_spread_sigma: float = 30.0,
-        seed: int = 1337,
-    ):
-        self.area_per_cluster = max(1.0, area_per_cluster)
-        self.cluster_spread_sigma = cluster_spread_sigma
+    def __init__(self, config: ColonyClusterConfig, seed: int = 1337):
+        self.config = config
+        self.area_per_cluster = max(1.0, config.area_per_cluster)
+        self.cluster_spread_sigma = config.cluster_spread_sigma
         self.seed = seed
 
     def generate_positions(

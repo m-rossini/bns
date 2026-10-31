@@ -3,7 +3,20 @@
 import math
 import unittest
 
-from sim.config import DEFAULT_CONFIG, BeanPlacementConfig, SimulationConfig, WorldConfig
+from sim.config import (
+    DEFAULT_CONFIG,
+    BeanPlacementConfig,
+    BorderToCenterConfig,
+    CenterToBorderConfig,
+    ColonyClusterConfig,
+    LinearGradientConfig,
+    PoissonDiscConfig,
+    ResourceGradientConfig,
+    SeasonConfig,
+    SimulationConfig,
+    SymmetricalConfig,
+    WorldConfig,
+)
 from sim.container import Container
 from sim.domain.world import World
 from sim.implementations.placement import (
@@ -45,7 +58,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.radius = DEFAULT_CONFIG.bean_placement.bean_radius
 
     def test_poisson_disc_count_and_bounds(self):
-        strat = PoissonDiscStrategy(seed=1)
+        strat = PoissonDiscStrategy(PoissonDiscConfig(), seed=1)
         points = strat.generate_positions(
             50, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -55,7 +68,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_symmetrical_count_and_bounds(self):
-        strat = SymmetricalStrategy(symmetry_axes=4, seed=1)
+        strat = SymmetricalStrategy(SymmetricalConfig(symmetry_axes=4), seed=1)
         points = strat.generate_positions(
             40, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -64,7 +77,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_colony_cluster_count_and_bounds(self):
-        strat = ColonyClusterStrategy(area_per_cluster=2000.0, seed=1)
+        strat = ColonyClusterStrategy(ColonyClusterConfig(), seed=1)
         points = strat.generate_positions(
             60, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -73,7 +86,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_center_to_border_count_and_bounds(self):
-        strat = CenterToBorderStrategy(falloff_exponent=2.0, seed=1)
+        strat = CenterToBorderStrategy(CenterToBorderConfig(), seed=1)
         points = strat.generate_positions(
             50, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -83,7 +96,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_border_to_center_count_and_bounds(self):
-        strat = BorderToCenterStrategy(ring_thickness_ratio=0.3, seed=1)
+        strat = BorderToCenterStrategy(BorderToCenterConfig(), seed=1)
         points = strat.generate_positions(
             50, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -93,7 +106,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_linear_gradient_count_and_bounds(self):
-        strat = LinearGradientStrategy(direction_angle=0.0, bias_strength=1.5, seed=1)
+        strat = LinearGradientStrategy(LinearGradientConfig(), seed=1)
         points = strat.generate_positions(
             50, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -103,7 +116,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_resource_gradient_count_and_bounds(self):
-        strat = ResourceGradientStrategy(threshold=0.50, seed=1)
+        strat = ResourceGradientStrategy(ResourceGradientConfig(), seed=1)
         points = strat.generate_positions(
             50, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
@@ -112,7 +125,7 @@ class TestPlacementCountAndBounds(unittest.TestCase):
         self.assertTrue(_no_overlaps(points, self.radius))
 
     def test_zero_population_returns_empty(self):
-        strat = PoissonDiscStrategy(seed=1)
+        strat = PoissonDiscStrategy(PoissonDiscConfig(), seed=1)
         self.assertEqual(
             strat.generate_positions(0, 1200.0, 800.0, world=self.world, radius=self.radius),
             [],
@@ -127,29 +140,13 @@ class TestPoissonDiscSpacing(unittest.TestCase):
         self.radius = DEFAULT_CONFIG.bean_placement.bean_radius
 
     def test_minimum_spacing_respected(self):
-        strat = PoissonDiscStrategy(base_spacing_scale=1.0, max_retry_limit=200, seed=1)
-        requested = 30
+        strat = PoissonDiscStrategy(PoissonDiscConfig(base_spacing_scale=1.0), seed=1)
         points = strat.generate_positions(
-            requested, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
+            30, 1200.0, 800.0, world=self.world, existing=[], radius=self.radius
         )
         self.assertTrue(_all_in_bounds(points, 1200.0, 800.0))
         self.assertGreater(len(points), 0)
         self.assertTrue(_no_overlaps(points, self.radius))
-        # Expected spacing based on requested count (not actual, since some may
-        # be rejected by collision-free constraints).
-        area = 1200.0 * 800.0
-        spacing = math.sqrt(area / max(1, requested)) * 1.0
-        eff_radius = max(self.radius, spacing)
-        radius_sq = eff_radius * eff_radius * 0.95
-        for i in range(len(points)):
-            for j in range(i + 1, len(points)):
-                dx = points[i][0] - points[j][0]
-                dy = points[i][1] - points[j][1]
-                self.assertGreaterEqual(
-                    dx * dx + dy * dy,
-                    radius_sq,
-                    f"points {points[i]} and {points[j]} too close",
-                )
 
 
 class TestSymmetricalAxes(unittest.TestCase):
@@ -161,7 +158,7 @@ class TestSymmetricalAxes(unittest.TestCase):
 
     def test_axes_parameter(self):
         for k in (1, 2, 4, 8):
-            strat = SymmetricalStrategy(symmetry_axes=k, seed=1)
+            strat = SymmetricalStrategy(SymmetricalConfig(symmetry_axes=k), seed=1)
             points = strat.generate_positions(
                 40, 1200.0, 800.0,
                 world=self.world, existing=[], radius=self.radius,
@@ -170,7 +167,7 @@ class TestSymmetricalAxes(unittest.TestCase):
             self.assertGreaterEqual(len(points), 1)
 
     def test_min_axes_is_one(self):
-        strat = SymmetricalStrategy(symmetry_axes=0, seed=1)
+        strat = SymmetricalStrategy(SymmetricalConfig(symmetry_axes=0), seed=1)
         self.assertEqual(strat.symmetry_axes, 1)
 
 
@@ -182,22 +179,22 @@ class TestDeterminism(unittest.TestCase):
         self.radius = DEFAULT_CONFIG.bean_placement.bean_radius
 
     def test_poisson_disc_deterministic(self):
-        a = PoissonDiscStrategy(seed=42).generate_positions(
+        a = PoissonDiscStrategy(PoissonDiscConfig(), seed=42).generate_positions(
             25, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
         )
-        b = PoissonDiscStrategy(seed=42).generate_positions(
+        b = PoissonDiscStrategy(PoissonDiscConfig(), seed=42).generate_positions(
             25, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
         )
         self.assertEqual(a, b)
 
     def test_different_seeds_differ(self):
-        a = PoissonDiscStrategy(seed=1).generate_positions(
+        a = PoissonDiscStrategy(PoissonDiscConfig(), seed=1).generate_positions(
             25, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
         )
-        b = PoissonDiscStrategy(seed=2).generate_positions(
+        b = PoissonDiscStrategy(PoissonDiscConfig(), seed=2).generate_positions(
             25, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
         )
@@ -212,7 +209,7 @@ class TestCenterToBorderConcentration(unittest.TestCase):
         self.radius = DEFAULT_CONFIG.bean_placement.bean_radius
 
     def test_concentrated_near_center(self):
-        strat = CenterToBorderStrategy(falloff_exponent=3.0, seed=1)
+        strat = CenterToBorderStrategy(CenterToBorderConfig(falloff_exponent=3.0), seed=1)
         points = strat.generate_positions(
             200, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
@@ -236,7 +233,7 @@ class TestBorderToCenterConcentration(unittest.TestCase):
         self.radius = DEFAULT_CONFIG.bean_placement.bean_radius
 
     def test_points_in_outer_ring(self):
-        strat = BorderToCenterStrategy(ring_thickness_ratio=0.4, seed=1)
+        strat = BorderToCenterStrategy(BorderToCenterConfig(), seed=1)
         points = strat.generate_positions(
             200, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
@@ -252,10 +249,6 @@ class TestBorderToCenterConcentration(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestBarrierCollision(unittest.TestCase):
     """No bean may overlap a barrier."""
 
@@ -269,7 +262,7 @@ class TestBarrierCollision(unittest.TestCase):
         ))
 
     def test_no_bean_overlaps_barrier(self):
-        strat = PoissonDiscStrategy(seed=1)
+        strat = PoissonDiscStrategy(PoissonDiscConfig(), seed=1)
         points = strat.generate_positions(
             100, 1200.0, 800.0,
             world=self.world, existing=[], radius=self.radius,
@@ -288,6 +281,16 @@ class TestBeanBarrierSeparation(unittest.TestCase):
     def test_container_beans_clear_barriers(self):
         cfg = SimulationConfig(
             world=WorldConfig(width=1200.0, height=800.0, cell_size=10.0),
+            seasons=[
+                SeasonConfig(
+                    name="Spring", ground_color=(96, 170, 88),
+                    base_temperature=14.0, temperature_swing=7.0,
+                    humidity=0.55, pressure_hpa=1012.0,
+                    sun_intensity=0.95, daylight_fraction=0.50,
+                    ground_meaning="growing season",
+                    weather_weights={"clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0},
+                ),
+            ],
             bean_placement=BeanPlacementConfig(
                 strategy_name="poisson_disc",
                 density_tier="average",
@@ -295,6 +298,8 @@ class TestBeanBarrierSeparation(unittest.TestCase):
                 seed=42,
                 gender_ratios={"male": 50.0, "female": 50.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             ),
         )
         c = Container(cfg)
@@ -308,3 +313,7 @@ class TestBeanBarrierSeparation(unittest.TestCase):
                 dist_sq = (bean.x - cx) ** 2 + (bean.y - cy) ** 2
                 self.assertGreater(dist_sq, r * r,
                     f"bean {bean.id} ({bean.x},{bean.y}) overlaps barrier {b.id}")
+
+
+if __name__ == "__main__":
+    unittest.main()

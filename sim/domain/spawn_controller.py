@@ -50,7 +50,12 @@ class SpawnController(ISpawnController):
         self.gender = gender_controller
         self.placement_config: BeanPlacementConfig = config.bean_placement
         self._beans: List[Bean] = []
-        self._seed = self.placement_config.max_retry_limit  # seed base
+        # Seed base: use the strategy-specific config's max_retry_limit if present.
+        strat_cfg = self.placement_config.strategy_config(
+            self.placement_config.strategy_name
+        )
+        max_retry = getattr(strat_cfg, "max_retry_limit", 100)
+        self._seed = max_retry  # seed base
 
     # ------------------------------------------------------------------
     # Step 2: area-based population calculus

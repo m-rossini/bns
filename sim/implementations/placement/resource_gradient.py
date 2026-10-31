@@ -7,10 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Noise Frequency Scale
-* Baseline Threshold
-
 Calculus:
     Noise values v in [0, 1] sampled relative to map size.
     Dynamic spawn threshold T by density tier:
@@ -24,7 +20,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
-from sim.config import BEAN_DENSITY_THRESHOLDS
+from sim.config import ResourceGradientConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -37,14 +33,10 @@ logger = get_logger("placement.resource_gradient")
 class ResourceGradientStrategy(IPlacementStrategy):
     name = "resource_gradient"
 
-    def __init__(
-        self,
-        noise_frequency: float = 0.01,
-        threshold: float = 0.50,
-        seed: int = 1337,
-    ):
-        self.noise_frequency = max(1e-6, noise_frequency)
-        self.threshold = max(0.0, min(1.0, threshold))
+    def __init__(self, config: ResourceGradientConfig, seed: int = 1337):
+        self.config = config
+        self.noise_frequency = max(1e-6, config.noise_frequency)
+        self.threshold = max(0.0, min(1.0, config.threshold))
         self.seed = seed
 
     def _noise(self, x: float, y: float, rng: random.Random) -> float:

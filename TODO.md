@@ -36,9 +36,13 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Grid: integer-snapped cell rectangles; 1:1 default window (scale 1.0, step = cell_size).
 - Playback slider: sets `GameClock.time_scale` clamped to `[0.1, 4.0]`; `tick_rate` and `clock.tick` unchanged.
 - Windowed (`DISPLAY=:0`) — window created, `app.start` / `app.window_created` logged.
+- Slider inside Controls box (bottom, no overlap with key bindings), verified by rect check.
+- World scales up on maximised window; panel filled with ground colour (no grey border), verified via build_layout at 4480x1440.
+- Precipitation thinned (subset of cells, fewer lines) so rain no longer floods the screen.
+- Ground-colour legend (green = growing season, brown = dry/dormant) in the Environment box.
 - Container `make build` — OK.
 - Container `make verify LOG_LEVEL=DEBUG BEAN_HEADLESS_FRAMES=300` — OK.
-- PR #24 (barrier-climate) merged; PR #25 (render-playback) merged; `main` at `8ac4aab`, clean.
+- PR #24 (barrier-climate) merged; PR #25 (render-playback) merged; PR #27 (ui-polish) merged; `main` at `3bd6a82`, clean.
 
 ## Worktrees
 

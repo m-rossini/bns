@@ -767,17 +767,21 @@ class ArcadeView(arcade.Window):
                     left + 12, top - 84, _MUTED, font_size=11,
                 )
                 self._text.draw(
-                    f"ground ({palette.ground_meaning}): "
-                    f"{palette.name.lower()} colour, season-driven not random",
-                    left + 12, top - 102, _DIM, font_size=9,
+                    f"ground: {palette.ground_meaning}",
+                    left + 12, top - 100, _DIM, font_size=9,
+                )
+                self._text.draw(
+                    "click a cell to pin it", left + 12, top - 116, _DIM,
+                    font_size=10,
                 )
             else:
                 self._text.draw(
                     "no environment", left + 12, top - 42, _MUTED, font_size=13,
                 )
-            self._text.draw(
-                "click a cell to pin it", left + 12, top - 108, _DIM, font_size=10,
-            )
+                self._text.draw(
+                    "click a cell to pin it", left + 12, top - 62, _DIM,
+                    font_size=10,
+                )
 
         # ---- Inspector ------------------------------------------------
         h = 116
@@ -989,6 +993,9 @@ class ArcadeView(arcade.Window):
         super().on_resize(width, height)
         self._layout_size = None
         self._recompute_layout()
+        logger.info(
+            "event=ui.window_resized width=%s height=%s", width, height
+        )
 
     def _slider_hit(self, sx: float, sy: float) -> bool:
         if self._slider_rect is None:

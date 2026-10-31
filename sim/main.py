@@ -21,7 +21,7 @@ from sim.container import Container
 from sim.domain.environment import Environment
 from sim.input.keyboard import KeyboardInput
 from sim.observability import configure_logging, get_logger, log_event
-from sim.time.game_clock import advance_clock
+from sim.time.game_clock import advance_clock, initial_time_scale, set_time_scale
 
 logger = get_logger("main")
 
@@ -123,6 +123,14 @@ def main() -> None:
     headless = os.environ.get("BEAN_HEADLESS", "0") == "1"
     fixed_step = 1.0 / config.tick_rate
 
+    # Initial playback scale from config; changes *perception* only, never the
+    # fixed tick rate or sim time progression.
+    session.clock.time_scale = initial_time_scale(
+        config.time.initial_time_scale,
+        vmin=config.time.time_scale_min,
+        vmax=config.time.time_scale_max,
+    )
+
     if headless:
         try:
             run_headless(session, environment, fixed_step)
@@ -139,10 +147,16 @@ def main() -> None:
 
     from sim.rendering.arcade_view import ArcadeView
 
+    # Preferred default window: 1:1 world rendering (1 world unit = 1 screen
+    # pixel at default scale), plus a full-height sidebar. Integer-snapped so
+    # cell rectangles land on whole pixels.
+    _SIDEBAR_WIDTH = 360
     view = ArcadeView(
         session,
-        width=int(config.world.width) + 360,
-        height=int(config.world.height),
+        width=_SIDEBAR_WIDTH + int(config.world.width),
+        # World height plus top/bottom margins so the drawn world is 1:1
+        # (scale 1.0) at startup.
+        height=int(config.world.height) + 2 * 12,
         title="Bean World",
         tick_rate=config.tick_rate,
     )

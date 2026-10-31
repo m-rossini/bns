@@ -2,9 +2,17 @@
 
 Decouples render frame rate from simulation tick rate using a fixed-step
 accumulator. When paused, simulation time does not advance.
+
+`time_scale` changes *perception* only: it slows or speeds how fast simulated
+time seems to pass without changing ``tick_rate`` or the fixed-step tick
+accumulation. Clamping keeps it inside `[time_scale_min, time_scale_max]`.
 """
 
 from sim.components import GameClock
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
 
 
 def advance_clock(clock: GameClock, real_dt: float, fixed_step: float) -> int:
@@ -18,7 +26,8 @@ def advance_clock(clock: GameClock, real_dt: float, fixed_step: float) -> int:
     if clock.paused:
         return 0
 
-    # Accumulate scaled simulation time
+    # Accumulate scaled simulation time. time_scale only affects perception:
+    # the fixed step (tick_rate) is unchanged.
     clock.accumulator += real_dt * clock.time_scale
 
     ticks_executed = 0
@@ -42,3 +51,20 @@ def resume(clock: GameClock) -> None:
 def toggle_pause(clock: GameClock) -> bool:
     clock.paused = not clock.paused
     return clock.paused
+
+
+def set_time_scale(clock: GameClock, value: float, vmin: float = 0.0,
+                   vmax: float = 4.0) -> float:
+    """Set the playback time scale, clamped to [vmin, vmax].
+
+    Returns the value actually applied.
+    """
+    clock.time_scale = max(vmin, min(vmax, value))
+    return clock.time_scale
+
+
+def initial_time_scale(config_time_scale: float,
+                       vmin: float = 0.0,
+                       vmax: float = 4.0) -> float:
+    """The configured playback scale, clamped to its allowed range."""
+    return max(vmin, min(vmax, config_time_scale))

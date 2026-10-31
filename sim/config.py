@@ -59,11 +59,19 @@ class WorldConfig:
 
 @dataclass
 class TimeConfig:
-    """Tick -> date conversion. The calendar is the only time authority."""
+    """Tick -> date conversion. The calendar is the only time authority.
+
+    ``time_scale`` is the playback/perception multiplier applied by the
+    ticker: it slows or speeds how fast simulated time *appears* to pass
+    without touching the fixed-step tick accumulation or ``tick_rate``.
+    """
 
     ticks_per_day: int = 1200          # 40 s per day at 30 ticks/s
     ticks_per_season: int = 4800       # 4 days per season
     start_tick: int = 0
+    initial_time_scale: float = 1.0    # perceived speed at startup (1.0 = real time)
+    time_scale_min: float = 0.1        # slowest the slider can go
+    time_scale_max: float = 4.0        # fastest the slider can go
 
 
 @dataclass(frozen=True)
@@ -290,6 +298,9 @@ DEFAULT_CONFIG = SimulationConfig(
     time=TimeConfig(
         ticks_per_day=1200,     # 40 s per day at 30 ticks/s
         ticks_per_season=4800,  # 4 days per season
+        initial_time_scale=1.0,
+        time_scale_min=0.1,
+        time_scale_max=4.0,
     ),
     seasons=[
         SeasonConfig(

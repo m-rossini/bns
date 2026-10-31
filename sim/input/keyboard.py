@@ -1,11 +1,19 @@
 """Keyboard input handler for state transitions.
 
 Maps physical key presses to logical state changes on GameSession.
+
+Key codes are pyglet/GLFW codes, not ASCII: letters are lowercase ASCII
+(`P` = 112, `Q` = 113) and `Escape` is 65307.
 """
 
 import time
 
 from sim.components import GameSession, GameState
+
+KEY_SPACE = 32
+KEY_P = 112
+KEY_Q = 113
+KEY_ESCAPE = 65307
 
 
 class KeyboardInput:
@@ -18,40 +26,47 @@ class KeyboardInput:
         state = session.state
 
         if state == GameState.START:
-            if key == 32:  # SPACE
+            if key == KEY_SPACE:
                 session.state = GameState.PLAYING
                 session.clock.paused = False
                 session.start_time = time.time()
-            elif key == 271:  # Esc
-                session.state = GameState.END
-                session.end_reason = "user quit"
-
-        elif state == GameState.PLAYING:
-            if key == 32:  # SPACE
-                pass  # reserved for future actions
-            elif key == 80 or key == 271:  # P or Esc
+            elif key == KEY_P:
                 session.state = GameState.PAUSED
                 session.clock.paused = True
-            elif key == 81:  # Q
-                session.state = GameState.END
-                session.end_reason = "user quit"
+            elif key == KEY_ESCAPE:
+                self._quit(session)
+
+        elif state == GameState.PLAYING:
+            if key in (KEY_P,):
+                session.state = GameState.PAUSED
+                session.clock.paused = True
+            elif key in (KEY_Q, KEY_ESCAPE):
+                self._quit(session)
 
         elif state == GameState.PAUSED:
-            if key == 80 or key == 271:  # P or Esc
+            if key == KEY_P:
                 session.state = GameState.PLAYING
                 session.clock.paused = False
-            elif key == 81:  # Q
-                session.state = GameState.END
-                session.end_reason = "user quit"
+            elif key in (KEY_Q, KEY_ESCAPE):
+                self._quit(session)
 
         elif state == GameState.END:
-            if key == 32:  # SPACE
+            if key == KEY_SPACE:
                 self._restart(session)
+            elif key in (KEY_ESCAPE, KEY_Q):
+                session.exit_requested = True
+
+    @staticmethod
+    def _quit(session: GameSession) -> None:
+        session.state = GameState.END
+        session.end_reason = "user quit"
+        session.exit_requested = True
 
     def _restart(self, session: GameSession) -> None:
         session.state = GameState.START
         session.clock = session.clock.__class__()  # fresh clock
         session.end_reason = None
+        session.exit_requested = False
         session.start_time = 0.0
         session.pause_time = 0.0
         if session.environment is not None:

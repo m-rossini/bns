@@ -11,7 +11,7 @@ import os
 import time
 
 from sim.components import GameSession, GameState
-from sim.config_defaults import DEFAULT_CONFIG
+from sim.config import DEFAULT_CONFIG
 from sim.container import Container
 from sim.domain.environment import Environment
 from sim.input.keyboard import KeyboardInput
@@ -58,13 +58,22 @@ def run_headless(
     for _ in range(max(0, frames)):
         _step(session, environment, frame_dt, fixed_step)
 
-    barriers = len(session.world.barriers) if session.world else 0
     env_tick = environment.tick if environment is not None else 0
-    print(
-        f"headless run finished: frames={frames} ticks={session.clock.tick} "
-        f"env_tick={env_tick} barriers={barriers}",
-        flush=True,
-    )
+    if environment is not None:
+        calendar = environment.calendar
+        palette = environment.palette
+        weather = environment.weather
+        print(
+            f"headless run finished: frames={frames} ticks={session.clock.tick} "
+            f"env_tick={env_tick} day={calendar.day} clock={calendar.clock} "
+            f"season={palette.name} weather={weather}",
+            flush=True,
+        )
+    else:
+        print(
+            f"headless run finished: frames={frames} ticks={session.clock.tick}",
+            flush=True,
+        )
 
 
 def main() -> None:
@@ -89,14 +98,13 @@ def main() -> None:
 
     view = ArcadeView(
         session,
-        width=1200,
-        height=800,
-        title="Bean World — Logical / Physical Separation",
+        width=int(config.world.width) + 360,
+        height=int(config.world.height),
+        title="Bean World",
         tick_rate=config.tick_rate,
     )
 
-    input_handler = KeyboardInput(session)
-    view.on_key_press = lambda key, modifiers: input_handler.handle_keypress(key)
+    view.set_input_handler(KeyboardInput(session))
 
     last_time = time.perf_counter()
 
@@ -106,6 +114,10 @@ def main() -> None:
         real_dt = now - last_time
         last_time = now
         _step(session, environment, real_dt, fixed_step)
+
+        if session.exit_requested:
+            view.close()
+            arcade.exit()
 
     view.on_update = on_update
 

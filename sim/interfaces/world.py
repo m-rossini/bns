@@ -1,11 +1,11 @@
 """Interface for the logical world.
 
-The world owns the bounded arena, orientation, wrap behavior, and barriers.
-It knows nothing about rendering or beans.
+The world owns the bounded arena, its cell grid, orientation and wrap
+behavior. It knows nothing about rendering or beans.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from sim.components import Barrier
 
@@ -19,6 +19,21 @@ class IWorld(ABC):
     @property
     @abstractmethod
     def height(self) -> float:
+        ...
+
+    @property
+    @abstractmethod
+    def cell_size(self) -> float:
+        ...
+
+    @property
+    @abstractmethod
+    def cols(self) -> int:
+        ...
+
+    @property
+    @abstractmethod
+    def rows(self) -> int:
         ...
 
     @property
@@ -42,6 +57,18 @@ class IWorld(ABC):
 
     @abstractmethod
     def remove_barrier(self, barrier_id: int) -> bool:
+        ...
+
+    @abstractmethod
+    def cell_index(self, x: float, y: float) -> Tuple[int, int]:
+        ...
+
+    @abstractmethod
+    def cell_center(self, col: int, row: int) -> Tuple[float, float]:
+        ...
+
+    @abstractmethod
+    def cell_bounds(self, col: int, row: int) -> Tuple[float, float, float, float]:
         ...
 
     @abstractmethod

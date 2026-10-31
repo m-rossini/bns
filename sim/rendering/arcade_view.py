@@ -1,8 +1,18 @@
 """Physical screen representation using Arcade.
 
 Reads a read-only snapshot of GameSession and draws state-specific screens.
-Never mutates domain state. Visualises the day/night cycle, seasons, weather,
-and a temperature inspector driven by mouse clicks.
+Never mutates domain state.
+
+Layout
+------
+* Left: a full-height sidebar with stacked information boxes (time, day,
+  season, environment, inspector, controls).
+* Right: the world, using the full height of the window.
+* All colours come from the environment strategies (season palette, sky
+  palette); the view only owns neutral UI chrome.
+
+The world grid is `world.cell_size` world units; the view applies one uniform
+world -> screen scale, so cells are never assumed to be a pixel size.
 """
 
 import math
@@ -10,22 +20,21 @@ import math
 import arcade
 
 from sim.components import GameSession, GameState
+from sim.domain.visuals import SeasonPalette, SkyPalette
 
-# --- Palette ---------------------------------------------------------------
+# --- UI chrome (not environmental colours) ---------------------------------
+_TEXT = (238, 240, 245)
+_MUTED = (168, 176, 190)
+_DIM = (120, 128, 142)
+_PANEL_BG = (8, 12, 20, 210)
+_PANEL_BORDER = (255, 255, 255, 42)
+_ACCENT = (120, 230, 150)
+_INSPECT = (255, 120, 110)
+_TRACK = (38, 44, 56, 230)
+_SUN = (255, 205, 110)
+_MOON = (225, 230, 248)
 
-_NIGHT_SKY = (10, 14, 32)
-_DAY_SKY = (122, 182, 228)
-_TWILIGHT_SKY = (232, 138, 84)
-_OVERCAST = (92, 98, 110)
-
-_GROUND = {
-    "spring": (96, 170, 88),
-    "summer": (68, 146, 72),
-    "autumn": (178, 128, 62),
-    "winter": (222, 230, 236),
-}
-
-_WEATHER_TEXT = {
+_WEATHER_LABEL = {
     "clear": (255, 226, 140),
     "cloudy": (200, 205, 215),
     "rain": (165, 205, 255),
@@ -33,32 +42,32 @@ _WEATHER_TEXT = {
     "snow": (235, 245, 255),
 }
 
-# Seasonal ground speckles (grass, flowers, leaves, snow patches).
-_GROUND_DETAIL = {
-    "spring": [(250, 246, 180), (248, 186, 214), (232, 248, 236)],
-    "summer": [(52, 122, 58), (92, 168, 84), (38, 110, 54)],
-    "autumn": [(214, 124, 52), (166, 92, 42), (206, 168, 70)],
-    "winter": [(246, 250, 255), (206, 222, 238), (232, 240, 248)],
+# Per-cell tint applied to the ground: (colour, alpha 0..1)
+_WEATHER_TINT = {
+    "clear": None,
+    "cloudy": ((92, 98, 110), 0.20),
+    "rain": ((70, 96, 132), 0.30),
+    "storm": ((46, 50, 70), 0.42),
+    "snow": ((236, 244, 252), 0.38),
 }
+_WEATHER_DIM = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow": 0.85}
 
-_TEXT = (238, 240, 245)
-_MUTED = (168, 176, 190)
-_PANEL_BG = (8, 12, 20, 200)
-_PANEL_BORDER = (255, 255, 255, 55)
-_ACCENT = (120, 230, 150)
-_INSPECT = (255, 120, 110)
+_MARGIN = 12.0
+_GAP = 8.0
+_SIDEBAR_MIN = 300.0
+_SIDEBAR_MAX = 360.0
 
 
 def _mix(a, b, t: float):
     t = max(0.0, min(1.0, t))
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
 def _shade(color, factor: float):
-    return tuple(max(0, min(255, int(c * factor))) for c in color[:3])
+    return tuple(max(0, min(255, int(round(c * factor)))) for c in color[:3])
 
 
-class ArcadeView(arcade.Window):  # implements IRenderer structurally
+class ArcadeView(arcade.Window):
     def __init__(
         self,
         session: GameSession,
@@ -70,9 +79,13 @@ class ArcadeView(arcade.Window):  # implements IRenderer structurally
         super().__init__(width, height, title, resizable=True)
         self.session = session
         self._tick_rate = max(tick_rate, 0.001)
+        self._input = None
 
-        self._world_width = session.world.width if session.world else 1200.0
-        self._world_height = session.world.height if session.world else 800.0
+        world = session.world
+        self._world_width = world.width if world is not None else 1200.0
+        self._world_height = world.height if world is not None else 800.0
+        self._cell_size = world.cell_size if world is not None else 50.0
+
         self._scale = 1.0
         self._left = 0.0
         self._bottom = 0.0
@@ -84,156 +97,146 @@ class ArcadeView(arcade.Window):  # implements IRenderer structurally
         self._recompute_layout()
 
     # ------------------------------------------------------------------
-    # IRenderer implementation
+    # Input wiring
+    # ------------------------------------------------------------------
+    def set_input_handler(self, handler) -> None:
+        self._input = handler
+
+    def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if self._input is not None:
+            self._input.handle_keypress(symbol)
+
+    # ------------------------------------------------------------------
+    # Environment accessors
+    # ------------------------------------------------------------------
+    def _env(self):
+        return self.session.environment
+
+    def _palette(self) -> SeasonPalette:
+        env = self._env()
+        if env is None:
+            return SeasonPalette(
+                name="Static", ground=(110, 150, 110), details=((140, 170, 140),),
+                base_temperature=14.0, temperature_swing=7.0,
+                humidity=0.5, pressure_hpa=1013.0,
+            )
+        return env.palette
+
+    def _sky(self) -> SkyPalette:
+        env = self._env()
+        if env is None or env.daynight_strategy is None:
+            return SkyPalette(
+                night=(10, 14, 32), day=(122, 182, 228), twilight=(232, 138, 84),
+                overcast=(92, 98, 110), sun=(255, 228, 130),
+                moon=(222, 228, 245), star=(235, 240, 255),
+            )
+        return env.daynight_strategy.sky_palette()
+
+    def _celestial(self, session: GameSession):
+        env = session.environment
+        if env is None or env.daynight_strategy is None:
+            return None
+        return env.daynight_strategy.celestial(env.calendar)
+
+    def _reading(self, session: GameSession):
+        """World position used for the 'environment' box."""
+        if self._selected_world is not None:
+            return self._selected_world, "SELECTED"
+        if self._hover_world is not None:
+            return self._hover_world, "CURSOR"
+        return (self._world_width / 2.0, self._world_height / 2.0), "CENTER"
+
+    def _light(self, session: GameSession) -> float:
+        env = session.environment
+        return env.light_level if env is not None else 0.7
+
+    def _season(self, session: GameSession) -> str:
+        env = session.environment
+        return env.season if env is not None else "Static"
+
+    def _phase(self, session: GameSession) -> str:
+        env = session.environment
+        return env.phase if env is not None else "day"
+
+    def _ambient(self, session: GameSession) -> float:
+        light = self._light(session)
+        weather = self._env().weather if self._env() is not None else "clear"
+        return max(0.0, min(1.0, light * _WEATHER_DIM.get(weather, 1.0)))
+
+    def _sky_color(self, session: GameSession):
+        palette = self._sky()
+        light = self._light(session)
+        phase = self._phase(session)
+        weather = self._env().weather if self._env() is not None else "clear"
+
+        sky = _mix(palette.night, palette.day, light)
+        if phase in ("dawn", "dusk"):
+            strength = max(0.0, 1.0 - abs(light - 0.28) / 0.28)
+            sky = _mix(sky, palette.twilight, 0.55 * strength)
+        if weather == "cloudy":
+            sky = _mix(sky, palette.overcast, 0.35)
+        elif weather == "rain":
+            sky = _mix(sky, palette.overcast, 0.55)
+        elif weather == "storm":
+            sky = _mix(sky, _shade(palette.overcast, 0.6), 0.7)
+        elif weather == "snow":
+            sky = _mix(sky, (196, 204, 216), 0.5)
+        return sky
+
+    # ------------------------------------------------------------------
+    # Screens
     # ------------------------------------------------------------------
     def draw_start_screen(self) -> None:
-        self._draw_sky()
-        self._draw_stars()
-        self._draw_sun_moon()
-
-        panel_w, panel_h = min(620, self.width - 40), 250
-        left = (self.width - panel_w) / 2
-        bottom = (self.height - panel_h) / 2
-        self._panel(left, bottom, panel_w, panel_h)
-
-        cx = self.width / 2
-        arcade.draw_text(
-            "BEAN WORLD",
-            cx,
-            bottom + panel_h - 62,
-            _ACCENT,
-            font_size=46,
-            anchor_x="center",
-            anchor_y="center",
-            bold=True,
-        )
-        arcade.draw_text(
-            "A pause-aware bean simulation",
-            cx,
-            bottom + panel_h - 108,
-            _MUTED,
-            font_size=16,
-            anchor_x="center",
-            anchor_y="center",
-        )
-        arcade.draw_text(
-            "Press SPACE to start",
-            cx,
-            bottom + 78,
-            _TEXT,
-            font_size=22,
-            anchor_x="center",
-            anchor_y="center",
-        )
-        arcade.draw_text(
-            "Esc: quit    ·    P: pause    ·    Click the world: inspect temperature",
-            cx,
-            bottom + 38,
-            _MUTED,
-            font_size=13,
-            anchor_x="center",
-            anchor_y="center",
-        )
+        self.clear(self._sky_color(self.session))
+        self._draw_backdrop(self.session)
+        self._draw_title_panel("BEAN WORLD", "Press SPACE to start")
 
     def draw_playing(self, session: GameSession) -> None:
-        self._draw_sky()
-        self._draw_stars()
-        self._draw_sun_moon()
-        self._draw_ground()
-        self._draw_ground_detail()
-        self._draw_grid()
-        self._draw_barriers(session.world)
-        self._draw_weather(session)
-        self._draw_selection(session)
-        self._draw_panels(session)
+        self.clear(_shade(self._sky_color(session), 0.55))
+        self._draw_world(session)
+        self._draw_sidebar(session)
 
     def draw_paused(self, session: GameSession) -> None:
         self.draw_playing(session)
-        arcade.draw_lbwh_rectangle_filled(
-            0, 0, self.width, self.height, (0, 0, 0, 150)
-        )
-        cx = self.width / 2
+        arcade.draw_lbwh_rectangle_filled(0, 0, self.width, self.height, (0, 0, 0, 150))
         arcade.draw_text(
-            "PAUSED",
-            cx,
-            self.height / 2 + 24,
-            _TEXT,
-            font_size=46,
-            anchor_x="center",
-            anchor_y="center",
-            bold=True,
+            "PAUSED", self.width / 2, self.height / 2 + 18, _TEXT,
+            font_size=44, anchor_x="center", anchor_y="center", bold=True,
         )
         arcade.draw_text(
-            "P or Esc to resume    ·    Q to quit",
-            cx,
-            self.height / 2 - 26,
-            _MUTED,
-            font_size=16,
-            anchor_x="center",
-            anchor_y="center",
+            "P to resume   ·   Esc or Q to quit", self.width / 2,
+            self.height / 2 - 28, _MUTED, font_size=15,
+            anchor_x="center", anchor_y="center",
         )
 
     def draw_end_screen(self, session: GameSession) -> None:
-        self.clear((26, 12, 16))
-        cx = self.width / 2
-        arcade.draw_text(
+        self.clear(_shade(self._sky_color(session), 0.35))
+        self._draw_backdrop(session)
+        self._draw_title_panel(
             "GAME OVER",
-            cx,
-            self.height / 2 + 70,
-            (240, 96, 96),
-            font_size=48,
-            anchor_x="center",
-            anchor_y="center",
-            bold=True,
-        )
-        arcade.draw_text(
             f"Reason: {session.end_reason or 'ended'}",
-            cx,
-            self.height / 2 + 14,
-            _TEXT,
-            font_size=20,
-            anchor_x="center",
-            anchor_y="center",
+            hint="SPACE to restart   ·   Esc to quit",
+            accent=(240, 96, 96),
         )
-        arcade.draw_text(
-            f"Ticks survived: {session.clock.tick}"
-            f"    ·    Sim time: {self._format_sim_time(session.clock.tick)}",
-            cx,
-            self.height / 2 - 20,
-            _MUTED,
-            font_size=16,
-            anchor_x="center",
-            anchor_y="center",
-        )
-        arcade.draw_text(
-            "Press SPACE to restart",
-            cx,
-            self.height / 2 - 76,
-            _TEXT,
-            font_size=18,
-            anchor_x="center",
-            anchor_y="center",
-        )
-
-    # NOTE: `flip()` is intentionally inherited from pyglet's Window. It calls
-    # glXSwapBuffers, which is what makes the back buffer visible. Overriding it
-    # with a no-op leaves the window showing a stale (black) front buffer.
 
     # ------------------------------------------------------------------
     # Layout / world <-> screen mapping
     # ------------------------------------------------------------------
+    def _sidebar_width(self) -> float:
+        return max(_SIDEBAR_MIN, min(_SIDEBAR_MAX, self.width * 0.30))
+
     def _recompute_layout(self) -> None:
-        pad = 18.0
-        top_band = 112.0
-        avail_w = max(1.0, self.width - 2 * pad)
-        avail_h = max(1.0, self.height - 2 * pad - top_band)
-        self._scale = min(
-            avail_w / self._world_width, avail_h / self._world_height
-        )
+        sidebar = self._sidebar_width()
+        area_left = sidebar + 2 * _MARGIN
+        area_bottom = _MARGIN
+        area_w = max(1.0, self.width - area_left - _MARGIN)
+        area_h = max(1.0, self.height - 2 * _MARGIN)
+
+        self._scale = min(area_w / self._world_width, area_h / self._world_height)
         drawn_w = self._world_width * self._scale
         drawn_h = self._world_height * self._scale
-        self._left = (self.width - drawn_w) / 2
-        self._bottom = pad + (avail_h - drawn_h) / 2
+        self._left = area_left + (area_w - drawn_w) / 2
+        self._bottom = area_bottom + (area_h - drawn_h) / 2
         self._right = self._left + drawn_w
         self._top = self._bottom + drawn_h
 
@@ -247,379 +250,470 @@ class ArcadeView(arcade.Window):  # implements IRenderer structurally
         return None
 
     def _world_to_screen(self, wx: float, wy: float):
-        return (
-            self._left + wx * self._scale,
-            self._bottom + wy * self._scale,
+        return (self._left + wx * self._scale, self._bottom + wy * self._scale)
+
+    # ------------------------------------------------------------------
+    # Backdrop (start / end screens)
+    # ------------------------------------------------------------------
+    def _draw_backdrop(self, session: GameSession) -> None:
+        env = session.environment
+        light = env.light_level if env is not None else 0.7
+        palette = self._sky()
+
+        if light < 0.45:
+            visibility = (0.45 - light) / 0.45
+            color = _mix(palette.night, palette.star, 0.85 * visibility)
+            for i in range(90):
+                x = (i * 97.13) % self.width
+                y = (i * 53.71) % self.height
+                radius = 1.6 if i % 7 == 0 else 1.0
+                arcade.draw_circle_filled(x, y, radius, color)
+
+        celestial = self._celestial(session)
+        if celestial is None:
+            return
+
+        cx = self.width * 0.5
+        span = self.width * 0.42
+        if celestial.sun_visible:
+            x = cx - span / 2 + span * celestial.sun_progress
+            y = self.height - 90 - 40 * math.sin(math.pi * celestial.sun_progress)
+            arcade.draw_circle_filled(x, y, 16, palette.sun)
+        elif celestial.moon_visible:
+            x = cx - span / 2 + span * celestial.moon_progress
+            y = self.height - 90 - 40 * math.sin(math.pi * celestial.moon_progress)
+            arcade.draw_circle_filled(x, y, 13, palette.moon)
+            offset = 5 + 8 * (1.0 - celestial.moon_illumination)
+            arcade.draw_circle_filled(x + offset, y + 3, 12, _shade(self._sky_color(session), 1.0))
+
+    def _draw_title_panel(
+        self, title: str, subtitle: str, hint: str | None = None, accent=_ACCENT
+    ) -> None:
+        panel_w = min(620, self.width - 60)
+        panel_h = 250
+        left = (self.width - panel_w) / 2
+        bottom = (self.height - panel_h) / 2
+        self._panel(left, bottom, panel_w, panel_h)
+
+        arcade.draw_text(
+            title, self.width / 2, bottom + panel_h - 66, accent,
+            font_size=44, anchor_x="center", anchor_y="center", bold=True,
+        )
+        arcade.draw_text(
+            subtitle, self.width / 2, bottom + panel_h - 116, _TEXT,
+            font_size=19, anchor_x="center", anchor_y="center",
+        )
+        arcade.draw_text(
+            hint or "Esc: quit   ·   P: pause   ·   Click the world to inspect a cell",
+            self.width / 2, bottom + 62, _MUTED, font_size=13,
+            anchor_x="center", anchor_y="center",
         )
 
     # ------------------------------------------------------------------
-    # Visual helpers
+    # World rendering
     # ------------------------------------------------------------------
-    def _environment(self, session: GameSession):
-        return session.environment
-
-    def _light(self, session: GameSession) -> float:
-        env = self._environment(session)
-        return env.light_level if env is not None else 0.7
-
-    def _season(self, session: GameSession) -> str:
-        env = self._environment(session)
-        return env.season if env is not None else "spring"
-
-    def _phase(self, session: GameSession) -> str:
-        env = self._environment(session)
-        return env.phase if env is not None else "day"
-
-    def _weather(self, session: GameSession) -> str:
-        env = self._environment(session)
-        return env.weather if env is not None else "clear"
-
-    def _ambient(self, session: GameSession) -> float:
-        """Light after weather dimming, used to shade the world."""
-        light = self._light(session)
-        weather = self._weather(session)
-        dim = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68,
-               "storm": 0.5, "snow": 0.85}.get(weather, 1.0)
-        return max(0.0, min(1.0, light * dim))
-
-    def _sky_color(self, session: GameSession):
-        light = self._light(session)
-        weather = self._weather(session)
-        phase = self._phase(session)
-
-        sky = _mix(_NIGHT_SKY, _DAY_SKY, light)
-        if phase in ("dawn", "dusk"):
-            strength = max(0.0, 1.0 - abs(light - 0.28) / 0.28)
-            sky = _mix(sky, _TWILIGHT_SKY, 0.55 * strength)
-
-        if weather == "cloudy":
-            sky = _mix(sky, _OVERCAST, 0.35)
-        elif weather == "rain":
-            sky = _mix(sky, _OVERCAST, 0.55)
-        elif weather == "storm":
-            sky = _mix(sky, (58, 60, 78), 0.7)
-        elif weather == "snow":
-            sky = _mix(sky, (196, 204, 216), 0.5)
-        return sky
-
-    def _draw_sky(self) -> None:
-        self.clear(self._sky_color(self.session))
-
-    def _draw_stars(self) -> None:
-        light = self._light(self.session)
-        if light >= 0.45:
-            return
-        visibility = (0.45 - light) / 0.45
-        color = _mix(_NIGHT_SKY, (235, 240, 255), 0.85 * visibility)
-        width, height = float(self.width), float(self.height)
-        for i in range(80):
-            x = (i * 97.13) % width
-            y = (i * 53.71) % height
-            radius = 1.6 if i % 7 == 0 else 1.0
-            arcade.draw_circle_filled(x, y, radius, color)
-
-    def _draw_sun_moon(self) -> None:
-        env = self._environment(self.session)
-        dn = env.daynight_strategy if env is not None else None
-        if dn is None:
-            return
-        ticks_per_day = dn.ticks_per_day
-        progress = (self.session.clock.tick % ticks_per_day) / ticks_per_day
-
-        band_bottom = self._top
-        band_top = float(self.height) - 8.0
-        span = max(10.0, band_top - band_bottom)
-
-        # Keep the arc in the gap between the two HUD panels.
-        arc_left = min(float(self.width) - 2.0, 436.0)
-        arc_right = max(arc_left + 1.0, float(self.width) - 360.0)
-        arc_width = max(1.0, arc_right - arc_left)
-
-        if 0.25 <= progress <= 0.75:
-            t = (progress - 0.25) / 0.5
-            x = arc_left + arc_width * t
-            y = band_bottom + 22.0 + span * 0.35 * (0.3 + 0.7 * math.sin(math.pi * t))
-            arcade.draw_circle_filled(x, y, 17, (255, 228, 130))
-            arcade.draw_circle_outline(x, y, 24, (255, 210, 110, 90), 2)
-        else:
-            t = ((progress + 0.25) % 1.0) / 0.5
-            x = arc_left + arc_width * t
-            y = band_bottom + 22.0 + span * 0.35 * (0.3 + 0.7 * math.sin(math.pi * t))
-            arcade.draw_circle_filled(x, y, 14, (222, 228, 245))
-            arcade.draw_circle_filled(
-                x - 4, y + 3, 3, _shade((222, 228, 245), 0.82)
-            )
-
-    def _draw_ground(self) -> None:
-        season = self._season(self.session)
-        ambient = self._ambient(self.session)
-        base = _GROUND.get(season, _GROUND["spring"])
-        ground = _shade(base, 0.35 + 0.65 * ambient)
+    def _draw_world(self, session: GameSession) -> None:
+        palette = self._palette()
+        env = session.environment
+        ambient = self._ambient(session)
+        base = _shade(palette.ground, 0.32 + 0.68 * ambient)
 
         arcade.draw_lbwh_rectangle_filled(
-            self._left,
-            self._bottom,
-            self._right - self._left,
-            self._top - self._bottom,
-            ground,
+            self._left, self._bottom,
+            self._right - self._left, self._top - self._bottom,
+            base,
         )
 
-    def _draw_ground_detail(self) -> None:
-        season = self._season(self.session)
-        ambient = self._ambient(self.session)
-        colors = _GROUND_DETAIL.get(season, _GROUND_DETAIL["spring"])
-        factor = 0.4 + 0.6 * ambient
+        if env is not None:
+            self._draw_weather_cells(session, palette, ambient)
+            self._draw_details(session, palette, ambient)
+            self._draw_precipitation(session)
 
-        for i in range(130):
+        self._draw_grid(session)
+        self._draw_selection(session)
+
+    def _draw_weather_cells(self, session: GameSession, palette, ambient: float) -> None:
+        env = session.environment
+        if env is None:
+            return
+        world = session.world
+        cols = world.cols if world is not None else 1
+        rows = world.rows if world is not None else 1
+        cell = self._cell_size * self._scale
+        if cell < 2:
+            return
+
+        for col in range(cols):
+            for row in range(rows):
+                wx, wy = self._world_to_screen(
+                    (col + 0.5) * self._cell_size, (row + 0.5) * self._cell_size
+                )
+                tint = _WEATHER_TINT.get(env.weather_at(
+                    (col + 0.5) * self._cell_size, (row + 0.5) * self._cell_size
+                ))
+                if tint is None:
+                    continue
+                color, alpha = tint
+                a = int(255 * alpha * (0.35 + 0.65 * (1.0 - ambient)))
+                arcade.draw_lbwh_rectangle_filled(
+                    wx - cell / 2, wy - cell / 2, cell, cell, (*color, max(0, a))
+                )
+
+    def _draw_details(self, session: GameSession, palette, ambient: float) -> None:
+        factor = 0.45 + 0.55 * ambient
+        details = palette.details or ((120, 140, 120),)
+        for i in range(150):
             wx = (i * 97.31 + 17.0) % self._world_width
             wy = (i * 57.73 + 29.0) % self._world_height
             sx, sy = self._world_to_screen(wx, wy)
-            radius = 1.4 + (i % 4) * 0.6
+            radius = 1.3 + (i % 4) * 0.5
             arcade.draw_circle_filled(
-                sx, sy, radius, _shade(colors[i % len(colors)], factor)
+                sx, sy, radius, _shade(details[i % len(details)], factor)
             )
 
-    def _draw_grid(self) -> None:
-        season = self._season(self.session)
-        ambient = self._ambient(self.session)
-        line_color = _shade(_GROUND.get(season, _GROUND["spring"]), 0.28 + 0.5 * ambient)
-        step = 100.0
-        x = step
-        while x < self._world_width:
-            sx, _ = self._world_to_screen(x, 0.0)
-            arcade.draw_line(
-                sx, self._bottom, sx, self._top, line_color, 1
-            )
-            x += step
-        y = step
-        while y < self._world_height:
-            _, sy = self._world_to_screen(0.0, y)
-            arcade.draw_line(
-                self._left, sy, self._right, sy, line_color, 1
-            )
-            y += step
+    def _draw_precipitation(self, session: GameSession) -> None:
+        env = session.environment
+        world = session.world
+        if env is None or world is None:
+            return
+
+        tick = env.tick
+        cell = self._cell_size * self._scale
+        if cell < 3:
+            return
+
+        for col in range(world.cols):
+            for row in range(world.rows):
+                cx = (col + 0.5) * self._cell_size
+                cy = (row + 0.5) * self._cell_size
+                condition = env.weather_at(cx, cy)
+                if condition not in ("rain", "storm", "snow"):
+                    continue
+
+                left = self._left + col * cell
+                bottom = self._bottom + row * cell
+                count = 5 if condition == "storm" else 3
+                speed = 3.4 if condition == "storm" else 2.2
+
+                for i in range(count):
+                    px = left + ((i * 37.0 + col * 13.0) % max(1.0, cell))
+                    py = bottom + ((tick * speed + i * 41.0 + row * 17.0) % max(1.0, cell))
+                    if condition == "snow":
+                        arcade.draw_circle_filled(px, py, 1.6, (240, 246, 255, 210))
+                    else:
+                        arcade.draw_line(
+                            px, py, px - 2, py - 8, (170, 200, 240, 160), 1
+                        )
+
+    def _draw_grid(self, session: GameSession) -> None:
+        step = self._cell_size * self._scale
+        if step < 6:
+            return
+        color = _shade(self._palette().ground, 0.55)
+
+        col = 1
+        while col * self._cell_size < self._world_width:
+            sx, _ = self._world_to_screen(col * self._cell_size, 0.0)
+            arcade.draw_line(sx, self._bottom, sx, self._top, (*color, 90), 1)
+            col += 1
+        row = 1
+        while row * self._cell_size < self._world_height:
+            _, sy = self._world_to_screen(0.0, row * self._cell_size)
+            arcade.draw_line(self._left, sy, self._right, sy, (*color, 90), 1)
+            row += 1
 
         arcade.draw_lbwh_rectangle_outline(
-            self._left,
-            self._bottom,
-            self._right - self._left,
-            self._top - self._bottom,
-            (245, 246, 250, 170),
-            2,
+            self._left, self._bottom,
+            self._right - self._left, self._top - self._bottom,
+            (245, 246, 250, 170), 2,
         )
-
-    def _draw_barriers(self, world) -> None:
-        if world is None:
-            return
-        ambient = self._ambient(self.session)
-        factor = 0.45 + 0.55 * ambient
-        fill = _shade((118, 120, 130), factor)
-        outline = _shade((52, 54, 62), max(0.6, factor))
-
-        for barrier in world.barriers:
-            sx, sy = self._world_to_screen(barrier.x, barrier.y)
-            if barrier.kind == "rect":
-                half_w = barrier.width * self._scale / 2
-                half_h = barrier.height * self._scale / 2
-                arcade.draw_lbwh_rectangle_filled(
-                    sx - half_w, sy - half_h, half_w * 2, half_h * 2, fill
-                )
-                arcade.draw_lbwh_rectangle_outline(
-                    sx - half_w, sy - half_h, half_w * 2, half_h * 2,
-                    outline, 2,
-                )
-            elif barrier.kind == "circle":
-                radius = barrier.radius * self._scale
-                arcade.draw_circle_filled(sx, sy, radius, fill)
-                arcade.draw_circle_outline(sx, sy, radius, outline, 2)
-
-    def _draw_weather(self, session: GameSession) -> None:
-        weather = self._weather(session)
-        if weather not in ("rain", "storm", "snow"):
-            return
-
-        tick = session.environment.tick if session.environment else session.clock.tick
-        area_w = self._right - self._left
-        area_h = self._top - self._bottom
-        count = 170 if weather == "storm" else 95
-        is_snow = weather == "snow"
-
-        for i in range(count):
-            speed = 2.6 + (i % 5) * 0.7
-            x = self._left + ((i * 137.0 + 43.0) % area_w)
-            y = self._bottom + ((area_h - (tick * speed + i * 37.0) % area_h))
-            if is_snow:
-                arcade.draw_circle_filled(x, y, 2.0, (240, 246, 255, 210))
-            else:
-                arcade.draw_line(
-                    x, y, x - 3, y - 11, (170, 200, 240, 150), 1
-                )
 
     def _draw_selection(self, session: GameSession) -> None:
-        env = self._environment(session)
-        if self._selected_world is not None and env is not None:
-            wx, wy = self._selected_world
-            sx, sy = self._world_to_screen(wx, wy)
-            arcade.draw_circle_outline(sx, sy, 9, _INSPECT, 2)
-            arcade.draw_line(sx - 15, sy, sx + 15, sy, _INSPECT, 1)
-            arcade.draw_line(sx, sy - 15, sx, sy + 15, _INSPECT, 1)
+        if self._selected_world is not None:
+            self._draw_cell_marker(self._selected_world, _INSPECT, 2)
+            sx, sy = self._world_to_screen(*self._selected_world)
+            arcade.draw_line(sx - 6, sy, sx + 6, sy, _INSPECT, 1)
+            arcade.draw_line(sx, sy - 6, sx, sy + 6, _INSPECT, 1)
+        if self._hover_world is not None:
+            self._draw_cell_marker(self._hover_world, (255, 255, 255, 90), 1)
 
-        elif self._hover_world is not None and env is not None:
-            wx, wy = self._hover_world
-            sx, sy = self._world_to_screen(wx, wy)
-            arcade.draw_circle_outline(sx, sy, 6, (255, 255, 255, 90), 1)
+    def _draw_cell_marker(self, world_xy, color, width: float) -> None:
+        col = int(world_xy[0] // self._cell_size)
+        row = int(world_xy[1] // self._cell_size)
+        left = self._left + col * self._cell_size * self._scale
+        bottom = self._bottom + row * self._cell_size * self._scale
+        size = self._cell_size * self._scale
+        arcade.draw_lbwh_rectangle_outline(left, bottom, size, size, color, width)
 
     # ------------------------------------------------------------------
-    # Panels / text
+    # Sidebar
     # ------------------------------------------------------------------
     def _panel(self, left: float, bottom: float, width: float, height: float):
-        arcade.draw_lbwh_rectangle_filled(
-            left, bottom, width, height, _PANEL_BG
-        )
-        arcade.draw_lbwh_rectangle_outline(
-            left, bottom, width, height, _PANEL_BORDER, 1
-        )
+        arcade.draw_lbwh_rectangle_filled(left, bottom, width, height, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(left, bottom, width, height, _PANEL_BORDER, 1)
 
-    def _bar(
-        self,
-        left: float,
-        bottom: float,
-        width: float,
-        height: float,
-        fraction: float,
-        color,
-    ) -> None:
-        arcade.draw_lbwh_rectangle_filled(
-            left, bottom, width, height, (38, 44, 56, 220)
+    def _box(self, left: float, top: float, width: float, height: float, title: str):
+        bottom = top - height
+        self._panel(left, bottom, width, height)
+        arcade.draw_text(
+            title.upper(), left + 12, top - 16, _DIM,
+            font_size=10, bold=True,
         )
+        return bottom
+
+    def _bar(self, left: float, bottom: float, width: float, height: float,
+             fraction: float, color) -> None:
+        arcade.draw_lbwh_rectangle_filled(left, bottom, width, height, _TRACK)
         filled = max(0.0, min(1.0, fraction)) * width
         if filled > 0:
-            arcade.draw_lbwh_rectangle_filled(
-                left, bottom, filled, height, color
-            )
+            arcade.draw_lbwh_rectangle_filled(left, bottom, filled, height, color)
 
-    def _draw_panels(self, session: GameSession) -> None:
+    def _draw_sidebar(self, session: GameSession) -> None:
+        world = session.world
         env = session.environment
-        tick = session.clock.tick
+        calendar = env.calendar if env is not None else None
+        palette = self._palette()
 
-        # --- Time & weather panel (top-left) ---
-        px, py, pw, ph = 16.0, self.height - 148.0, 404.0, 132.0
-        self._panel(px, py, pw, ph)
+        left = _MARGIN
+        width = self._sidebar_width() - _MARGIN
+        controls_h = 96
+        limit = _MARGIN + controls_h + _GAP
+        cursor = self.height - _MARGIN
 
-        arcade.draw_text(
-            "TIME & WEATHER", px + 14, py + ph - 20, _MUTED,
-            font_size=11, bold=True, anchor_y="baseline",
-        )
-        arcade.draw_text(
-            f"Tick {tick}    ·    sim {self._format_sim_time(tick)}",
-            px + 14, py + ph - 44, _TEXT, font_size=15,
-        )
+        def take(height: float):
+            """Reserve a box at the top of the remaining stack."""
+            nonlocal cursor
+            if cursor - height < limit:
+                return None
+            box_top = cursor
+            cursor = box_top - height - _GAP
+            return box_top, box_top - height
 
-        day_text, clock_text, day_progress = self._day_info(session)
-        arcade.draw_text(
-            f"{day_text}    ·    {clock_text}    ·    {self._phase(session)}",
-            px + 14, py + ph - 66, _TEXT, font_size=14,
-        )
-        weather = self._weather(session)
-        arcade.draw_text(
-            f"{self._season(session).title()}    ·    light {self._light(session):.0%}"
-            f"    ·    {weather}",
-            px + 14, py + ph - 86,
-            _WEATHER_TEXT.get(weather, _TEXT), font_size=14,
-        )
-
-        bar_x = px + 66
-        bar_w = pw - 80
-        arcade.draw_text(
-            "day", px + 14, py + 19, _MUTED, font_size=10,
-            anchor_y="center",
-        )
-        self._bar(bar_x, py + 16, bar_w, 5, day_progress, (255, 205, 120))
-        arcade.draw_text(
-            "season", px + 14, py + 7, _MUTED, font_size=10,
-            anchor_y="center",
-        )
-        self._bar(
-            bar_x, py + 5, bar_w, 4, self._season_progress(session),
-            (140, 220, 150),
-        )
-
-        # --- Inspector panel (top-right) ---
-        ix = self.width - 344.0
-        iy = self.height - 148.0
-        iw, ih = 328.0, 132.0
-        self._panel(ix, iy, iw, ih)
-        arcade.draw_text(
-            "TEMPERATURE INSPECTOR", ix + 14, iy + ih - 20, _MUTED,
-            font_size=11, bold=True,
-        )
-
-        target = self._selected_world or self._hover_world
-        if target is None:
+        # ---- Time -----------------------------------------------------
+        h = 92
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Time")
+            tick = session.clock.tick
+            day = calendar.day if calendar is not None else 1
+            year = calendar.year if calendar is not None else 1
+            clock = calendar.clock if calendar is not None else "--:--"
             arcade.draw_text(
-                "Click anywhere in the arena",
-                ix + 14, iy + ih - 52, _TEXT, font_size=14,
+                f"Day {day}   ·   {clock}", left + 12, top - 40, _TEXT,
+                font_size=17, bold=True,
             )
             arcade.draw_text(
-                "to read its temperature.",
-                ix + 14, iy + ih - 72, _MUTED, font_size=13,
-            )
-        else:
-            wx, wy = target
-            temp = (
-                env.temperature_at(wx, wy) if env is not None else None
-            )
-            label = "SELECTED" if self._selected_world else "CURSOR"
-            arcade.draw_text(
-                f"{label}    x {wx:.0f}    y {wy:.0f}",
-                ix + 14, iy + ih - 46, _MUTED, font_size=12,
+                f"Year {year}   ·   tick {tick}   ·   sim {self._format_sim_time(tick)}",
+                left + 12, top - 62, _MUTED, font_size=11,
             )
             arcade.draw_text(
-                f"{temp:.1f} °C" if temp is not None else "—",
-                ix + 14, iy + ih - 78, _TEXT, font_size=28, bold=True,
-            )
-            arcade.draw_text(
-                f"{self._season(session)} · {self._phase(session)} · {weather}",
-                ix + 14, iy + ih - 104,
-                _WEATHER_TEXT.get(weather, _MUTED), font_size=12,
+                f"{palette.name}   ·   {self._phase(session)}",
+                left + 12, top - 80,
+                _season_color(palette, self._ambient(session)), font_size=12,
             )
 
-        # --- Controls (bottom-left) ---
-        arcade.draw_lbwh_rectangle_filled(
-            16, 14, 470, 26, (8, 12, 20, 170)
-        )
-        arcade.draw_text(
-            "SPACE start   ·   P/Esc pause   ·   Q quit   ·   click: inspect",
-            26, 21, _MUTED, font_size=11,
-        )
+        # ---- Day ------------------------------------------------------
+        h = 96
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Day")
+            fraction = calendar.day_fraction if calendar is not None else 0.0
+            light = self._light(session)
+            arcade.draw_text(
+                f"light {light:.0%}", left + width - 76, top - 16, _MUTED, font_size=11,
+            )
+            self._bar(left + 12, top - 34, width - 24, 6, fraction, _SUN)
+            arcade.draw_text("00", left + 12, top - 50, _DIM, font_size=9)
+            arcade.draw_text("12", left + width / 2 - 4, top - 50, _DIM, font_size=9)
+            arcade.draw_text("24", left + width - 24, top - 50, _DIM, font_size=9)
+            self._draw_sun_track(session, left + 12, top - 84, width - 24, 22)
+
+        # ---- Season (independent of the day bar) ----------------------
+        h = 84
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Season")
+            arcade.draw_text(
+                palette.name, left + 12, top - 38, _TEXT, font_size=18, bold=True,
+            )
+            if calendar is not None:
+                info = (f"day {calendar.day_of_season} of {calendar.days_per_season}"
+                        f"   ·   year {calendar.year}")
+            else:
+                info = "static"
+            arcade.draw_text(info, left + 12, top - 58, _MUTED, font_size=11)
+            progress = calendar.season_progress if calendar is not None else 0.0
+            self._bar(left + 12, top - 72, width - 24, 6, progress, (140, 220, 150))
+
+        # ---- Environment at the inspected point -----------------------
+        h = 128
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Environment")
+            target, label = self._reading(session)
+            if env is not None:
+                condition = env.weather_at(target[0], target[1])
+                arcade.draw_text(
+                    f"{label}   {env.light_at(target[0], target[1]):.0%} light"
+                    f"   ·   {condition}",
+                    left + 12, top - 38, _WEATHER_LABEL.get(condition, _TEXT),
+                    font_size=13,
+                )
+                arcade.draw_text(
+                    f"{env.temperature_at(target[0], target[1]):.1f} °C"
+                    f"    {env.humidity_at(target[0], target[1]):.0%} RH"
+                    f"    {env.pressure_at(target[0], target[1]):.0f} hPa",
+                    left + 12, top - 62, _TEXT, font_size=13,
+                )
+                arcade.draw_text(
+                    f"climate: {palette.base_temperature:.0f} ± "
+                    f"{palette.temperature_swing:.0f} °C   ·   {palette.name}",
+                    left + 12, top - 84, _MUTED, font_size=11,
+                )
+            else:
+                arcade.draw_text(
+                    "no environment", left + 12, top - 42, _MUTED, font_size=13,
+                )
+            arcade.draw_text(
+                "click a cell to pin it", left + 12, top - 108, _DIM, font_size=10,
+            )
+
+        # ---- Inspector ------------------------------------------------
+        h = 116
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Inspector")
+            if self._selected_world is not None and env is not None:
+                wx, wy = self._selected_world
+                col, row = world.cell_index(wx, wy) if world is not None else (0, 0)
+                condition = env.weather_at(wx, wy)
+                arcade.draw_text(
+                    f"cell ({col}, {row})   ·   x {wx:.0f}  y {wy:.0f}",
+                    left + 12, top - 38, _MUTED, font_size=11,
+                )
+                arcade.draw_text(
+                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, top - 68,
+                    _TEXT, font_size=24, bold=True,
+                )
+                arcade.draw_text(
+                    f"{env.humidity_at(wx, wy):.0%} RH   ·   "
+                    f"{env.pressure_at(wx, wy):.0f} hPa   ·   "
+                    f"{env.light_at(wx, wy):.0%} light",
+                    left + 12, top - 90, _TEXT, font_size=11,
+                )
+                arcade.draw_text(
+                    condition, left + width - 80, top - 68,
+                    _WEATHER_LABEL.get(condition, _TEXT), font_size=13,
+                )
+            else:
+                arcade.draw_text(
+                    "Click any cell in the world", left + 12, top - 44,
+                    _TEXT, font_size=13,
+                )
+                arcade.draw_text(
+                    "to read its temperature, light,", left + 12, top - 64,
+                    _MUTED, font_size=11,
+                )
+                arcade.draw_text(
+                    "humidity and pressure.", left + 12, top - 82,
+                    _MUTED, font_size=11,
+                )
+
+        # ---- Weather field (fills the remaining stack) -----------------
+        remaining = cursor - limit
+        if remaining >= 76 and env is not None and world is not None:
+            top = cursor
+            h = remaining
+            self._box(left, top, width, h, "Weather field")
+            self._draw_weather_census(session, left + 12, top - 34, width - 24)
+
+        # ---- Controls (anchored to the bottom of the sidebar) ---------
+        h = controls_h
+        self._box(left, _MARGIN + h, width, h, "Controls")
+        lines = [
+            ("SPACE", "start / restart"),
+            ("P", "pause / resume"),
+            ("Esc / Q", "quit"),
+            ("Click", "inspect cell"),
+        ]
+        y = _MARGIN + h - 40
+        for key, action in lines:
+            arcade.draw_text(key, left + 12, y, _ACCENT, font_size=11, bold=True)
+            arcade.draw_text(action, left + 96, y, _MUTED, font_size=11)
+            y -= 17
+
+    def _draw_weather_census(self, session: GameSession, left: float, top: float,
+                             width: float) -> None:
+        """How many cells show each condition: proves the field is not uniform."""
+        env = session.environment
+        world = session.world
+        if env is None or world is None:
+            return
+
+        counts = {name: 0 for name in _WEATHER_LABEL}
+        total = world.cols * world.rows
+        
+        # Use weather strategy if available, otherwise skip this section
+        weather_strategy = env.weather_strategy
+        if weather_strategy is None:
+            return
+            
+        for col in range(world.cols):
+            for row in range(world.rows):
+                condition = weather_strategy.weather_at_cell(col, row)
+                counts[condition] = counts.get(condition, 0) + 1
+
+        y = top
+        for condition, count in counts.items():
+            if count == 0:
+                continue
+            color = _WEATHER_LABEL.get(condition, _TEXT)
+            arcade.draw_lbwh_rectangle_filled(left, y - 1, 8, 8, color)
+            arcade.draw_text(
+                f"{condition}", left + 16, y, _TEXT, font_size=11,
+            )
+            arcade.draw_text(
+                f"{count:>3} cells   ·   {count / total:>4.0%}",
+                left + width - 92, y, _MUTED, font_size=11,
+            )
+            y -= 17
+
+    def _draw_sun_track(self, session: GameSession, left: float, bottom: float,
+                        width: float, height: float) -> None:
+        celestial = self._celestial(session)
+        if celestial is None:
+            return
+        palette = self._sky()
+
+        arcade.draw_line(left, bottom, left + width, bottom, (*_DIM, 120), 1)
+
+        def position(progress: float):
+            x = left + width * max(0.0, min(1.0, progress))
+            y = bottom + 2 + height * 0.8 * math.sin(math.pi * progress)
+            return x, y
+
+        if celestial.sun_visible:
+            x, y = position(celestial.sun_progress)
+            arcade.draw_circle_filled(x, y, 6, palette.sun)
+        elif celestial.moon_visible:
+            x, y = position(celestial.moon_progress)
+            arcade.draw_circle_filled(x, y, 5, palette.moon)
+            shadow = 7 * (1.0 - celestial.moon_illumination)
+            if shadow > 0.5:
+                arcade.draw_circle_filled(
+                    x + shadow * 0.6, y, 4.4, _shade(self._sky_color(session), 0.7)
+                )
 
     def _format_sim_time(self, ticks: int) -> str:
         total = ticks / self._tick_rate
         minutes = int(total // 60)
         seconds = total % 60
         return f"{minutes:02d}:{seconds:04.1f}"
-
-    def _day_info(self, session: GameSession):
-        env = session.environment
-        dn = env.daynight_strategy if env is not None else None
-        if dn is None:
-            return "Day —", "--:--", 0.0
-        day_length = dn.ticks_per_day
-        tick = session.clock.tick
-        day = tick // day_length + 1
-        fraction = (tick % day_length) / day_length
-        hours = fraction * 24.0
-        hh = int(hours)
-        mm = int((hours - hh) * 60)
-        return f"Day {day}", f"{hh:02d}:{mm:02d}", fraction
-
-    def _season_progress(self, session: GameSession) -> float:
-        env = session.environment
-        season = env.season_strategy if env is not None else None
-        if season is None:
-            return 0.0
-        length = season.ticks_per_season
-        return (session.clock.tick % length) / length
 
     # ------------------------------------------------------------------
     # Arcade window events
@@ -657,3 +751,8 @@ class ArcadeView(arcade.Window):  # implements IRenderer structurally
             self._selected_world = world
         elif button == 1:
             self._selected_world = None
+
+
+def _season_color(palette: SeasonPalette, ambient: float):
+    """Readable text colour derived from the season ground colour."""
+    return _mix(_shade(palette.ground, 0.6 + 0.4 * ambient), (255, 255, 255), 0.45)

@@ -61,3 +61,4 @@ class GameSession:
     start_time: float = 0.0      # real timestamp when session began
     pause_time: float = 0.0      # accumulated paused duration
     end_reason: Optional[str] = None
+    exit_requested: bool = False  # set by input; the app loop closes the window

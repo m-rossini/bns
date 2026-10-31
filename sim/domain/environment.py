@@ -1,47 +1,82 @@
 """Concrete Environment implementation.
 
-Aggregates the tick clock and optional strategy instances. Also derives
-presentation-ready values (season, phase, light, weather) and a simple
-temperature field that combines season, time of day, weather, and a smooth
-microclimate variation across the world.
+Composes the calendar and the three optional strategies. Every environmental
+reading is a function of position:
+
+* ``weather_at(x, y)``     — per-cell weather field
+* ``light_at(x, y)``       — sun altitude * local shading * weather dimming
+* ``humidity_at(x, y)``    — seasonal baseline + weather + local variation
+* ``pressure_at(x, y)``    — seasonal baseline + weather + local variation
+* ``temperature_at(x, y)`` — seasonal mean + diurnal light + weather + microclimate
+
+With a strategy set to ``None`` the environment still runs, and that reading
+falls back to a documented constant ("static" mode).
 """
 
 import math
 from typing import Optional
 
+from sim.domain.calendar import Calendar
+from sim.domain.visuals import SeasonPalette
 from sim.interfaces.environment import (
+    ICalendar,
     IDayNightStrategy,
     IEnvironment,
     ISeasonStrategy,
     IWeatherStrategy,
 )
+from sim.interfaces.world import IWorld
 
-_SEASON_BASE_C = {"spring": 14.0, "summer": 25.0, "autumn": 13.0, "winter": 3.0}
-_SEASON_SWING_C = {"spring": 7.0, "summer": 6.0, "autumn": 7.0, "winter": 5.0}
-_WEATHER_OFFSET_C = {
-    "clear": 2.0,
-    "cloudy": 0.0,
-    "rain": -2.0,
-    "storm": -4.0,
-    "snow": -5.0,
+_WEATHER_TEMP_C = {"clear": 2.0, "cloudy": 0.0, "rain": -2.0, "storm": -4.0, "snow": -5.0}
+_WEATHER_HUMIDITY = {
+    "clear": -0.10, "cloudy": 0.02, "rain": 0.20, "storm": 0.25, "snow": 0.08,
 }
+_WEATHER_PRESSURE_HPA = {
+    "clear": 4.0, "cloudy": -3.0, "rain": -8.0, "storm": -18.0, "snow": -5.0,
+}
+_WEATHER_LIGHT = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow": 0.85}
+
+_STATIC_LIGHT = 0.7
+_STATIC_PALETTE = SeasonPalette(
+    name="Static",
+    ground=(110, 150, 110),
+    details=((140, 170, 140),),
+    base_temperature=14.0,
+    temperature_swing=7.0,
+    humidity=0.5,
+    pressure_hpa=1013.0,
+)
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 class Environment(IEnvironment):
     def __init__(
         self,
-        weather_strategy: Optional[IWeatherStrategy] = None,
+        calendar: Calendar,
+        world: Optional[IWorld] = None,
         season_strategy: Optional[ISeasonStrategy] = None,
         daynight_strategy: Optional[IDayNightStrategy] = None,
+        weather_strategy: Optional[IWeatherStrategy] = None,
     ):
-        self._tick = 0
-        self._weather_strategy = weather_strategy
+        self._calendar = calendar
+        self._world = world
         self._season_strategy = season_strategy
         self._daynight_strategy = daynight_strategy
+        self._weather_strategy = weather_strategy
 
+    # ------------------------------------------------------------------
+    # Identity
+    # ------------------------------------------------------------------
     @property
     def tick(self) -> int:
-        return self._tick
+        return self._calendar.tick
+
+    @property
+    def calendar(self) -> ICalendar:
+        return self._calendar
 
     @property
     def weather_strategy(self) -> Optional[IWeatherStrategy]:
@@ -55,6 +90,24 @@ class Environment(IEnvironment):
     def daynight_strategy(self) -> Optional[IDayNightStrategy]:
         return self._daynight_strategy
 
+    def _reference_point(self):
+        if self._world is not None:
+            return self._world.width / 2.0, self._world.height / 2.0
+        return 0.0, 0.0
+
+    # ------------------------------------------------------------------
+    # Aggregate readings (HUD)
+    # ------------------------------------------------------------------
+    @property
+    def season(self) -> str:
+        return self._calendar.season
+
+    @property
+    def phase(self) -> str:
+        if self._daynight_strategy is None:
+            return "day"
+        return self._daynight_strategy.phase(self._calendar)
+
     @property
     def weather(self) -> str:
         if self._weather_strategy is None:
@@ -62,34 +115,53 @@ class Environment(IEnvironment):
         return self._weather_strategy.weather
 
     @property
-    def season(self) -> str:
-        if self._season_strategy is None:
-            return "spring"
-        return self._season_strategy.get_season(self._tick)
-
-    @property
-    def phase(self) -> str:
-        if self._daynight_strategy is None:
-            return "day"
-        return self._daynight_strategy.get_phase(self._tick)
-
-    @property
     def light_level(self) -> float:
+        x, y = self._reference_point()
+        return self.light_at(x, y)
+
+    @property
+    def palette(self) -> SeasonPalette:
+        if self._season_strategy is None:
+            return _STATIC_PALETTE
+        return self._season_strategy.palette(self._calendar)
+
+    # ------------------------------------------------------------------
+    # Positional readings
+    # ------------------------------------------------------------------
+    def weather_at(self, x: float, y: float) -> str:
+        if self._weather_strategy is None:
+            return "clear"
+        return self._weather_strategy.weather_at(x, y)
+
+    def light_at(self, x: float, y: float) -> float:
         if self._daynight_strategy is None:
-            return 0.7
-        return self._daynight_strategy.get_light_level(self._tick)
+            base = _STATIC_LIGHT
+        else:
+            base = self._daynight_strategy.light_at(self._calendar, x, y)
+
+        dim = _WEATHER_LIGHT.get(self.weather_at(x, y), 1.0)
+        return _clamp(base * dim, 0.0, 1.0)
+
+    def humidity_at(self, x: float, y: float) -> float:
+        pal = self.palette
+        humidity = pal.humidity + _WEATHER_HUMIDITY.get(self.weather_at(x, y), 0.0)
+        humidity += 0.05 * math.sin(x / 130.0) * math.cos(y / 110.0)
+        return _clamp(humidity, 0.0, 1.0)
+
+    def pressure_at(self, x: float, y: float) -> float:
+        pal = self.palette
+        pressure = pal.pressure_hpa + _WEATHER_PRESSURE_HPA.get(
+            self.weather_at(x, y), 0.0
+        )
+        pressure += 1.5 * math.sin(x / 140.0) * math.cos(y / 120.0)
+        return round(pressure, 1)
 
     def temperature_at(self, x: float, y: float) -> float:
-        """Temperature in Celsius for a world position.
+        pal = self.palette
+        light = self.light_at(x, y)
 
-        Seasonal mean + diurnal swing (driven by light) + weather offset +
-        a smooth microclimate pattern so different spots read differently.
-        """
-        season = self.season
-        base = _SEASON_BASE_C.get(season, 14.0)
-        swing = _SEASON_SWING_C.get(season, 7.0)
-        temperature = base + swing * (2.0 * self.light_level - 1.0)
-        temperature += _WEATHER_OFFSET_C.get(self.weather, 0.0)
+        temperature = pal.base_temperature + pal.temperature_swing * (2.0 * light - 1.0)
+        temperature += _WEATHER_TEMP_C.get(self.weather_at(x, y), 0.0)
 
         # Smooth position-dependent variation (about +/- 3 C).
         microclimate = 2.2 * math.sin(x / 210.0) * math.cos(y / 170.0)
@@ -98,12 +170,15 @@ class Environment(IEnvironment):
 
         return round(temperature, 1)
 
+    # ------------------------------------------------------------------
+    # Clock
+    # ------------------------------------------------------------------
     def advance_tick(self) -> None:
-        self._tick += 1
+        self._calendar.advance()
         if self._weather_strategy is not None:
-            self._weather_strategy.update(self._tick, self)
+            self._weather_strategy.update(self._calendar.tick, self)
 
     def reset(self) -> None:
-        self._tick = 0
+        self._calendar.reset()
         if self._weather_strategy is not None:
             self._weather_strategy.reset()

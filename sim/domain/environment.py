@@ -33,7 +33,7 @@ from sim.interfaces.environment import (
     IWeatherStrategy,
 )
 from sim.interfaces.world import IWorld
-from sim.observability import EventLog, get_logger
+from sim.observability import EventLog, get_logger, log_event
 
 logger = get_logger("environment")
 

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 from sim.components import Barrier
 
 if TYPE_CHECKING:  # pragma: no cover - typing only (avoids an import cycle)
+    from sim.config import GradientOrientation
     from sim.interfaces.barrier import IBarrierStrategy
 
 
@@ -41,7 +42,7 @@ class IWorld(ABC):
 
     @property
     @abstractmethod
-    def orientation(self) -> str:
+    def orientation(self) -> "GradientOrientation":
         ...
 
     @property

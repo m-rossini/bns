@@ -530,7 +530,7 @@ strategy owns the sun via `solar_profile()` and day/night consumes it.
 
 ### 9.3 Positional gradients
 
-Each reading has a `GradientConfig`; `orientation=""` inherits
+Each reading has a `GradientConfig`; `orientation=None` inherits
 `WorldConfig.orientation`.
 
 | Reading | Default gradient |

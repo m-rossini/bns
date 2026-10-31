@@ -27,50 +27,53 @@ import math
 from dataclasses import dataclass
 from typing import Tuple
 
+from sim.config import GradientOrientation
+
 logger = logging.getLogger("bean.gradient")
 
-ORIENTATIONS: Tuple[str, ...] = (
-    "north_south",
-    "south_north",
-    "west_east",
-    "east_west",
-    "centre_out",
-    "out_centre",
-    "diagonal_up",
-    "diagonal_down",
-)
+ORIENTATIONS: Tuple[GradientOrientation, ...] = tuple(GradientOrientation)
 
-_DEFAULT_ORIENTATION = "north_south"
+_DEFAULT_ORIENTATION = GradientOrientation.NORTH_SOUTH
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
-def _normalise_orientation(orientation: str) -> str:
+def _normalise_orientation(orientation) -> GradientOrientation:
+    """Normalise a string or enum value to a :class:`GradientOrientation`.
+
+    Unknown names fall back to ``NORTH_SOUTH`` and log a warning, so a typo in
+    configuration never stops the simulation.
+    """
+    if isinstance(orientation, GradientOrientation):
+        return orientation
     if not orientation:
         return _DEFAULT_ORIENTATION
-    key = orientation.strip().lower().replace("-", "_").replace(" ", "_")
-    if key in ORIENTATIONS:
-        return key
-    logger.warning(
-        "gradient.unknown_orientation orientation=%r fallback=%s",
-        orientation,
-        _DEFAULT_ORIENTATION,
-    )
-    return _DEFAULT_ORIENTATION
+    key = str(orientation).strip().lower().replace("-", "_").replace(" ", "_")
+    try:
+        return GradientOrientation[key.upper()]
+    except KeyError:
+        logger.warning(
+            "gradient.unknown_orientation orientation=%r fallback=%s",
+            orientation,
+            _DEFAULT_ORIENTATION.value,
+        )
+        return _DEFAULT_ORIENTATION
 
 
 @dataclass(frozen=True)
 class Gradient:
     """Interpolate a ``(start, end)`` pair across the world."""
 
-    orientation: str = _DEFAULT_ORIENTATION
+    orientation: GradientOrientation = _DEFAULT_ORIENTATION
     start: float = 0.0
     end: float = 1.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "orientation", _normalise_orientation(self.orientation))
+        object.__setattr__(
+            self, "orientation", _normalise_orientation(self.orientation)
+        )
 
     # ------------------------------------------------------------------
     # Position
@@ -84,25 +87,29 @@ class Gradient:
         v = _clamp(y / height)
         orientation = self.orientation
 
-        if orientation == "north_south":
+        if orientation == GradientOrientation.NORTH_SOUTH:
             value = v
-        elif orientation == "south_north":
+        elif orientation == GradientOrientation.SOUTH_NORTH:
             value = 1.0 - v
-        elif orientation == "west_east":
+        elif orientation == GradientOrientation.WEST_EAST:
             value = u
-        elif orientation == "east_west":
+        elif orientation == GradientOrientation.EAST_WEST:
             value = 1.0 - u
-        elif orientation == "diagonal_up":
+        elif orientation == GradientOrientation.DIAGONAL_UP:
             value = (u + v) / 2.0
-        elif orientation == "diagonal_down":
+        elif orientation == GradientOrientation.DIAGONAL_DOWN:
             value = (u + (1.0 - v)) / 2.0
-        else:  # centre_out / out_centre
+        else:  # CENTRE_OUT / OUT_CENTRE
             # Normalised radial distance from the centre; 1.0 at the furthest
             # corner of the box.
             dx = (u - 0.5) * 2.0
             dy = (v - 0.5) * 2.0
             radial = _clamp(math.hypot(dx, dy) / math.sqrt(2.0))
-            value = radial if orientation == "centre_out" else 1.0 - radial
+            value = (
+                radial
+                if orientation == GradientOrientation.CENTRE_OUT
+                else 1.0 - radial
+            )
 
         return _clamp(value)
 

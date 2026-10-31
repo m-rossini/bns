@@ -10,6 +10,7 @@ pixels or window sizes.
 from typing import List, Optional, Tuple
 
 from sim.components import Barrier
+from sim.config import GradientOrientation
 from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.world import IWorld
 
@@ -20,7 +21,7 @@ class World(IWorld):
         width: float,
         height: float,
         cell_size: float = 50.0,
-        orientation: str = "north_south",
+        orientation: GradientOrientation = GradientOrientation.NORTH_SOUTH,
         wrap_around: bool = False,
         barrier_strategy: Optional[IBarrierStrategy] = None,
     ):
@@ -31,7 +32,11 @@ class World(IWorld):
         self._width = width
         self._height = height
         self._cell_size = cell_size
-        self._orientation = orientation
+        self._orientation = (
+            orientation
+            if isinstance(orientation, GradientOrientation)
+            else GradientOrientation(orientation)
+        )
         self._wrap_around = wrap_around
         self._barrier_strategy = barrier_strategy
         self._barriers: List[Barrier] = []
@@ -57,7 +62,7 @@ class World(IWorld):
         return max(1, int(round(self._height / self._cell_size)))
 
     @property
-    def orientation(self) -> str:
+    def orientation(self) -> GradientOrientation:
         return self._orientation
 
     @property

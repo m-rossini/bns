@@ -1,6 +1,8 @@
 """Pure-Python configuration for the bean simulation.
 
-No YAML/JSON. All tunable values live here as dataclasses.
+No YAML/JSON. All tunable values live here as dataclasses. This module is the
+single source of truth for world size, time, seasons, day/night, weather,
+environment gradients and logging. Nothing else hardcodes a tunable constant.
 
 Coordinate contract
 -------------------
@@ -10,6 +12,13 @@ Coordinate contract
 * Weather, light and the environmental readings are sampled per cell.
 * The view maps world units to screen pixels with a single uniform scale; it
   never assumes a pixel size for a cell.
+
+Gradients
+---------
+Numeric readings use `GradientConfig(start, end, orientation)`: the value is
+interpolated from ``start`` at one edge to ``end`` at the opposite edge.
+Colour gradients use a plain ``(start_colour, end_colour)`` tuple, e.g.
+``ground_gradient=((80, 150, 80), (140, 200, 110))``.
 """
 
 from dataclasses import dataclass, field
@@ -17,12 +26,25 @@ from typing import Dict, List, Optional, Tuple
 
 Color = Tuple[int, int, int]
 
+#: Valid values for `GradientConfig.orientation` and `WorldConfig.orientation`.
+GRADIENT_ORIENTATIONS: Tuple[str, ...] = (
+    "north_south",
+    "south_north",
+    "west_east",
+    "east_west",
+    "centre_out",
+    "out_centre",
+    "diagonal_up",
+    "diagonal_down",
+)
+
 
 @dataclass
 class WorldConfig:
     width: float = 1200.0
     height: float = 800.0
     cell_size: float = 50.0
+    #: Direction used by climate gradients. Empty string = north_south.
     orientation: str = "north_south"
     wrap_around: bool = False
 
@@ -44,25 +66,66 @@ class TimeConfig:
     start_tick: int = 0
 
 
+@dataclass(frozen=True)
+class GradientConfig:
+    """Linear ``start -> end`` gradient across the world.
+
+    ``orientation`` is one of `GRADIENT_ORIENTATIONS`; an empty string means
+    "inherit `WorldConfig.orientation`". The value at a position is
+    ``start + (end - start) * factor`` where ``factor`` runs 0..1 along the
+    chosen direction.
+    """
+
+    start: float = 0.0
+    end: float = 1.0
+    orientation: str = ""
+
+
 @dataclass
 class SeasonConfig:
-    """One season definition. Add or remove these to change season count."""
+    """One season definition. Add or remove these to change season count.
+
+    ``ground_gradient`` is an explicit ``(start, end)`` colour pair evaluated
+    over the season's progress. Leave it ``None`` to derive the ground colour
+    from ``ground_color`` and the next season's colour instead.
+    """
 
     name: str = "Spring"
     ground_color: Color = (96, 170, 88)
+    ground_gradient: Optional[Tuple[Color, Color]] = None
     detail_colors: List[Color] = field(default_factory=list)
     base_temperature: float = 14.0     # deg C, seasonal mean
     temperature_swing: float = 7.0     # deg C, day/night amplitude
     humidity: float = 0.55             # 0..1 seasonal baseline
     pressure_hpa: float = 1013.0       # seasonal baseline
+    #: Multiplier applied to the day/night light curve (summer > 1, winter < 1).
+    light_influence: float = 1.0
     weather_weights: Dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
 class DayNightConfig:
+    """Sun/moon cycle and local light shaping.
+
+    ``local_shading`` is the amplitude of the smooth terrain/cover shading and
+    ``season_light_influence`` controls how strongly the current season's
+    `SeasonConfig.light_influence` scales the light curve.
+    """
+
     sun_speed: float = 1.0             # multiplier on the sun arc
     moon_speed: float = 1.0            # multiplier on the moon arc
     moon_phase_offset: float = 0.25    # 0..1, shifts the moon's phase
+
+    local_shading: float = 0.10        # 0..1 amplitude of positional shading
+    shading_scale_x: float = 190.0     # world units between shading lobes
+    shading_scale_y: float = 150.0
+    season_light_influence: float = 1.0  # 0 = ignore season, 1 = full effect
+
+    night_threshold: float = 0.12      # below this altitude it is night
+    twilight_threshold: float = 0.45   # below this it is dawn/dusk
+    sun_arc_start: float = 0.25        # fraction of the day the sun rises
+    sun_arc_end: float = 0.75          # fraction of the day the sun sets
+
     night_sky: Color = (10, 14, 32)
     day_sky: Color = (122, 182, 228)
     twilight_sky: Color = (232, 138, 84)
@@ -72,24 +135,95 @@ class DayNightConfig:
     star_color: Color = (235, 240, 255)
 
 
+def _default_temperature_offsets() -> Dict[str, float]:
+    return {"clear": 2.0, "cloudy": 0.0, "rain": -2.0, "storm": -4.0, "snow": -5.0}
+
+
+def _default_humidity_offsets() -> Dict[str, float]:
+    return {"clear": -0.10, "cloudy": 0.02, "rain": 0.20, "storm": 0.25, "snow": 0.08}
+
+
+def _default_pressure_offsets() -> Dict[str, float]:
+    return {"clear": 4.0, "cloudy": -3.0, "rain": -8.0, "storm": -18.0, "snow": -5.0}
+
+
+def _default_light_factors() -> Dict[str, float]:
+    return {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow": 0.85}
+
+
 @dataclass
 class WeatherConfig:
-    """Per-cell weather field."""
+    """Per-cell weather field.
+
+    ``front_radius_min_cells`` / ``front_radius_max_cells`` are measured in
+    grid cells; ``0`` means "derive from the grid size". Each front is a disc
+    of one condition and moves between field rebuilds, so neighbouring cells
+    differ instead of showing one global condition.
+    """
 
     change_interval: int = 600         # ticks between weather systems
     seed: int = 1337
     front_count: int = 3               # number of moving weather systems
     background_coverage: float = 0.6   # fraction of cells under the background condition
+    front_radius_min_cells: int = 0    # 0 = auto
+    front_radius_max_cells: int = 0    # 0 = auto
+    front_drift_cells: float = 0.0     # optional movement per rebuild
+    background_patch_scale: float = 1.0  # >1 = smaller, more frequent patches
     conditions: Tuple[str, ...] = ("clear", "cloudy", "rain", "storm", "snow")
+
+    # Physical effect of each condition. These are what make neighbouring
+    # cells read differently, together with the climate gradients.
+    temperature_offsets: Dict[str, float] = field(default_factory=_default_temperature_offsets)
+    humidity_offsets: Dict[str, float] = field(default_factory=_default_humidity_offsets)
+    pressure_offsets: Dict[str, float] = field(default_factory=_default_pressure_offsets)
+    light_factors: Dict[str, float] = field(default_factory=_default_light_factors)
 
 
 @dataclass
 class EnvironmentConfig:
-    """Strategy class names, resolved by the DI container (`None` = static)."""
+    """Strategy class names and positional climate gradients.
+
+    ``None`` for a strategy means "static": the environment keeps running but
+    that reading falls back to a documented constant.
+    """
 
     weather_strategy: Optional[str] = None
     season_strategy: Optional[str] = None
     daynight_strategy: Optional[str] = None
+
+    # Gradients are added to the season baseline. The orientation falls back
+    # to `WorldConfig.orientation` when left empty.
+    temperature_gradient: GradientConfig = field(
+        default_factory=lambda: GradientConfig(-4.0, 4.0)
+    )
+    humidity_gradient: GradientConfig = field(
+        default_factory=lambda: GradientConfig(-0.12, 0.12)
+    )
+    pressure_gradient: GradientConfig = field(
+        default_factory=lambda: GradientConfig(-6.0, 6.0)
+    )
+    light_gradient: GradientConfig = field(
+        default_factory=lambda: GradientConfig(0.88, 1.08)
+    )
+    #: Scales the fine-grained sin/cos microclimate noise (0 disables it).
+    microclimate: float = 1.0
+
+
+@dataclass
+class LoggingConfig:
+    """Runtime logging configuration.
+
+    The environment variable ``BEAN_LOG_LEVEL`` overrides ``level``; the
+    Makefile exposes it as ``LOG_LEVEL``. Levels: DEBUG, INFO, WARNING,
+    ERROR, CRITICAL.
+    """
+
+    level: str = "INFO"
+    format: str = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+    date_format: str = "%H:%M:%S"
+    business: bool = True       # emit gameplay/business events
+    readings: bool = False      # emit per-cell readings at DEBUG
+    readings_interval: int = 60  # ticks between DEBUG reading samples
 
 
 @dataclass
@@ -100,14 +234,17 @@ class SimulationConfig:
     daynight: DayNightConfig = field(default_factory=DayNightConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: bool = False
     tick_rate: float = 30.0  # simulation ticks per second
 
 
 """Default configuration for the simulation.
 
-Season count, colours, temperatures and weather weights live here: change this
-list to run a single permanently cold season, eight seasons, or anything else.
+Season count, colours, gradients, temperatures and weather weights live here:
+change this list to run a single permanently cold season, eight seasons, or
+anything else. Every value below is a documented default; override a field to
+change the simulation without touching code.
 """
 
 DEFAULT_CONFIG = SimulationConfig(
@@ -126,11 +263,13 @@ DEFAULT_CONFIG = SimulationConfig(
         SeasonConfig(
             name="Spring",
             ground_color=(96, 170, 88),
+            ground_gradient=((82, 148, 78), (128, 196, 104)),
             detail_colors=[(250, 246, 180), (248, 186, 214), (232, 248, 236)],
             base_temperature=14.0,
             temperature_swing=7.0,
             humidity=0.55,
             pressure_hpa=1012.0,
+            light_influence=1.0,
             weather_weights={
                 "clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0,
             },
@@ -138,11 +277,13 @@ DEFAULT_CONFIG = SimulationConfig(
         SeasonConfig(
             name="Summer",
             ground_color=(68, 146, 72),
+            ground_gradient=((78, 164, 82), (52, 126, 60)),
             detail_colors=[(52, 122, 58), (92, 168, 84), (38, 110, 54)],
             base_temperature=25.0,
             temperature_swing=6.0,
             humidity=0.40,
             pressure_hpa=1015.0,
+            light_influence=1.12,
             weather_weights={
                 "clear": 50, "cloudy": 25, "rain": 17, "storm": 8, "snow": 0,
             },
@@ -150,11 +291,13 @@ DEFAULT_CONFIG = SimulationConfig(
         SeasonConfig(
             name="Autumn",
             ground_color=(178, 128, 62),
+            ground_gradient=((196, 156, 74), (148, 94, 44)),
             detail_colors=[(214, 124, 52), (166, 92, 42), (206, 168, 70)],
             base_temperature=13.0,
             temperature_swing=7.0,
             humidity=0.60,
             pressure_hpa=1010.0,
+            light_influence=0.92,
             weather_weights={
                 "clear": 30, "cloudy": 35, "rain": 25, "storm": 10, "snow": 0,
             },
@@ -162,11 +305,13 @@ DEFAULT_CONFIG = SimulationConfig(
         SeasonConfig(
             name="Winter",
             ground_color=(222, 230, 236),
+            ground_gradient=((236, 242, 248), (198, 212, 226)),
             detail_colors=[(246, 250, 255), (206, 222, 238), (232, 240, 248)],
             base_temperature=3.0,
             temperature_swing=5.0,
             humidity=0.70,
             pressure_hpa=1008.0,
+            light_influence=0.78,
             weather_weights={
                 "clear": 25, "cloudy": 35, "rain": 0, "storm": 5, "snow": 35,
             },
@@ -176,17 +321,30 @@ DEFAULT_CONFIG = SimulationConfig(
         sun_speed=1.0,
         moon_speed=1.0,
         moon_phase_offset=0.25,
+        local_shading=0.10,
+        shading_scale_x=190.0,
+        shading_scale_y=150.0,
+        season_light_influence=1.0,
     ),
     weather=WeatherConfig(
         change_interval=600,
         seed=1337,
         front_count=3,
+        background_coverage=0.6,
+        front_radius_min_cells=2,
+        front_radius_max_cells=6,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",
         season_strategy="SeasonStrategy",
         daynight_strategy="DayNightStrategy",
+        temperature_gradient=GradientConfig(-4.0, 4.0),
+        humidity_gradient=GradientConfig(-0.12, 0.12),
+        pressure_gradient=GradientConfig(-6.0, 6.0),
+        light_gradient=GradientConfig(0.88, 1.08),
+        microclimate=1.0,
     ),
+    logging=LoggingConfig(level="INFO"),
     debug=False,
     tick_rate=30.0,
 )

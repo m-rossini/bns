@@ -22,6 +22,9 @@ from typing import Dict, List, Optional, Tuple
 from sim.config import WeatherConfig
 from sim.interfaces.environment import IEnvironment, IWeatherStrategy
 from sim.interfaces.world import IWorld
+from sim.observability import get_logger
+
+logger = get_logger("weather")
 
 _SEVERITY = {"clear": 0, "cloudy": 1, "rain": 2, "snow": 2, "storm": 3}
 
@@ -81,18 +84,42 @@ class WeatherStrategy(IWeatherStrategy):
         self._base = self._choose(rng, weights)
 
         min_cells = min(self._cols, self._rows)
-        low = max(2, min_cells // 8)
-        high = max(low + 1, min_cells // 3)
+        low = self._config.front_radius_min_cells or max(2, min_cells // 8)
+        high = self._config.front_radius_max_cells or max(low + 1, min_cells // 3)
+        if high <= low:
+            high = low + 1
 
+        drift = self._config.front_drift_cells * interval
         fronts: List[_Front] = []
         for _ in range(max(0, self._config.front_count)):
-            col = rng.uniform(0, self._cols)
-            row = rng.uniform(0, self._rows)
+            col = (rng.uniform(0, self._cols) + drift) % max(1, self._cols)
+            row = (rng.uniform(0, self._rows) + drift * 0.5) % max(1, self._rows)
             radius = rng.uniform(low, high)
             fronts.append(_Front(col, row, radius, self._choose(rng, weights)))
 
         self._fronts = fronts
         self._interval = interval
+
+        logger.info(
+            "weather.field_rebuilt interval=%s season=%s base=%s coverage=%.2f "
+            "fronts=%s radius=%s..%s",
+            interval,
+            season,
+            self._base,
+            self._coverage,
+            len(fronts),
+            low,
+            high,
+        )
+        for index, front in enumerate(fronts):
+            logger.debug(
+                "weather.front index=%d kind=%s col=%.2f row=%.2f radius=%.2f",
+                index,
+                front.kind,
+                front.col,
+                front.row,
+                front.radius,
+            )
 
     def update(self, tick: int, environment: IEnvironment) -> None:
         interval = tick // self._config.change_interval
@@ -110,8 +137,11 @@ class WeatherStrategy(IWeatherStrategy):
         """Patchy, deterministic mask so the background is never uniform."""
         interval = self._interval or 0
         phase = interval * 0.37
-        patch = 0.5 + 0.5 * math.sin(col * 0.71 + phase) * math.cos(row * 0.93 - phase)
-        patch += 0.28 * math.sin((col + row) * 0.41 + phase * 1.7)
+        scale = max(0.05, self._config.background_patch_scale)
+        patch = 0.5 + 0.5 * math.sin(col * 0.71 * scale + phase) * math.cos(
+            row * 0.93 * scale - phase
+        )
+        patch += 0.28 * math.sin((col + row) * 0.41 * scale + phase * 1.7)
         return patch / 1.28 < self._coverage
 
     def weather_at_cell(self, col: int, row: int) -> str:

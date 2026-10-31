@@ -5,8 +5,13 @@ Time passage is pause-aware: simulation ticks only advance while PLAYING.
 
 Set BEAN_HEADLESS=1 to run without a window. Headless mode never imports
 Arcade/OpenGL, so it works in containers with no display server at all.
+
+Logging is configured before anything else. The level comes from
+``BEAN_LOG_LEVEL`` (exposed by the Makefile as ``LOG_LEVEL``) and falls back
+to ``SimulationConfig.logging.level`` (default ``INFO``).
 """
 
+import logging
 import os
 import time
 
@@ -15,7 +20,10 @@ from sim.config import DEFAULT_CONFIG
 from sim.container import Container
 from sim.domain.environment import Environment
 from sim.input.keyboard import KeyboardInput
+from sim.observability import configure_logging, get_logger, log_event
 from sim.time.game_clock import advance_clock
+
+logger = get_logger("main")
 
 
 def _step(
@@ -50,6 +58,14 @@ def run_headless(
     frames = int(os.environ.get("BEAN_HEADLESS_FRAMES", "600"))
     frame_dt = 1.0 / 60.0
 
+    log_event(
+        logger,
+        "session.headless_started",
+        frames=frames,
+        tick_rate=1.0 / fixed_step,
+        season=session.environment.season if session.environment else None,
+    )
+
     # There is no input in headless mode, so start the simulation directly.
     session.state = GameState.PLAYING
     session.clock.paused = False
@@ -62,22 +78,43 @@ def run_headless(
     if environment is not None:
         calendar = environment.calendar
         palette = environment.palette
-        weather = environment.weather
-        print(
-            f"headless run finished: frames={frames} ticks={session.clock.tick} "
-            f"env_tick={env_tick} day={calendar.day} clock={calendar.clock} "
-            f"season={palette.name} weather={weather}",
-            flush=True,
+        log_event(
+            logger,
+            "session.headless_finished",
+            frames=frames,
+            ticks=session.clock.tick,
+            env_tick=env_tick,
+            day=calendar.day,
+            clock=calendar.clock,
+            season=palette.name,
+            weather=environment.weather,
         )
     else:
-        print(
-            f"headless run finished: frames={frames} ticks={session.clock.tick}",
-            flush=True,
+        log_event(
+            logger,
+            "session.headless_finished",
+            frames=frames,
+            ticks=session.clock.tick,
+            env_tick=env_tick,
         )
 
 
 def main() -> None:
     config = DEFAULT_CONFIG
+    level = configure_logging(config)
+
+    log_event(
+        logger,
+        "app.start",
+        log_level=level,
+        headless=os.environ.get("BEAN_HEADLESS", "0") == "1",
+        tick_rate=config.tick_rate,
+        world=f"{config.world.width}x{config.world.height}",
+        cell_size=config.world.cell_size,
+        cols=config.world.cols,
+        rows=config.world.rows,
+    )
+
     container = Container(config)
 
     session = container.session
@@ -87,7 +124,13 @@ def main() -> None:
     fixed_step = 1.0 / config.tick_rate
 
     if headless:
-        run_headless(session, environment, fixed_step)
+        try:
+            run_headless(session, environment, fixed_step)
+        except Exception:
+            logger.exception("app.crashed mode=headless")
+            raise
+        finally:
+            logging.shutdown()
         return
 
     # Import Arcade only for the windowed path; headless runs stay free of
@@ -116,12 +159,39 @@ def main() -> None:
         _step(session, environment, real_dt, fixed_step)
 
         if session.exit_requested:
+            log_event(
+                logger,
+                "app.window_closing",
+                ticks=session.clock.tick,
+                reason=session.end_reason,
+            )
             view.close()
             arcade.exit()
 
     view.on_update = on_update
 
-    arcade.run()
+    log_event(
+        logger,
+        "app.window_created",
+        width=view.width,
+        height=view.height,
+        resizable=True,
+    )
+
+    try:
+        arcade.run()
+    except Exception:
+        logger.exception("app.crashed mode=windowed")
+        raise
+    finally:
+        log_event(
+            logger,
+            "app.stop",
+            ticks=session.clock.tick,
+            state=session.state.name,
+            reason=session.end_reason,
+        )
+        logging.shutdown()
 
 
 if __name__ == "__main__":

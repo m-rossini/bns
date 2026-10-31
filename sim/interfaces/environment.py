@@ -104,8 +104,15 @@ class IDayNightStrategy(ABC):
         ...
 
     @abstractmethod
-    def light_at(self, calendar: ICalendar, x: float, y: float) -> float:
-        """Light level 0..1 at a world position (sun altitude + local shade)."""
+    def light_at(
+        self, calendar: ICalendar, x: float, y: float, season_factor: float = 1.0
+    ) -> float:
+        """Light level 0..1 at a world position (sun altitude + local shade).
+
+        ``season_factor`` is the current season's `SeasonConfig.light_influence`;
+        the strategy decides how strongly it applies it (see
+        `DayNightConfig.season_light_influence`).
+        """
 
     @abstractmethod
     def phase(self, calendar: ICalendar) -> str:

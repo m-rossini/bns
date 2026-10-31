@@ -36,6 +36,8 @@ classDiagram
         +tick: int
         +paused: bool
         +accumulator: float
+        +time_scale: float
+        +set_time_scale(value)
     }
 
     class GameSession {
@@ -69,9 +71,21 @@ classDiagram
         +rows: int
         +orientation: str
         +wrap_around: bool
+        +barrier_strategy: IBarrierStrategy
         +cell_index(x, y) tuple
         +cell_center(col, row) tuple
         +add_barrier(barrier)
+    }
+
+    class Barrier {
+        +id: int
+        +kind: str
+        +x: float
+        +y: float
+        +width: float
+        +height: float
+        +radius: float
+        +color: tuple
     }
 
     class Environment {
@@ -81,6 +95,8 @@ classDiagram
         +weather: str
         +light_level: float
         +palette: SeasonPalette
+        +solar: SolarProfile
+        +celestial: CelestialState
         +weather_at(x, y) str
         +light_at(x, y) float
         +humidity_at(x, y) float
@@ -103,19 +119,40 @@ classDiagram
         +signed(x, y, w, h) float
     }
 
+    class SolarProfile {
+        +sun_intensity: float
+        +daylight_fraction: float
+    }
+
+    class ClimateContext {
+        +tick: int
+        +season: str
+        +solar: SolarProfile
+        +base_temperature: float
+        +humidity: float
+        +pressure_hpa: float
+        +weather_weights: dict
+        +cols: int
+        +rows: int
+        +cell_size: float
+        +adjusted_weather_weights() dict
+        +climate_context() ClimateContext
+    }
+
     class SeasonStrategy {
         +ticks_per_season: int
         +season_names: tuple
         +palette(calendar) SeasonPalette
+        +solar_profile(calendar) SolarProfile
         +get_season_name(calendar) str
         +weather_weights(season) dict
     }
 
     class DayNightStrategy {
         +ticks_per_day: int
-        +light_at(calendar, x, y, season_factor) float
-        +phase(calendar) str
-        +celestial(calendar) CelestialState
+        +light_at(calendar, x, y, solar) float
+        +phase(calendar, solar) str
+        +celestial(calendar, solar) CelestialState
         +sky_palette() SkyPalette
     }
 
@@ -123,10 +160,18 @@ classDiagram
         +weather: str
         +weather_at(x, y) str
         +weather_at_cell(col, row) str
-        +update(tick, environment)
+        +update(tick, climate)
         +reset()
-        -_build(tick, environment)
+        -_build(tick, climate)
         -_background_covers(col, row) bool
+    }
+
+    class BarrierStrategy {
+        +color: tuple
+        +max_span_cells: int
+        +span_cells(barrier, world) tuple
+        +validate(barrier, world)
+        +create_barriers(world) list[Barrier]
     }
 
     class ArcadeView {
@@ -136,20 +181,38 @@ classDiagram
         +on_resize(w, h)
         +on_mouse_motion(x, y, dx, dy)
         +on_mouse_press(x, y, button, modifiers)
-        -_recompute_layout()
+        +on_mouse_release(x, y, button, modifiers)
+        -_layout: WorldLayout
         -_screen_to_world(sx, sy)
         -_world_to_screen(wx, wy)
         -_selected_cell: tuple
         -_hover_cell: tuple
+        -_slider_rect: tuple
         -_text: _TextCache
+    }
+
+    class WorldLayout {
+        +left: float
+        +bottom: float
+        +scale: float
+        +cell_size: float
+        +cols: int
+        +rows: int
+        +screen_to_world(sx, sy)
+        +world_to_screen(wx, wy)
+        +cell_index(x, y) tuple
+        +cell_center(col, row) tuple
+        +cell_screen_rect(col, row) tuple
     }
 
     class KeyboardInput {
         +handle_keypress(key)
+        +set_time_scale(value)
     }
 
     class Container {
         +config: SimulationConfig
+        +barrier_strategy: BarrierStrategy
         +world: World
         +calendar: Calendar
         +environment: Environment
@@ -166,6 +229,9 @@ classDiagram
         <<interface>>
     }
     class IWeatherStrategy {
+        <<interface>>
+    }
+    class IBarrierStrategy {
         <<interface>>
     }
     class IEnvironment {
@@ -185,6 +251,7 @@ classDiagram
     SeasonStrategy ..|> ISeasonStrategy
     DayNightStrategy ..|> IDayNightStrategy
     WeatherStrategy ..|> IWeatherStrategy
+    BarrierStrategy ..|> IBarrierStrategy
     Environment ..|> IEnvironment
 
     Environment --> ICalendar
@@ -196,12 +263,16 @@ classDiagram
 
     WeatherStrategy --> IWorld
 
-    ArcadeView --> GameSession
-    KeyboardInput --> GameSession
+    BarrierStrategy --> IWorld
+    Container --> BarrierStrategy
     Container --> World
     Container --> Calendar
     Container --> Environment
     Container --> GameSession
+
+    ArcadeView --> GameSession
+    KeyboardInput --> GameSession
+    ArcadeView --> WorldLayout
 ```
 
 ---
@@ -220,6 +291,7 @@ sequenceDiagram
     participant W as World
     participant Cal as Calendar
     participant Env as Environment
+    participant BS as BarrierStrategy
     participant Sess as GameSession
     participant Log as bean.* loggers
 
@@ -228,13 +300,16 @@ sequenceDiagram
     M->>Log: event=app.start
     M->>C: Container(config)
 
-    C->>W: World(width, height, cell_size, orientation)
+    C->>W: World(width, height, cell_size, orientation, barrier_strategy)
     C->>Cal: Calendar(ticks_per_day, ticks_per_season, names)
     C->>Env: build strategies (season, daynight, weather)
     Note over C,Env: strategy name None = static mode
     C->>Env: Environment(calendar, world, strategies, configs)
     Env->>Env: build one Gradient per reading
     Env->>Env: read first weather / day / season snapshot
+    C->>BS: BarrierStrategy(config.barriers)
+    BS->>W: create_barriers(world) -> list[Barrier]
+    W->>W: add_barrier (validated by strategy)
 
     C->>Sess: GameSession(START, world, environment)
     C->>Log: container.built world, cells, seasons, strategies
@@ -268,7 +343,8 @@ sequenceDiagram
     loop ticks_executed
         A->>Env: advance_tick()
         Env->>Cal: advance()
-        Env->>W: update(calendar.tick, self)
+        Env->>Env: solar = season_strategy.solar_profile(calendar)
+        Env->>W: update(calendar.tick, climate_context())
         W->>W: rebuild field when tick // change_interval changed
 
         opt day boundary
@@ -302,15 +378,16 @@ offsets, plus a positional gradient, plus a small microclimate term.
 flowchart TD
     subgraph Inputs
         CAL[Calendar<br/>tick, season, day_fraction]
-        SEASON[SeasonStrategy<br/>palette: base temp, swing,<br/>humidity, pressure, light]
-        DAY[DayNightStrategy<br/>sun altitude, local shading]
+        SEASON[SeasonStrategy<br/>palette: base temp, swing,<br/>humidity, pressure, sun]
+        SOLAR[SeasonStrategy<br/>solar_profile:<br/>sun_intensity, daylight_fraction]
+        DAY[DayNightStrategy<br/>sun arc, local shading]
         WX[WeatherStrategy<br/>weather_at x y]
         GRAD[GradientConfig x4<br/>orientation, start, end]
         ENVC[EnvironmentConfig<br/>microclimate]
     end
 
     subgraph light
-        L1[sun_altitude × local_shading × season_light]
+        L1[sun_arc × local_shading × sun_intensity]
         L2[× light_gradient]
         L3[× weather light factor]
         L4[clamp 0..1]
@@ -339,7 +416,7 @@ flowchart TD
 
     CAL --> L1
     DAY --> L1
-    SEASON --> L1
+    SOLAR --> L1
     SEASON --> T1
     CAL --> T1
     GRAD --> L2
@@ -384,25 +461,29 @@ flowchart LR
     subgraph View
         V[ArcadeView.on_draw]
         L[_ensure_layout<br/>viewport size]
+        WL[WorldLayout<br/>world ↔ screen + cells]
         W[_draw_world<br/>cols × rows × cell_size]
+        BAR[_draw_barriers<br/>strategy colour]
         G[_draw_grid<br/>one line per cell boundary]
         SEL[_draw_selection<br/>integer cell index]
-        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Inspector,<br/>Weather field, Controls]
+        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Inspector,<br/>Weather field, Controls<br/>speed slider]
         TX[_TextCache<br/>arcade.Text objects]
     end
 
     subgraph Input
-        K[KeyboardInput]
-        MOUSE[on_mouse_press /<br/>on_mouse_motion]
+        K[KeyboardInput<br/>set_time_scale]
+        MOUSE[on_mouse_press /<br/>on_mouse_motion /<br/>slider drag]
     end
 
     S --> V
     E --> V
-    V --> L --> W --> G --> SEL
+    V --> L --> WL --> W --> BAR --> G --> SEL
     V --> SB
     W --> TX
     SB --> TX
     MOUSE -->|screen → world → cell_index| SEL
+    MOUSE -->|slider → set_time_scale| K
+    K -->|time_scale| S
     MOUSE -->|ui.cell_inspected| E
     K -->|state transitions| S
 ```
@@ -492,6 +573,7 @@ classDiagram
         +debug: bool
         +world: WorldConfig
         +time: TimeConfig
+        +barriers: BarrierConfig
         +seasons: list~SeasonConfig~
         +daynight: DayNightConfig
         +weather: WeatherConfig
@@ -507,10 +589,22 @@ classDiagram
         +wrap_around: bool
     }
 
+    class BarrierConfig {
+        +color: Color
+        +max_span_cells: int
+        +min_span_cells: int
+        +count: int
+        +seed: int
+        +margin_cells: int
+    }
+
     class TimeConfig {
         +ticks_per_day: int
         +ticks_per_season: int
         +start_tick: int
+        +initial_time_scale: float
+        +time_scale_min: float
+        +time_scale_max: float
     }
 
     class SeasonConfig {
@@ -522,7 +616,8 @@ classDiagram
         +temperature_swing: float
         +humidity: float
         +pressure_hpa: float
-        +light_influence: float
+        +sun_intensity: float
+        +daylight_fraction: float
         +weather_weights: dict
     }
 
@@ -533,7 +628,6 @@ classDiagram
         +local_shading: float
         +shading_scale_x: float
         +shading_scale_y: float
-        +season_light_influence: float
         +night_threshold: float
         +twilight_threshold: float
         +sun_arc_start: float
@@ -590,6 +684,7 @@ classDiagram
 
     SimulationConfig *-- WorldConfig
     SimulationConfig *-- TimeConfig
+    SimulationConfig *-- BarrierConfig
     SimulationConfig *-- "1..*" SeasonConfig
     SimulationConfig *-- DayNightConfig
     SimulationConfig *-- WeatherConfig

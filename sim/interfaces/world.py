@@ -5,9 +5,12 @@ behavior. It knows nothing about rendering or beans.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from sim.components import Barrier
+
+if TYPE_CHECKING:  # pragma: no cover - typing only (avoids an import cycle)
+    from sim.interfaces.barrier import IBarrierStrategy
 
 
 class IWorld(ABC):
@@ -49,6 +52,17 @@ class IWorld(ABC):
     @property
     @abstractmethod
     def barriers(self) -> List[Barrier]:
+        ...
+
+    @property
+    @abstractmethod
+    def barrier_strategy(self) -> Optional["IBarrierStrategy"]:
+        ...
+
+    @abstractmethod
+    def set_barrier_strategy(
+        self, strategy: Optional["IBarrierStrategy"]
+    ) -> None:
         ...
 
     @abstractmethod

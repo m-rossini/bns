@@ -1,11 +1,17 @@
 """Season strategy.
 
 Seasons are configuration data (`SeasonConfig`): a name, a ground colour, its
-detail speckles, a temperature baseline and swing, humidity, pressure and the
-weather weights used by the weather strategy.
+detail speckles, a temperature baseline and swing, humidity, pressure, the
+amount of sun the world receives and the weather weights used by the weather
+strategy.
 
 Changing the number of seasons needs no code change: list one, four or eight
 entries in `SimulationConfig.seasons`.
+
+The season also owns **how much sun** the world gets: `solar_profile()` blends
+the current season's `sun_intensity` and `daylight_fraction` into the next one
+over the final quarter of the season, so the hand-over is smooth and the
+day/night strategy never has to know about seasons.
 
 The ground colour is a gradient over the season, derived from the configured
 base colour so every season is a physical colour, not a hardcoded one:
@@ -19,7 +25,7 @@ That produces a smooth seasonal change without touching the view.
 from typing import Dict, List, Sequence, Tuple
 
 from sim.config import SeasonConfig
-from sim.domain.visuals import SeasonPalette
+from sim.domain.visuals import SeasonPalette, SolarProfile
 from sim.interfaces.environment import ICalendar, ISeasonStrategy
 from sim.observability import get_logger
 
@@ -41,6 +47,20 @@ _FALLBACK = SeasonConfig(
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _smoothstep(value: float) -> float:
+    value = _clamp(value, 0.0, 1.0)
+    return value * value * (3.0 - 2.0 * value)
+
+
+def transition_weight(progress: float) -> float:
+    """How far the solar profile has moved towards the next season.
+
+    Stays at 0 for the first three quarters of the season, then eases to 1 so
+    the season boundary is continuous.
+    """
+    return _smoothstep((_clamp(progress, 0.0, 1.0) - 0.75) / 0.25)
 
 
 def mix(a: Color, b: Color, t: float) -> Color:
@@ -125,13 +145,32 @@ class SeasonStrategy(ISeasonStrategy):
             temperature_swing=definition.temperature_swing,
             humidity=definition.humidity,
             pressure_hpa=definition.pressure_hpa,
-            light_influence=definition.light_influence,
+            sun_intensity=definition.sun_intensity,
+            daylight_fraction=definition.daylight_fraction,
         )
         logger.debug(
-            "season.palette season=%s progress=%.3f ground=%s light_influence=%.3f",
+            "season.palette season=%s progress=%.3f ground=%s sun=%.2f daylight=%.2f",
             definition.name,
             progress,
             ground,
-            definition.light_influence,
+            definition.sun_intensity,
+            definition.daylight_fraction,
         )
         return palette
+
+    def solar_profile(self, calendar: ICalendar) -> SolarProfile:
+        """Sun the world gets now, easing into the next season's profile."""
+        current = self._definition(calendar.season)
+        following = self._next_definition(calendar.season)
+        weight = transition_weight(calendar.season_progress)
+
+        intensity = current.sun_intensity + (
+            following.sun_intensity - current.sun_intensity
+        ) * weight
+        daylight = current.daylight_fraction + (
+            following.daylight_fraction - current.daylight_fraction
+        ) * weight
+        return SolarProfile(
+            sun_intensity=max(0.0, intensity),
+            daylight_fraction=_clamp(daylight, 0.05, 0.95),
+        )

@@ -5,12 +5,17 @@ Plain dataclasses with no behavior. Systems and domain objects hold logic.
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 @dataclass
 class Barrier:
-    """A static obstacle in the world."""
+    """A static obstacle in the world.
+
+    Coordinates and sizes are world units. ``color`` is copied from the
+    barrier strategy that created it, so the renderer never hardcodes one.
+    """
+
     id: int
     kind: str  # "rect" or "circle"
     x: float
@@ -18,6 +23,7 @@ class Barrier:
     width: float = 0.0
     height: float = 0.0
     radius: float = 0.0
+    color: Tuple[int, int, int] = (255, 208, 64)
 
 
 class GameState(Enum):

@@ -15,9 +15,11 @@ from sim.domain.calendar import Calendar
 from sim.domain.environment import Environment
 from sim.domain.session import GameSession as ConcreteGameSession
 from sim.domain.world import World
+from sim.implementations.barrier import BarrierStrategy
 from sim.implementations.daynight import DayNightStrategy
 from sim.implementations.season import SeasonStrategy
 from sim.implementations.weather import WeatherStrategy
+from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.environment import (
     IDayNightStrategy,
     ISeasonStrategy,
@@ -37,14 +39,16 @@ Strategy = Union[IWeatherStrategy, ISeasonStrategy, IDayNightStrategy]
 class Container:
     def __init__(self, config: SimulationConfig):
         self.config = config
+        self.barrier_strategy: IBarrierStrategy = BarrierStrategy(config.barriers)
         self.world = self._build_world(config)
         self.calendar = self._build_calendar(config)
         self.environment = self._build_environment(config)
         self.session = self._build_session()
         self.debug = config.debug
+        self._place_barriers()
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
-            "seasons=%s strategies=%s/%s/%s",
+            "seasons=%s strategies=%s/%s/%s barriers=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -55,6 +59,7 @@ class Container:
             config.environment.season_strategy,
             config.environment.daynight_strategy,
             config.environment.weather_strategy,
+            len(self.world.barriers),
         )
 
     # ------------------------------------------------------------------
@@ -68,7 +73,13 @@ class Container:
             cell_size=wc.cell_size,
             orientation=wc.orientation,
             wrap_around=wc.wrap_around,
+            barrier_strategy=self.barrier_strategy,
         )
+
+    def _place_barriers(self) -> None:
+        """Generate and register the strategy's barriers (validated by it)."""
+        for barrier in self.barrier_strategy.create_barriers(self.world):
+            self.world.add_barrier(barrier)
 
     # ------------------------------------------------------------------
     # Calendar

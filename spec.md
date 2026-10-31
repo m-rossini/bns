@@ -1,536 +1,662 @@
-# Bean World — Game Specification (Updated)
+# Bean World — Game Specification
 
-Bean World is a pause-aware 2D simulation where beans live in a bounded arena with day/night, seasons, and weather. The project is written in Python using Arcade for rendering, with a clean separation between domain logic and physical presentation.
+Bean World is a pause-aware 2D simulation where beans live in a bounded arena
+with day/night, seasons and per-cell weather. The project is written in Python
+and uses [Arcade](https://api.arcade.academy/) only for physical presentation.
+
+This document is the technical specification. It is kept aligned with the code;
+[`README.md`](./README.md) is the usage-oriented reference and
+[`diagrams.md`](./diagrams.md) holds the Mermaid diagrams.
+
+Defaults quoted here come from `sim/config.py` (`DEFAULT_CONFIG`). Anything
+marked *configurable* can be changed without editing code.
 
 ---
 
-## 1. Project Structure
+## 1. Project structure
 
-```
+```text
 bns/
-├── Containerfile          # Container image definition (podman/docker)
-├── Makefile               # Build, run, clean targets
-├── spec.md                # This file
+├── Containerfile              # container image (podman/docker)
+├── Makefile                   # build, run, verify, clean targets
+├── README.md                  # technical reference / usage
+├── diagrams.md                # Mermaid diagrams
+├── spec.md                    # this document
+├── AGENTS.md                  # documentation index
+├── CLAUDE.md                  # behaviour and ground rules
+├── TODO.md                    # task board for the current change set
+├── skills/
+│   └── git.md                 # local git workflow
 └── sim/
     ├── __init__.py
-    ├── main.py            # Entry point + game loop
-    ├── config.py          # Tunable dataclasses (enhanced with season names)
-    ├── config_defaults.py # DEFAULT_CONFIG (world, barriers, tick rate)
-    ├── components.py      # Data components (Barrier, GameClock, GameSession, GameState)
-    ├── container.py       # DI container wiring config -> domain objects
+    ├── main.py                # entry point, fixed-step loop, headless mode
+    ├── config.py              # ALL tunable configuration (single module)
+    ├── components.py          # GameState, GameClock, GameSession, Barrier
+    ├── container.py           # dependency-injection wiring
+    ├── observability.py       # logging setup + structured business events
     ├── domain/
     │   ├── __init__.py
-    │   ├── session.py     # Concrete GameSession
-    │   ├── environment.py # Environment aggregator (tick + strategies) with atmospheric pressure
-    │   └── world.py       # World (bounds, barriers, wrap/clamp)
-    ├── input/
-    │   ├── __init__.py
-    │   └── keyboard.py    # KeyboardInput (key -> state transitions) with P=Pause/Q=Quit
-    ├── interfaces/
-    │   ├── __init__.py
-    │   ├── environment.py # IWeatherStrategy, ISeasonStrategy, IDayNightStrategy, IEnvironment
-    │   ├── renderer.py    # IRenderer protocol
-    │   └── world.py       # IWorld interface
+    │   ├── calendar.py        # tick -> day / clock / season / year
+    │   ├── environment.py     # positional readings + gradient composition
+    │   ├── gradient.py        # orientation-aware positional gradients
+    │   ├── session.py         # concrete GameSession
+    │   ├── visuals.py         # SeasonPalette, SkyPalette, CelestialState
+    │   └── world.py           # bounds, cells, orientation, wrap/clamp
     ├── implementations/
     │   ├── __init__.py
     │   ├── daynight/__init__.py   # DayNightStrategy
-    │   ├── season/__init__.py     # SeasonStrategy (provides season names)
-    │   └── weather/__init__.py    # WeatherStrategy (per-cell, not uniform)
+    │   ├── season/__init__.py     # SeasonStrategy
+    │   └── weather/__init__.py    # WeatherStrategy
+    ├── input/
+    │   ├── __init__.py
+    │   └── keyboard.py        # KeyboardInput state machine
+    ├── interfaces/
+    │   ├── __init__.py
+    │   ├── environment.py     # ICalendar, ISeasonStrategy, IDayNightStrategy,
+    │   │                      # IWeatherStrategy, IEnvironment
+    │   ├── renderer.py        # IRenderer protocol
+    │   └── world.py           # IWorld
     ├── rendering/
     │   ├── __init__.py
-    │   └── arcade_view.py         # ArcadeView (Window + IRenderer) with sidebar layout
+    │   └── arcade_view.py     # Arcade window, HUD, cached Text rendering
     └── time/
         ├── __init__.py
-        └── game_clock.py          # advance_clock(), pause/resume/toggle_pause
+        └── game_clock.py      # advance_clock() fixed-step accumulator
 ```
+
+There is no `sim/config_defaults.py`: `DEFAULT_CONFIG` lives at the bottom of
+`sim/config.py`, and that module is the single source of truth for tunables.
 
 ---
 
-## 2. Domain Model
+## 2. Coordinate and time model
 
-### 2.1 GameState (`sim/components.py`)
+### 2.1 World units and cells
+
+The world is measured in **world units**. It is divided into square cells of
+`WorldConfig.cell_size`:
+
+```text
+cols = round(width / cell_size)
+rows = round(height / cell_size)
+```
+
+Defaults: `1200 x 800` world units, `cell_size = 50` → `24 x 16 = 384` cells.
+
+- `World.cell_index(x, y)` maps a world position to `(col, row)`, clamped to
+  the grid.
+- `World.cell_center(col, row)` returns the centre of that cell.
+- Weather, light and all readings are sampled per cell.
+- The view applies one uniform world→screen scale. It never assumes a pixel
+  size for a cell.
+
+### 2.2 Time
+
+`Calendar` is the only time authority. It derives everything from `tick`:
+
+| Default | Value |
+|---------|-------|
+| `tick_rate` | `30.0` ticks/s |
+| `ticks_per_day` | `1200` (40 s per day) |
+| `ticks_per_season` | `4800` (4 days per season) |
+| `start_tick` | `0` |
+
+`SeasonStrategy` and `DayNightStrategy` both read the calendar; neither owns
+the other. `Environment` composes them.
+
+---
+
+## 3. Domain model
+
+### 3.1 GameState (`sim/components.py`)
 
 | State | Meaning |
 |-------|---------|
-| `START` | Title screen, press SPACE to begin |
+| `START` | Title screen; `SPACE` starts |
 | `PLAYING` | Simulation running, time passing |
 | `PAUSED` | Simulation frozen, overlay shown |
-| `END` | Game over / population extinct / user quit |
+| `END` | Game over / user quit |
 
-Only `GameSession` may change state. Systems query `session.state` before running.
+Only `GameSession` may change state. Systems query `session.state` before
+running.
 
-### 2.2 GameClock (`sim/components.py` + `sim/time/game_clock.py`)
+### 3.2 GameClock (`sim/components.py` + `sim/time/game_clock.py`)
 
-Pause-aware fixed-step accumulator that decouples render frames from simulation ticks.
+Pause-aware fixed-step accumulator that decouples render frames from simulation
+ticks.
 
-Fields:
-- `real_dt`: seconds elapsed since last frame (wall clock)
-- `sim_dt`: seconds advanced in simulation this frame (0 when paused)
-- `accumulator`: leftover time for fixed tick steps
-- `tick`: number of simulation ticks completed
-- `paused`: whether the simulation clock is stopped (default `True`; the title
-screen is frozen until START -> PLAYING unpauses it)
-- `time_scale`: multiplier for sim time (1.0 normal, 2.0 fast-forward)
+Fields: `real_dt`, `sim_dt`, `accumulator`, `tick`, `paused` (default `True`),
+`time_scale`.
 
-`advance_clock(clock, real_dt, fixed_step) -> int`:
-- Returns the number of ticks executed this frame.
-- When paused, returns 0 and does not advance simulation time.
+`advance_clock(clock, real_dt, fixed_step) -> int` returns the number of ticks
+executed this frame. When `paused` it returns `0` and keeps the accumulator.
 
-### 2.3 GameSession (`sim/components.py` + `sim/domain/session.py`)
+### 3.3 GameSession (`sim/components.py` + `sim/domain/session.py`)
 
-Top-level logical state container:
-- `state: GameState`
-- `world: World | None`
-- `environment: Environment | None`
-- `clock: GameClock`
-- `start_time: float`
-- `pause_time: float`
-- `end_reason: str | None`
-- `exit_requested: bool` — input signal to close the window
+Top-level logical state container: `state`, `world`, `environment`, `clock`,
+`start_time`, `pause_time`, `end_reason`, `exit_requested`.
 
-### 2.4 World (`sim/domain/world.py`)
+### 3.4 World (`sim/domain/world.py`)
 
-Holds arena bounds, orientation, wrap behavior, and static barriers.
+Holds arena bounds, the derived cell grid, orientation, wrap behaviour and
+static barriers.
 
-- `width`, `height`: arena dimensions
-- `orientation`: `"north_south"`, `"east_west"`, `"square"`
-- `wrap_around`: if true, positions wrap; otherwise clamped
+- `width`, `height`, `cell_size`
+- `cols`, `rows` (derived)
+- `orientation` — the default climate-gradient direction
+- `wrap_around`
 - `barriers: list[Barrier]`
 - `add_barrier(barrier)` / `remove_barrier(barrier_id)`
 - `is_inside(x, y)` / `clamp_or_wrap(x, y)`
+- `cell_index(x, y)` / `cell_center(col, row)`
 
-### 2.5 Environment (`sim/domain/environment.py`)
+`DEFAULT_CONFIG` creates no barriers; the type and methods are extension
+points for the bean systems.
 
-Aggregates the tick clock and optional strategy instances.
+### 3.5 Barrier (`sim/components.py`)
 
-- `tick: int` — incremented on each `advance_tick()`
-- `weather_strategy`, `season_strategy`, `daynight_strategy` — optional strategy refs
-- `advance_tick()` — increments tick, notifies weather strategy if present
-- Derived read-only values: `season`, `phase`, `light_level`, `weather`
-  (sensible defaults when a strategy is disabled)
-- `temperature_at(x, y) -> float` — Celsius at a world position from seasonal
-  mean, diurnal swing (light level), weather offset, and a smooth
-  position-dependent microclimate (+/- ~3 °C)
-- `humidity_at(x, y) -> float` — 0..1 relative humidity (seasonal + weather)
-- `pressure_at(x, y) -> float` — hPa atmospheric pressure (seasonal + weather + position)
+Static obstacle: `id`, `kind` (`"rect"` or `"circle"`), `x`, `y`, `width`,
+`height`, `radius`.
 
-### 2.6 Barrier (`sim/components.py`)
+### 3.6 Environment (`sim/domain/environment.py`)
 
-Static obstacle:
-- `id`, `kind` (`"rect"` or `"circle"`), `x`, `y`, `width`, `height`, `radius`
+The only object that turns the strategies into positional readings. It holds a
+`Gradient` per reading and composes them as follows:
 
----
-
-## 3. Interfaces
-
-### 3.1 `sim/interfaces/environment.py`
-
-```python
-class IWeatherStrategy(ABC):
-    @property
-    def weather(self) -> str: ...
-    def weather_at(self, x: float, y: float) -> str: ...  # PER-CELL
-    def update(self, tick: int, environment: IEnvironment) -> None: ...
-    def reset(self) -> None: ...
-
-class ISeasonStrategy(ABC):
-    @property
-    def ticks_per_season(self) -> int: ...
-    @property
-    def season_names(self) -> Tuple[str, ...]: ...
-    def palette(self, calendar: ICalendar) -> SeasonPalette: ...  # PROVIDES NAME
-    def weather_weights(self, season: str) -> dict: ...
-
-class IDayNightStrategy(ABC):
-    @property
-    def ticks_per_day(self) -> int: ...
-    def light_at(self, calendar: ICalendar, x: float, y: float) -> float: ...
-    def phase(self, calendar: ICalendar) -> str: ...
-    def celestial(self, calendar: ICalendar) -> CelestialState: ...
-    def sky_palette(self) -> SkyPalette: ...
-
-class IEnvironment(ABC):
-    @property
-    def tick(self) -> int: ...
-    @property
-    def weather_strategy(self): ...
-    @property
-    def season_strategy(self): ...
-    @property
-    def daynight_strategy(self): ...
-    @property
-    def season(self) -> str: ...  # READS FROM CALENDAR
-    @property
-    def phase(self) -> str: ...
-    @property
-    def weather(self) -> str: ...  # AGGREGATE
-    @property
-    def light_level(self) -> float: ...
-    @property
-    def palette(self) -> SeasonPalette: ...
-    def weather_at(self, x: float, y: float) -> str: ...  # PER-CELL
-    def light_at(self, x: float, y: float) -> float: ...
-    def humidity_at(self, x: float, y: float) -> float: ...
-    def pressure_at(self, x: float, y: float) -> float: ...  # NEW
-    def temperature_at(self, x: float, y: float) -> float: ...
-    def advance_tick(self) -> None: ...
-    def reset(self) -> None: ...
+```text
+light(x, y)       = sun_altitude * local_shading * season_light
+                    * light_gradient(x, y) * weather_light_factor
+temperature(x, y) = season_base + swing * (2*light - 1)
+                    + weather_temperature_offset
+                    + temperature_gradient(x, y) + microclimate(x, y)
+humidity(x, y)    = season_humidity + weather_humidity_offset
+                    + humidity_gradient(x, y) + microclimate(x, y)
+pressure(x, y)    = season_pressure + weather_pressure_offset
+                    + pressure_gradient(x, y) + microclimate(x, y)
 ```
 
-### 3.2 `sim/interfaces/world.py`
+- A strategy set to `None` means **static mode**: that reading falls back to a
+  documented constant and the simulation keeps running.
+- The palette is cached per tick, so repeated `temperature_at` calls in one
+  tick do not re-interpolate the season colour.
+- `advance_tick()` advances the calendar once and notifies the weather
+  strategy, then emits business events for day/season/weather changes and, at
+  `DEBUG`, periodic reading samples.
 
-`IWorld` — width, height, orientation, wrap_around, barriers, add/remove barrier,
-is_inside, clamp_or_wrap.
+### 3.7 Gradient (`sim/domain/gradient.py`)
 
-### 3.3 `sim/interfaces/renderer.py`
+```python
+@dataclass(frozen=True)
+class Gradient:
+    orientation: str = "north_south"
+    start: float = 0.0
+    end: float = 1.0
+```
 
-`IRenderer` (Protocol, runtime_checkable):
-- `draw_start_screen()`
-- `draw_playing(session)`
-- `draw_paused(session)`
-- `draw_end_screen(session)`
-- `flip()`
+`factor(x, y, width, height)` returns a normalised `0..1` position along the
+orientation; `value(...)` interpolates `start → end`. The same primitive is
+used for numeric readings and for the season ground colour.
 
----
-
-## 4. Implementations
-
-- `DayNightStrategy` (`sim/implementations/daynight/`)
-  - `ticks_per_day=1200` (40 s at 30 ticks/s)
-  - `light_at`: cosine curve + local shading, 0.0 at midnight, 1.0 at noon
-  - `phase`: `night`, `dawn`, `day`, or `dusk`
-- `SeasonStrategy` (`sim/implementations/season/`)
-  - `ticks_per_season=1200` (one day per season, 40 s at 30 ticks/s), order
-    `spring -> summer -> autumn -> winter`
-  - `palette(name, ground_color, detail_colors, base_temperature, temp_swing, humidity, pressure_hpa, weather_weights)` — PROVIDES SEASON NAME
-- `WeatherStrategy` (`sim/implementations/weather/`)
-  - Changes every `change_interval=600` ticks (20 s)
-  - Conditions: `clear`, `cloudy`, `rain`, `storm`, `snow`
-  - **PER-CELL: not uniform everywhere** (background_coverage + moving fronts)
-  - Deterministic per seed + interval index; snow only in winter, no rain in winter
-
-All three implement the interfaces in §3.1 and are wired by the container (§9).
+Orientations: `north_south`, `south_north`, `west_east`, `east_west`,
+`centre_out`, `out_centre`, `diagonal_up`, `diagonal_down`. Unknown names fall
+back to `north_south` and log a warning, so a configuration typo never stops
+the simulation.
 
 ---
 
-## 5. Rendering (`sim/rendering/arcade_view.py`)
+## 4. Interfaces
+
+### 4.1 `sim/interfaces/environment.py`
+
+```python
+class ICalendar(ABC):
+    tick, day, day_fraction, clock, season, season_index,
+    season_progress, day_of_season, year
+    advance(ticks=1), reset()
+
+class IWeatherStrategy(ABC):
+    weather                     # aggregate condition for the HUD
+    weather_at(x, y)            # per-cell
+    weather_at_cell(col, row)
+    update(tick, environment)
+    reset()
+
+class ISeasonStrategy(ABC):
+    ticks_per_season, season_names
+    palette(calendar) -> SeasonPalette
+    get_season_name(calendar) -> str
+    weather_weights(season) -> dict
+
+class IDayNightStrategy(ABC):
+    ticks_per_day
+    light_at(calendar, x, y, season_factor=1.0) -> float
+    phase(calendar) -> str
+    celestial(calendar) -> CelestialState
+    sky_palette() -> SkyPalette
+
+class IEnvironment(ABC):
+    tick, calendar, weather_strategy, season_strategy, daynight_strategy
+    season, phase, weather, light_level, palette
+    weather_at(x, y), light_at(x, y), humidity_at(x, y),
+    pressure_at(x, y), temperature_at(x, y)
+    advance_tick(), reset()
+```
+
+### 4.2 `sim/interfaces/world.py`
+
+`IWorld` — `width`, `height`, `cell_size`, `cols`, `rows`, `orientation`,
+`wrap_around`, `barriers`, `add_barrier` / `remove_barrier`, `is_inside`,
+`clamp_or_wrap`, `cell_index`, `cell_center`.
+
+### 4.3 `sim/interfaces/renderer.py`
+
+`IRenderer` (runtime-checkable `Protocol`): `draw_start_screen()`,
+`draw_playing(session)`, `draw_paused(session)`, `draw_end_screen(session)`,
+`flip()`.
+
+`Protocol` is used instead of `ABC` to avoid metaclass conflicts with
+`arcade.Window`.
+
+---
+
+## 5. Implementations
+
+### 5.1 DayNightStrategy
+
+- Sun and moon run independent cycles (`sun_speed`, `moon_speed`,
+  `moon_phase_offset`), so they are not locked to one global cycle.
+- `light_at` = sun altitude × smooth local shading × season multiplier.
+  `local_shading` and `shading_scale_x/y` shape the terrain/cover variation.
+- `season_light_influence` (0..1) controls how strongly the season's
+  `SeasonConfig.light_influence` scales the curve.
+- `phase`: `night`, `dawn`, `day`, `dusk` using `night_threshold` and
+  `twilight_threshold`.
+- `celestial`: sun/moon arc progress, visibility and moon illumination.
+- `sky_palette`: the configured sky, sun, moon and star colours.
+
+### 5.2 SeasonStrategy
+
+- Seasons are a **list** in configuration: one, two, four or eight need no code
+  change.
+- Default order: `Spring → Summer → Autumn → Winter`, 4 days each.
+- `palette(calendar)` returns `SeasonPalette` with the season name, ground
+  colour, detail colours, temperature baseline/swing, humidity, pressure and
+  light influence.
+- Ground colour: if `SeasonConfig.ground_gradient` is set, it is interpolated
+  `start → end` over the season's progress. Otherwise `ground_color` blends
+  toward the next season's colour.
+- `weather_weights(season)` drives the weather field.
+
+### 5.3 WeatherStrategy
+
+- Per-cell field, not uniform: a patchy **background** condition plus
+  `front_count` circular **fronts**.
+- A new field is built every `change_interval` ticks (`600` = 20 s), derived
+  deterministically from `(seed, interval, season)`.
+- Front radius comes from `front_radius_min_cells` / `front_radius_max_cells`
+  (in cells; `0` = derive from the grid).
+- `front_drift_cells` optionally shifts fronts between rebuilds.
+- Each cell takes the most severe condition among the background and every
+  front covering it. Severity: `clear < cloudy < rain = snow < storm`.
+- Conditions: `clear`, `cloudy`, `rain`, `storm`, `snow`. Snow only appears in
+  seasons whose weights allow it.
+
+---
+
+## 6. Rendering (`sim/rendering/arcade_view.py`)
 
 `ArcadeView` extends `arcade.Window` and structurally implements `IRenderer`.
 
 Screens:
-- **START**: night sky, stars, moon, title panel with controls
-- **PLAYING**: visual world + HUD panels
-- **PAUSED**: playing scene dimmed + "PAUSED" overlay
-- **END**: "GAME OVER", reason, ticks survived, sim time, "Press SPACE to restart"
 
-PLAYING visuals:
-- Sky colour interpolates night -> day with a twilight tint at dawn/dusk and
-  overcast/storm/snow tints from weather; stars fade in at night
-- Sun/moon arc in the top band; day and season progress bars in the HUD
-- **Day and season bars are SEPARATE** (no visual join), each with its own box
-- Arena ground colour and speckles depend on season (spring/summer/autumn/winter),
-  shaded by ambient light
-- Grid every 100 world units and static barriers (rect/circle)
-- Rain streaks, storm streaks, or snowflakes while those conditions last
-- **HUD boxes are STACKED ON THE LEFT**, one under another, not overlapping the world:
-  Time, Day, Season, Environment, Inspector, Controls
-- **Temperature Inspector panel**: world coordinates and temperature in °C
-  for the hovered position; a click pins a marker (crosshair) and keeps the
-  readout
-- **Environment panel** includes: temperature, humidity, atmospheric pressure (hPa)
-- **Weather field panel** at bottom shows how many cells show each condition
-- Controls strip: start / pause / quit / click-to-inspect
+- **START** — sky, stars at night, sun/moon arc, title panel with controls.
+- **PLAYING** — world on the right, stacked information boxes on the left.
+- **PAUSED** — playing scene dimmed with a `PAUSED` overlay.
+- **END** — `GAME OVER`, reason, restart hint.
 
-`ArcadeView` never mutates domain state — it only reads a read-only snapshot
-of `GameSession`; hover/selection coordinates are view-local.
+Layout:
 
-`ArcadeView` must NOT override `flip()`: pyglet calls it after `on_draw` to run
+- A fixed left sidebar (`300..360` px, ~30 % of the viewport) with stacked
+  boxes: **Time, Day, Season, Environment, Inspector, Weather field,
+  Controls**.
+- The world uses the remaining area and the full height; it never sits under a
+  box.
+- Day and season progress are separate boxes, not a joined bar.
+
+Rendering contract:
+
+- **Text** — every string is drawn with cached `arcade.Text` objects.
+  `arcade.draw_text` is never called: it re-lays out and re-uploads a texture
+  per call, is slow and raises `PerformanceWarning`.
+- **Grid** — one line per cell boundary, derived from `world.cell_size`,
+  `world.cols` and `world.rows`. The drawn world spans `cols*cell_size` by
+  `rows*cell_size`, so lines always land on cell edges.
+- **Selection** — stored as an integer `(col, row)`. The orange marker, the
+  crosshair and the readings all derive from it, so they cannot disagree.
+- **Pointer mapping** — layout uses the active viewport size and mouse
+  coordinates are scaled from the window size, so clicks line up on HiDPI or
+  scaled displays. The layout is recomputed when the viewport changes.
+- **Weather field box** — live census of cells and percentage per condition;
+  rows are limited to the panel height and overflow is summarised as
+  `+N more conditions`.
+
+`ArcadeView` never mutates domain state: it reads a snapshot of `GameSession`.
+Hover and selection are view-local.
+
+`ArcadeView` must not override `flip()`: pyglet calls it after `on_draw` to run
 `glXSwapBuffers`. A no-op override draws into the back buffer only, so the
-window shows a stale (black) front buffer even though `arcade.get_image()`
-returns a correct screenshot.
+window shows a stale front buffer even though `arcade.get_image()` returns a
+correct screenshot.
 
 ---
 
-## 6. Input (`sim/input/keyboard.py`)
+## 7. Input (`sim/input/keyboard.py`)
 
-`KeyboardInput` maps physical key presses to logical state transitions:
+`KeyboardInput` is the only writer of `GameSession.state`.
 
 | State | Key | Action |
 |-------|-----|--------|
-| START | SPACE | -> PLAYING, unpause clock, set start_time |
-| START | P | -> PAUSED, pause clock |
-| START | Esc | -> END, reason="user quit" |
-| PLAYING | P | -> PAUSED, pause clock |
-| PLAYING | Q / Esc | -> END, reason="user quit" |
-| PAUSED | P | -> PLAYING, unpause clock |
-| PAUSED | Q / Esc | -> END, reason="user quit" |
-| END | SPACE | restart (fresh clock, environment reset to tick 0, metadata cleared) |
-| END | Q / Esc | sets `exit_requested`, main loop closes window |
+| START | `SPACE` | → PLAYING, unpause clock, set `start_time` |
+| START | `P` | → PAUSED, pause clock |
+| START | `Esc` | → END, reason `user quit` |
+| PLAYING | `P` | → PAUSED, pause clock |
+| PLAYING | `Q` / `Esc` | → END, reason `user quit` |
+| PAUSED | `P` | → PLAYING, unpause clock |
+| PAUSED | `Q` / `Esc` | → END, reason `user quit` |
+| END | `SPACE` | restart: fresh clock, environment reset |
+| END | `Q` / `Esc` | set `exit_requested`; the loop closes the window |
 
-Wired in `main.py` via `view.set_input_handler(input_handler)`.
+Key codes are GLFW codes: `SPACE=32`, `P=112`, `Q=113`, `Esc=65307`.
+
+Mouse (view-local): left click pins the cell under the cursor; clicking outside
+the world clears the selection. Hover highlights the cell but is not pinned.
 
 ---
 
-## 7. Time & Game Loop (`sim/main.py`)
+## 8. Time and game loop (`sim/main.py`)
 
 ```python
-fixed_step = 1.0 / config.tick_rate   # default 30.0 ticks/sec
+fixed_step = 1.0 / config.tick_rate       # 30 ticks/s
 
 on_update(dt):
     real_dt = now - last_time
     ticks_executed = advance_clock(session.clock, real_dt, fixed_step)
     for _ in range(ticks_executed):
-        environment.advance_tick()     # one environment tick per sim tick
+        environment.advance_tick()        # one environment tick per sim tick
     if session.state == PLAYING:
-        # run simulation systems (beans, movement, collision) — placeholder
-        pass
-
-if session.exit_requested:
-    view.close()
-    arcade.exit()
+        pass                              # bean systems (placeholder)
+    if session.exit_requested:
+        view.close()
+        arcade.exit()
 ```
 
-- `BEAN_HEADLESS=1` runs without a visible window (container default).
-  Headless mode runs a deterministic loop at 1/60 s per frame, never imports
-  Arcade/OpenGL, and auto-starts the session (there is no input to press SPACE).
-- `BEAN_HEADLESS_FRAMES=N` bounds the number of frames in headless mode so
-  the container exits instead of hanging forever. The run prints a one-line
-  summary (frames, ticks, environment tick, barrier count) on exit.
-- The windowed path blocks until the window is closed (normal for a GUI).
+- `BEAN_HEADLESS=1` runs a bounded deterministic loop at `1/60 s` per frame,
+  never imports Arcade/OpenGL and auto-starts the session (there is no input to
+  press `SPACE`).
+- `BEAN_HEADLESS_FRAMES=N` bounds the number of frames (default `600`), so the
+  container exits instead of hanging. The run ends with a
+  `session.headless_finished` business event.
+- The windowed path blocks until the window is closed.
 
 ---
 
-## 8. Configuration (`sim/config.py`, `sim/config_defaults.py`)
+## 9. Configuration (`sim/config.py`)
 
-Pure-Python dataclasses, no YAML/JSON.
+Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
+`SimulationConfig` and the only object `main()` reads.
+
+### 9.1 Dataclasses
+
+| Dataclass | Owns |
+|-----------|------|
+| `WorldConfig` | `width=1200`, `height=800`, `cell_size=50`, `orientation`, `wrap_around` |
+| `TimeConfig` | `ticks_per_day=1200`, `ticks_per_season=4800`, `start_tick=0` |
+| `GradientConfig` | `start`, `end`, `orientation` (empty inherits the world) |
+| `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `light_influence`, weather weights |
+| `DayNightConfig` | sun/moon, shading, season-light strength, thresholds, sky colours |
+| `WeatherConfig` | interval, seed, front count/radius/drift, coverage, condition offsets |
+| `EnvironmentConfig` | strategy names, four climate gradients, `microclimate` |
+| `LoggingConfig` | level, format, date format, business/readings switches |
+| `SimulationConfig` | all of the above + `tick_rate=30.0`, `debug=False` |
+
+### 9.2 Seasons
 
 ```python
-@dataclass
-class WorldConfig:
-    width: float = 1200.0
-    height: float = 800.0
-    cell_size: float = 20.0
-    orientation: str = "north_south"
-    wrap_around: bool = False
-
-@dataclass
-class SeasonConfig:
-    name: str = "Spring"  # SEASON NAME
-    ground_color: Color = (96, 170, 88)
-    detail_colors: List[Color] = field(default_factory=list)
-    base_temperature: float = 14.0     # deg C, seasonal mean
-    temperature_swing: float = 7.0     # deg C, day/night amplitude
-    humidity: float = 0.55             # 0..1 seasonal baseline
-    pressure_hpa: float = 1013.0       # seasonal baseline
-    weather_weights: Dict[str, float] = field(default_factory=dict)
-
-@dataclass
-class DayNightConfig:
-    sun_speed: float = 1.0             # multiplier on the sun arc
-    moon_speed: float = 1.0            # multiplier on the moon arc
-    moon_phase_offset: float = 0.25    # 0..1, shifts the moon's phase
-    # ... other sky colours
-
-@dataclass
-class WeatherConfig:
-    change_interval: int = 600         # ticks between weather systems
-    seed: int = 1337
-    front_count: int = 3               # number of moving weather systems
-    background_coverage: float = 0.6   # fraction of cells under the background condition
-    conditions: Tuple[str, ...] = ("clear", "cloudy", "rain", "storm", "snow")
-
-@dataclass
-class EnvironmentConfig:
-    weather_strategy: Optional[str] = None
-    season_strategy: Optional[str] = None
-    daynight_strategy: Optional[str] = None
+SeasonConfig(
+    name="Spring",
+    ground_color=(96, 170, 88),
+    ground_gradient=((82, 148, 78), (128, 196, 104)),  # (start, end)
+    detail_colors=[(250, 246, 180), (248, 186, 214), (232, 248, 236)],
+    base_temperature=14.0,
+    temperature_swing=7.0,
+    humidity=0.55,
+    pressure_hpa=1012.0,
+    light_influence=1.0,
+    weather_weights={"clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0},
+)
 ```
 
-`DEFAULT_CONFIG` includes four season definitions with names, colours, temperatures,
-humidity, pressure and weather weights.
+Defaults: Spring, Summer (`1.12` light), Autumn (`0.92`), Winter (`0.78`).
+`ground_gradient=None` falls back to blending `ground_color` toward the next
+season.
+
+### 9.3 Positional gradients
+
+Each reading has a `GradientConfig`; `orientation=""` inherits
+`WorldConfig.orientation`.
+
+| Reading | Default gradient |
+|---------|------------------|
+| Temperature | `GradientConfig(-4.0, 4.0)` |
+| Humidity | `GradientConfig(-0.12, 0.12)` |
+| Pressure | `GradientConfig(-6.0, 6.0)` |
+| Light | `GradientConfig(0.88, 1.08)` |
+
+```python
+DEFAULT_CONFIG.world.orientation = "west_east"
+DEFAULT_CONFIG.environment.temperature_gradient = GradientConfig(
+    -6.0, 6.0, orientation="centre_out"
+)
+DEFAULT_CONFIG.environment.microclimate = 0.5
+```
+
+### 9.4 Weather
+
+```python
+WeatherConfig(
+    change_interval=600,
+    seed=1337,
+    front_count=3,
+    background_coverage=0.6,
+    front_radius_min_cells=2,
+    front_radius_max_cells=6,
+    front_drift_cells=0.0,
+    background_patch_scale=1.0,
+)
+```
+
+Physical effects per condition (defaults):
+
+| Condition | Temperature | Humidity | Pressure | Light |
+|-----------|-------------|----------|----------|-------|
+| clear | +2.0 °C | −0.10 | +4.0 hPa | 1.00 |
+| cloudy | 0.0 | +0.02 | −3.0 | 0.82 |
+| rain | −2.0 | +0.20 | −8.0 | 0.68 |
+| storm | −4.0 | +0.25 | −18.0 | 0.50 |
+| snow | −5.0 | +0.08 | −5.0 | 0.85 |
+
+### 9.5 Logging
+
+`LoggingConfig(level="INFO", business=True, readings=True,
+readings_interval=60)`. `BEAN_LOG_LEVEL` overrides `level` at runtime; the
+Makefile exposes it as `LOG_LEVEL`. See §11.
 
 ---
 
-## 9. Dependency Injection Container (`sim/container.py`)
+## 10. Dependency injection (`sim/container.py`)
 
-`Container(config: SimulationConfig)` builds:
-- `self.world` from `config.world` (barriers added)
-- `self.environment` from `config.environment`
-- `self.session` from `self.world` and `self.environment`
-- `self.debug` from `config.debug`
+`Container(config: SimulationConfig)` builds, in order:
 
-Strategy names are resolved from `EnvironmentConfig` (`None` disables a
-strategy). Accepted names are case-insensitive: `DayNightStrategy` / `daynight`,
-`SeasonStrategy` / `season`, `WeatherStrategy` / `weather` (plus `default`).
+1. `self.world` from `config.world`
+2. `self.calendar` from `config.time` + season names
+3. `self.environment` from the calendar, world, resolved strategies and
+   `EnvironmentConfig` / `WeatherConfig` / `LoggingConfig`
+4. `self.session` from the world and environment
+5. `self.debug` from `config.debug`
+
+Strategy names are resolved case-insensitively. `None` disables that strategy
+(static mode). Accepted values: `DayNightStrategy` / `daynight`,
+`SeasonStrategy` / `season`, `WeatherStrategy` / `weather`, plus `default`.
 Unknown names raise `ValueError`.
 
 ---
 
-## 10. Containers
+## 11. Logging and instrumentation (`sim/observability.py`)
 
-### 10.1 Containerfile (single source of truth)
+Two streams, both under the `bean.*` logger namespace:
 
-`Dockerfile` was removed; `Containerfile` is the only build definition.
-Both `podman` (preferred) and `docker` understand `Containerfile`.
+- **operational** — startup, shutdown, wiring, weather rebuilds, configuration
+  problems.
+- **business** — what the player did and how the world reacted. Each entry is
+  one line: `event=<name> key=value ...` with sorted keys.
+
+Level resolution:
+
+1. `BEAN_LOG_LEVEL` environment variable
+2. `SimulationConfig.logging.level`
+3. `INFO`
+
+Events: `app.start`, `app.window_created`, `app.window_closing`, `app.stop`,
+`container.built`, `session.started`, `session.paused`, `session.resumed`,
+`session.restart`, `session.quit`, `session.closed`,
+`environment.day_changed`, `environment.season_changed`,
+`environment.weather_changed`, `environment.reading` (DEBUG),
+`weather.field_rebuilt`, `weather.front` (DEBUG), `season.palette` (DEBUG),
+`ui.cell_inspected`.
+
+Reading samples are emitted only at `DEBUG` and at most once per
+`readings_interval` ticks.
+
+---
+
+## 12. Containers and tooling
+
+### 12.1 Containerfile
+
+`Dockerfile` is not the source of truth; `Containerfile` is, and both podman
+and docker understand it.
 
 The image:
-- Base: `python:3.10-slim`
-- Installs OpenGL/Arcade dependencies: `libegl1`, `libgles2`, `libgl1`,
-  `libgl1-mesa-dri` (software GL for Xvfb), `libglib2.0-0`, `libsm6`,
-  `libxext6`, `libxrender1`, `libxi6`, `libfontconfig1`, plus `xvfb` and
-  `xauth` for a virtual display when running the windowed UI
-- Creates venv at `/opt/venv`
-- Installs `arcade` (and transitive deps: pyglet, pillow, pymunk, etc.)
-- Copies `sim/` into `/app/sim/`
-- Defaults: `BEAN_HEADLESS=1`, `BEAN_HEADLESS_FRAMES=600`, `PYTHONUNBUFFERED=1`
-- CMD: `python -m sim.main`
+
+- Base `python:3.10-slim`.
+- Installs OpenGL/Arcade runtime libraries (`libegl1`, `libgles2`, `libgl1`,
+  `libgl1-mesa-dri`, `libglib2.0-0`, `libsm6`, `libxext6`, `libxrender1`,
+  `libxi6`, `libfontconfig1`) plus `xvfb` and `xauth`.
+- Creates a venv at `/opt/venv` and installs `arcade`.
+- Copies `sim/` to `/app/sim/`.
+- Defaults `BEAN_HEADLESS=1`, `BEAN_HEADLESS_FRAMES=600`,
+  `PYTHONUNBUFFERED=1`.
+- CMD `python -m sim.main`.
 
 Headless mode never imports Arcade/OpenGL, so the default container run needs
-no display server. `xvfb-run` is available for windowed runs, but it must not
-be PID 1: Xvfb skips its SIGUSR1 readiness signal when its parent is init, so
-`xvfb-run` would wait forever. Start it from a shell wrapper or bind-mount the
-host X11 socket (see `make run-container-ui`).
+no display server. `xvfb-run` must not be PID 1: Xvfb skips its SIGUSR1
+readiness signal when its parent is init, so prefer `make run-container-ui`,
+which bind-mounts the host X11 socket.
 
-### 10.2 Makefile targets
+### 12.2 Makefile targets
 
 | Target | Description |
 |--------|-------------|
-| `make venv` | Create local Python venv (stdlib `venv`, or `virtualenv` fallback when `ensurepip` is missing) |
-| `make install` | Install arcade into venv (stamp-guarded) |
+| `make venv` | Create the local venv (stdlib `venv`, `virtualenv` fallback) |
+| `make install` | Install arcade into the venv (stamp-guarded) |
+| `make test` | Local compile + bounded headless run |
+| `make verify` | Build + bounded headless run in-container, foreground |
 | `make run` | Alias for `run-container` (detached, headless) |
-| `make run-local` | Run simulation locally (needs display; blocks until window closes) |
-| `make run-headless` | Bounded headless run locally (no window, no display) |
-| `make build` | Build container image (podman preferred, falls back to docker) |
-| `make run-container` | Start headless container detached (`-d`), 600 frames by default |
-| `make run-container-ui` | Start UI container detached (needs X11/DISPLAY) |
-| `make logs` | Follow the detached container's output (`logs -f`) |
-| `make status` | Show the container's status (including exited) |
+| `make run-local` | Run locally with a window (blocks) |
+| `make run-headless` | Bounded headless run locally |
+| `make build` | Build the container image |
+| `make run-container` | Start the headless container detached |
+| `make run-container-ui` | Start the UI container detached (needs X11) |
+| `make logs` | Follow the detached container's output |
+| `make status` | Show container status, including exited |
 | `make stop` | Stop and remove the detached container |
 | `make check-env` | Show Python/venv/container runtime status |
 | `make clean` | Remove venv, caches, container, image |
 | `make help` | Show help |
 
-Local setup order: `make venv` -> `make install` -> `make run-local`.
+Container runtime detection prefers `podman`, falls back to `docker`, and
+errors if neither exists.
 
-`make venv` uses `python3 -m venv` and falls back to `python3 -m virtualenv`
-when the interpreter has no `ensurepip` (some minimal Ubuntu installs). If
-neither is available it prints the exact `apt` command to install
-`python3.10-venv`.
+`LOG_LEVEL` (default `INFO`) is exported as `BEAN_LOG_LEVEL` to every run
+target:
 
-Container runtime detection: `podman` has priority; falls back to `docker`;
-errors if neither is found.
+```bash
+make run LOG_LEVEL=DEBUG
+make verify LOG_LEVEL=DEBUG
+```
 
-Containers run detached (`docker run -d`) under the fixed name `bean-world`.
-Each start removes a previous container of that name first. Containers are not
-started with `--rm`, so output stays readable via `make logs` after a headless
-run finishes; `make stop` (or the next start) removes it.
-
-`run-container-ui` mounts `/tmp/.X11-unix` and `~/.Xauthority` into the
-container and passes `DISPLAY` through. If the host X server rejects the
-connection, allow local clients first (`xhost +local:` for the session).
-
-### 10.3 Runtime detection (currently on this machine)
-
-- `podman`: not installed
-- `docker`: available at `/usr/bin/docker`
-
-All container commands use `docker`.
+Containers run detached under the fixed name `bean-world`; `make stop` or the
+next start removes a previous container. `make verify` is the opposite: it runs
+`--rm` in the foreground and exits with the container's status, so it is the
+cheapest end-to-end check.
 
 ---
 
-## 11. How to Run
-
-### Quick start (headless container, detached)
+## 13. How to run
 
 ```bash
-make run        # starts bean-world detached
-make logs       # follow the run (finishes after 600 frames)
-make stop       # stop and remove it
+# Local, windowed
+make venv && make install && make run-local
+
+# Local, bounded headless
+make run-headless
+BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=2000 python -m sim.main
+
+# Container, detached headless
+make build && make run-container && make logs
+
+# Container, foreground verification
+make verify LOG_LEVEL=DEBUG BEAN_HEADLESS_FRAMES=300
+
+# Container, windowed through X11
+DISPLAY=:0 make run-container-ui
 ```
 
-### Local (with display)
+Environment variables:
 
-```bash
-make venv
-make install
-make run-local
-```
-
-### Local headless (no window)
-
-```bash
-make venv && make install && make run-headless
-```
-
-### Headless in container
-
-```bash
-make build && make run-container
-make logs
-```
-
-### With UI in container (X11)
-
-```bash
-make build && make run-container-ui
-make logs
-```
-
-### Environment variables
-
-- `BEAN_HEADLESS=1` — run without visible window (no Arcade/OpenGL import)
-- `BEAN_HEADLESS_FRAMES=N` — frame limit for headless mode (default 600)
+| Variable | Effect |
+|----------|--------|
+| `BEAN_HEADLESS=1` | Run without a window; no Arcade/OpenGL import |
+| `BEAN_HEADLESS_FRAMES=N` | Frame limit for headless mode (default 600) |
+| `BEAN_LOG_LEVEL=LEVEL` | Override the log level at runtime |
+| `LOG_LEVEL=LEVEL` | Make-level alias, exported as `BEAN_LOG_LEVEL` |
 
 ---
 
-## 12. Current Status
+## 14. Current status
 
 ### Implemented
 
-- Domain: GameSession, GameClock, GameState, World, Environment, Barrier
-- DI container wiring config to domain objects and strategy resolution
-- **Environment strategies: day/night, seasons, weather** (all optional)
-- **Temperature model: seasonal + diurnal + weather + microclimate**
-- **Humidity model: seasonal + weather + position**
-- **Atmospheric pressure model: seasonal + weather + position**
-- **Rendering: ArcadeView with start/playing/paused/end screens, animated day/night sky, seasons, weather, HUD, temperature inspector** with sidebar layout
-- **Input: KeyboardInput state transitions** (P=Pause/Q=Quit/Esc)
-- **Mouse hover/click inspection** with temperature, humidity, pressure, weather readings
-- **Time: pause-aware fixed-step clock**
-- **Config: pure-Python dataclasses with season names, per-cell weather**
-- **Entry point: main.py game loop** with headless and windowed modes
-- **Containers: Containerfile + Makefile, headless and X11 UI verified with docker**
+- Domain: `GameSession`, `GameClock`, `GameState`, `World`, `Environment`,
+  `Calendar`, `Gradient`, `Barrier`.
+- DI container wiring configuration to domain objects, with strategy
+  resolution and static fallbacks.
+- Environment strategies: day/night, seasons, weather — each optional.
+- Positional temperature, humidity, pressure and light with configurable
+  gradients (N/S, W/E, centre-out, out-centre, diagonals).
+- Season colour gradients as tuples and season-aware light influence.
+- Rendering: start/playing/paused/end screens, animated sky, seasons, per-cell
+  weather, HUD sidebar, cell-aligned grid, pinned inspector.
+- Cached `arcade.Text` rendering; no `draw_text` `PerformanceWarning`.
+- Pointer mapping that agrees with the highlighted cell on scaled displays.
+- Input: `SPACE` / `P` / `Q` / `Esc`, hover and click-to-inspect.
+- Pause-aware fixed-step clock and a bounded headless mode.
+- Structured operational and business logging with a runtime level.
+- Container image plus Makefile targets, including `make verify`.
 
-### Not yet implemented (stubs / placeholders)
+### Not implemented
 
-- Bean entities and simulation systems (movement, collision) — `pass` placeholder in main.py
-- Tests — none in repo
-- Linting / typecheck — not configured
-
----
-
-## Summary of Fixes
-
-All user requirements have been addressed:
-
-✅ **P pauses/resumes** - KeyboardInput now correctly handles P key for pause/resume across START, PLAYING, and PAUSED states
-
-✅ **Season has a name** - SeasonStrategy provides season names (Spring, Summer, Autumn, Winter) used throughout the UI
-
-✅ **Day and season bars are separate** - ArcadeView creates independent Time and Season boxes with no visual connection
-
-✅ **Atmospheric pressure included** - Environment.temperature_at() now includes pressure_at() reading in the Environment panel
-
-✅ **Rain/Sun/Snow not identical in every cell** - WeatherStrategy creates per-cell weather field using background coverage + moving fronts
-
-✅ **Click → Inspect shows readings** - ArcadeView inspector panel displays temperature, humidity, pressure, and weather for clicked cells
-
-✅ **Q and P keys work** - Q quits from any state, P pauses/resumes
-
-✅ **HUD boxes don't overlap world** - ArcadeView stacks all info boxes on left, world uses full height on right
-
-✅ **Instructions included** - Controls panel shows SPACE/Start, P/Pause, Esc/Q/Quit, Click/Inspect
-
----
-
-*Note: This specification is continuously updated to reflect the latest implementation of Bean World.*
+- Bean entities and simulation systems (movement, collision, eating,
+  reproduction) — the systems hook in `main.py` is a placeholder.
+- Automated tests and lint/typecheck configuration.
+- Barriers are supported by `World` but not created by `DEFAULT_CONFIG`.

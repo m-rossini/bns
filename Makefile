@@ -22,7 +22,7 @@ CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 
 CONTAINER_IMAGE := bean-world:latest
 CONTAINER_NAME := bean-world
 
-.PHONY: all venv install run run-local run-headless build run-container run-container-ui logs status stop clean help check-env
+.PHONY: all venv install run run-local run-headless build run-container run-container-ui logs status stop clean help check-env verify test
 
 all: install
 
@@ -79,6 +79,28 @@ run-local: $(ARCADE_STAMP)
 
 # Bounded headless run (no window, no display server needed)
 run-headless: $(ARCADE_STAMP)
+	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
+		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
+
+# --- Verification ---
+
+# Foreground headless verification. Builds the image, runs a bounded headless
+# session inside the container, streams the structured logs and exits with the
+# container's status. This is the cheapest end-to-end check (no display).
+verify: build
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
+		echo "Error: no container runtime (podman/docker) found."; \
+		exit 1; \
+	fi
+	$(CONTAINER_RUNTIME) run --rm --init \
+		--env BEAN_HEADLESS=1 \
+		--env BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
+		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
+		$(CONTAINER_IMAGE)
+
+# Local compile + bounded headless run (no container).
+test: $(ARCADE_STAMP)
+	$(PYTHON_BIN) -m compileall -q sim
 	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
 		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
@@ -187,6 +209,8 @@ help:
 	@echo "Containers (podman preferred, falls back to docker), detached:"
 	@echo "  make check-env         Show Python/venv/container runtime status"
 	@echo "  make build             Build container image (Containerfile)"
+	@echo "  make verify            Headless end-to-end run in-container (foreground)"
+	@echo "  make test              Local compile + bounded headless run"
 	@echo "  make run-container     Start headless container detached (no UI)"
 	@echo "  make run-container-ui  Start UI container detached (needs X11)"
 	@echo "  make logs              Follow the running container's output"

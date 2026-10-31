@@ -15,7 +15,8 @@ corresponding values stay at documented defaults.
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple
 
-from sim.domain.visuals import CelestialState, SeasonPalette, SkyPalette
+from sim.domain.climate import ClimateContext
+from sim.domain.visuals import CelestialState, SeasonPalette, SkyPalette, SolarProfile
 
 
 class ICalendar(ABC):
@@ -89,6 +90,14 @@ class ISeasonStrategy(ABC):
         """Appearance and physical baseline for the current season."""
 
     @abstractmethod
+    def solar_profile(self, calendar: ICalendar) -> SolarProfile:
+        """How much sun the world gets at this moment.
+
+        The season strategy owns this value: it is the single input the
+        day/night and weather strategies use to derive light and temperature.
+        """
+
+    @abstractmethod
     def get_season_name(self, calendar: ICalendar) -> str:
         """Return the name of the current season from the strategy perspective."""
 
@@ -105,21 +114,28 @@ class IDayNightStrategy(ABC):
 
     @abstractmethod
     def light_at(
-        self, calendar: ICalendar, x: float, y: float, season_factor: float = 1.0
+        self,
+        calendar: ICalendar,
+        x: float,
+        y: float,
+        solar: Optional[SolarProfile] = None,
     ) -> float:
         """Light level 0..1 at a world position (sun altitude + local shade).
 
-        ``season_factor`` is the current season's `SeasonConfig.light_influence`;
-        the strategy decides how strongly it applies it (see
-        `DayNightConfig.season_light_influence`).
+        ``solar`` is the season's `SolarProfile`; it decides the day length and
+        the peak intensity. ``None`` falls back to a neutral profile.
         """
 
     @abstractmethod
-    def phase(self, calendar: ICalendar) -> str:
+    def phase(
+        self, calendar: ICalendar, solar: Optional[SolarProfile] = None
+    ) -> str:
         ...
 
     @abstractmethod
-    def celestial(self, calendar: ICalendar) -> CelestialState:
+    def celestial(
+        self, calendar: ICalendar, solar: Optional[SolarProfile] = None
+    ) -> CelestialState:
         ...
 
     @abstractmethod
@@ -142,8 +158,8 @@ class IWeatherStrategy(ABC):
         ...
 
     @abstractmethod
-    def update(self, tick: int, environment: "IEnvironment") -> None:
-        ...
+    def update(self, tick: int, climate: ClimateContext) -> None:
+        """Rebuild the field from the current climate snapshot."""
 
     @abstractmethod
     def reset(self) -> None:
@@ -200,6 +216,20 @@ class IEnvironment(ABC):
     @abstractmethod
     def palette(self) -> SeasonPalette:
         ...
+
+    @property
+    @abstractmethod
+    def solar(self) -> SolarProfile:
+        """Sun delivered by the current season (owned by the season strategy)."""
+
+    @property
+    @abstractmethod
+    def celestial(self) -> CelestialState:
+        ...
+
+    @abstractmethod
+    def climate_context(self) -> ClimateContext:
+        """Immutable climate snapshot handed to the weather strategy."""
 
     @abstractmethod
     def weather_at(self, x: float, y: float) -> str:

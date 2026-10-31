@@ -10,6 +10,7 @@ pixels or window sizes.
 from typing import List, Optional, Tuple
 
 from sim.components import Barrier
+from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.world import IWorld
 
 
@@ -21,6 +22,7 @@ class World(IWorld):
         cell_size: float = 50.0,
         orientation: str = "north_south",
         wrap_around: bool = False,
+        barrier_strategy: Optional[IBarrierStrategy] = None,
     ):
         if width <= 0 or height <= 0:
             raise ValueError("World width and height must be positive")
@@ -31,6 +33,7 @@ class World(IWorld):
         self._cell_size = cell_size
         self._orientation = orientation
         self._wrap_around = wrap_around
+        self._barrier_strategy = barrier_strategy
         self._barriers: List[Barrier] = []
 
     @property
@@ -88,8 +91,15 @@ class World(IWorld):
         )
 
     # ------------------------------------------------------------------
-    # Barriers (kept for a future object/collision pass; unused today)
+    # Barriers
     # ------------------------------------------------------------------
+    @property
+    def barrier_strategy(self) -> Optional[IBarrierStrategy]:
+        return self._barrier_strategy
+
+    def set_barrier_strategy(self, strategy: Optional[IBarrierStrategy]) -> None:
+        self._barrier_strategy = strategy
+
     @property
     def barriers(self) -> List[Barrier]:
         return list(self._barriers)
@@ -97,7 +107,34 @@ class World(IWorld):
     def add_barrier(self, barrier: Barrier) -> None:
         if any(b.id == barrier.id for b in self._barriers):
             raise ValueError(f"Barrier id {barrier.id} already exists")
+        if self._barrier_strategy is not None:
+            self._barrier_strategy.validate(barrier, self)
+        else:
+            self._validate_barrier_bounds(barrier)
         self._barriers.append(barrier)
+
+    def _validate_barrier_bounds(self, barrier: Barrier) -> None:
+        """Fallback check used when no barrier strategy is wired in."""
+        if barrier.kind not in ("rect", "circle"):
+            raise ValueError(f"Barrier {barrier.id} has unknown kind {barrier.kind!r}")
+        if barrier.kind == "rect":
+            if barrier.width <= 0 or barrier.height <= 0:
+                raise ValueError(
+                    f"Barrier {barrier.id} must have positive width and height"
+                )
+            right, top = barrier.x + barrier.width, barrier.y + barrier.height
+        else:
+            if barrier.radius <= 0:
+                raise ValueError(f"Barrier {barrier.id} must have a positive radius")
+            right = barrier.x + 2 * barrier.radius
+            top = barrier.y + 2 * barrier.radius
+        if (
+            barrier.x < 0
+            or barrier.y < 0
+            or right > self._width
+            or top > self._height
+        ):
+            raise ValueError(f"Barrier {barrier.id} must lie inside the world")
 
     def remove_barrier(self, barrier_id: int) -> bool:
         for i, b in enumerate(self._barriers):

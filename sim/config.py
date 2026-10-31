@@ -106,8 +106,10 @@ class SeasonConfig:
     temperature_swing: float = 7.0     # deg C, day/night amplitude
     humidity: float = 0.55             # 0..1 seasonal baseline
     pressure_hpa: float = 1013.0       # seasonal baseline
-    #: Multiplier applied to the day/night light curve (summer > 1, winter < 1).
-    light_influence: float = 1.0
+    #: Peak sun brightness the season allows (>1 summer, <1 winter).
+    sun_intensity: float = 1.0
+    #: Share of the day the sun is above the horizon (0.5 = 12 h).
+    daylight_fraction: float = 0.5
     weather_weights: Dict[str, float] = field(default_factory=dict)
 
 
@@ -115,9 +117,9 @@ class SeasonConfig:
 class DayNightConfig:
     """Sun/moon cycle and local light shaping.
 
-    ``local_shading`` is the amplitude of the smooth terrain/cover shading and
-    ``season_light_influence`` controls how strongly the current season's
-    `SeasonConfig.light_influence` scales the light curve.
+    The *amount* of sun (peak intensity and day length) belongs to the season
+    strategy; this config only shapes how that solar profile is rendered.
+    ``local_shading`` is the amplitude of the smooth terrain/cover shading.
     """
 
     sun_speed: float = 1.0             # multiplier on the sun arc
@@ -127,12 +129,9 @@ class DayNightConfig:
     local_shading: float = 0.10        # 0..1 amplitude of positional shading
     shading_scale_x: float = 190.0     # world units between shading lobes
     shading_scale_y: float = 150.0
-    season_light_influence: float = 1.0  # 0 = ignore season, 1 = full effect
 
     night_threshold: float = 0.12      # below this altitude it is night
     twilight_threshold: float = 0.45   # below this it is dawn/dusk
-    sun_arc_start: float = 0.25        # fraction of the day the sun rises
-    sun_arc_end: float = 0.75          # fraction of the day the sun sets
 
     night_sky: Color = (10, 14, 32)
     day_sky: Color = (122, 182, 228)
@@ -185,6 +184,38 @@ class WeatherConfig:
     humidity_offsets: Dict[str, float] = field(default_factory=_default_humidity_offsets)
     pressure_offsets: Dict[str, float] = field(default_factory=_default_pressure_offsets)
     light_factors: Dict[str, float] = field(default_factory=_default_light_factors)
+
+
+@dataclass
+class BarrierConfig:
+    """Static obstacles and the rules that shape them.
+
+    ``color`` is the fill used by every barrier; ``max_span_cells`` caps how
+    many grid cells a barrier may cover in either direction (3 = at most
+    3x3), which keeps obstacles small and cell-aligned. ``count`` barriers are
+    generated deterministically from ``seed`` and distributed over the world.
+    """
+
+    color: Color = (255, 208, 64)      # yellow
+    max_span_cells: int = 3            # <= 3 cells wide and <= 3 cells tall
+    min_span_cells: int = 1
+    count: int = 6
+    seed: int = 4242
+    margin_cells: int = 1              # keep barriers away from the border
+
+    def __post_init__(self) -> None:
+        if self.max_span_cells < 1:
+            raise ValueError("BarrierConfig.max_span_cells must be >= 1")
+        if self.min_span_cells < 1:
+            raise ValueError("BarrierConfig.min_span_cells must be >= 1")
+        if self.min_span_cells > self.max_span_cells:
+            raise ValueError(
+                "BarrierConfig.min_span_cells cannot exceed max_span_cells"
+            )
+        if self.count < 0:
+            raise ValueError("BarrierConfig.count cannot be negative")
+        if self.margin_cells < 0:
+            raise ValueError("BarrierConfig.margin_cells cannot be negative")
 
 
 @dataclass
@@ -241,6 +272,7 @@ class SimulationConfig:
     seasons: List[SeasonConfig] = field(default_factory=list)
     daynight: DayNightConfig = field(default_factory=DayNightConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+    barriers: BarrierConfig = field(default_factory=BarrierConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: bool = False
@@ -280,7 +312,8 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=7.0,
             humidity=0.55,
             pressure_hpa=1012.0,
-            light_influence=1.0,
+            sun_intensity=0.95,
+            daylight_fraction=0.50,
             weather_weights={
                 "clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0,
             },
@@ -294,7 +327,8 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=6.0,
             humidity=0.40,
             pressure_hpa=1015.0,
-            light_influence=1.12,
+            sun_intensity=1.15,
+            daylight_fraction=0.60,
             weather_weights={
                 "clear": 50, "cloudy": 25, "rain": 17, "storm": 8, "snow": 0,
             },
@@ -308,7 +342,8 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=7.0,
             humidity=0.60,
             pressure_hpa=1010.0,
-            light_influence=0.92,
+            sun_intensity=0.82,
+            daylight_fraction=0.45,
             weather_weights={
                 "clear": 30, "cloudy": 35, "rain": 25, "storm": 10, "snow": 0,
             },
@@ -322,7 +357,8 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=5.0,
             humidity=0.70,
             pressure_hpa=1008.0,
-            light_influence=0.78,
+            sun_intensity=0.55,
+            daylight_fraction=0.34,
             weather_weights={
                 "clear": 25, "cloudy": 35, "rain": 0, "storm": 5, "snow": 35,
             },
@@ -335,7 +371,6 @@ DEFAULT_CONFIG = SimulationConfig(
         local_shading=0.10,
         shading_scale_x=190.0,
         shading_scale_y=150.0,
-        season_light_influence=1.0,
     ),
     weather=WeatherConfig(
         change_interval=600,
@@ -344,6 +379,14 @@ DEFAULT_CONFIG = SimulationConfig(
         background_coverage=0.6,
         front_radius_min_cells=2,
         front_radius_max_cells=6,
+    ),
+    barriers=BarrierConfig(
+        color=(255, 208, 64),      # yellow default
+        max_span_cells=3,          # 3x3, 3x1, 1x2, ...
+        min_span_cells=1,
+        count=6,
+        seed=4242,
+        margin_cells=1,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

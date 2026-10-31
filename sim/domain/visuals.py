@@ -4,10 +4,26 @@ No behaviour: the renderer only consumes these values, so all colours and
 positions come from the strategies (and their config) instead of the view.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Tuple
 
 Color = Tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class SolarProfile:
+    """How much sun the current season delivers.
+
+    Owned by the season strategy; the day/night strategy derives the light
+    curve from it and the weather strategy derives its climate baselines.
+
+    ``sun_intensity`` is the peak brightness (1.0 = neutral, >1 = brighter
+    summer sun), ``daylight_fraction`` is the share of the day the sun is
+    above the horizon (0.5 = twelve hours).
+    """
+
+    sun_intensity: float = 1.0
+    daylight_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -21,8 +37,10 @@ class SeasonPalette:
     temperature_swing: float
     humidity: float
     pressure_hpa: float
-    #: Season's influence on the day/night light curve (1.0 = neutral).
-    light_influence: float = 1.0
+    #: Peak sun brightness the season allows (>1 summer, <1 winter).
+    sun_intensity: float = 1.0
+    #: Share of the day with the sun above the horizon (0.5 = 12 h).
+    daylight_fraction: float = 0.5
 
 
 @dataclass(frozen=True)

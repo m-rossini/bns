@@ -464,6 +464,15 @@ class ArcadeView(arcade.Window):
         ambient = self._ambient(session)
         base = _shade(palette.ground, 0.32 + 0.68 * ambient)
 
+        # Fill the whole world panel (right of the sidebar) with ground color
+        # so no sky/grey shows around the world when the window is larger than
+        # the drawn world (e.g. maximised on a wide screen).
+        sw, sh = self._viewport_size()
+        panel_left = self._sidebar_width() + _MARGIN
+        panel_w = max(1.0, sw - panel_left - _MARGIN)
+        panel_h = max(1.0, sh - 2 * _MARGIN)
+        arcade.draw_lbwh_rectangle_filled(panel_left, _MARGIN, panel_w, panel_h, base)
+
         arcade.draw_lbwh_rectangle_filled(
             layout.left, layout.bottom,
             layout.right - layout.left, layout.top - layout.bottom,
@@ -536,9 +545,13 @@ class ArcadeView(arcade.Window):
                 condition = env.weather_at(cx, cy)
                 if condition not in ("rain", "storm", "snow"):
                     continue
+                # Only a deterministic subset of cells draw precipitation so a
+                # rainy front never floods the screen with lines.
+                if (col * 7 + row * 13 + (tick // 10)) % 3 != 0:
+                    continue
 
                 sl, sb = layout.cell_screen_rect(col, row)[:2]
-                count = 5 if condition == "storm" else 3
+                count = 2 if condition == "storm" else 1
                 speed = 3.4 if condition == "storm" else 2.2
 
                 for i in range(count):
@@ -753,6 +766,11 @@ class ArcadeView(arcade.Window):
                     f"{palette.temperature_swing:.0f} °C   ·   {palette.name}",
                     left + 12, top - 84, _MUTED, font_size=11,
                 )
+                self._text.draw(
+                    "ground: green = growing season   ·   brown = dry / dormant "
+                    "(season-driven, not random)",
+                    left + 12, top - 102, _DIM, font_size=9,
+                )
             else:
                 self._text.draw(
                     "no environment", left + 12, top - 42, _MUTED, font_size=13,
@@ -821,16 +839,16 @@ class ArcadeView(arcade.Window):
             ("Esc / Q", "quit"),
             ("Click", "inspect cell"),
         ]
-        y = _MARGIN + h - 40
+        y = _MARGIN + h - 30
         for key, action in lines:
             self._text.draw(key, left + 12, y, _ACCENT, font_size=11, bold=True)
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
             y -= 17
 
-        # ---- Playback-speed slider ----------------------------------
+        # ---- Playback-speed slider (inside the Controls box, bottom) ----
         # Slows/speeds the *perceived* ticker only; sim time progression
         # (tick_rate, clock.tick) is unchanged. Value comes from config.
-        slider_y = _MARGIN + 16
+        slider_y = _MARGIN + 2
         track_w = width - 24
         track_h = 8
         track_x = left + 12
@@ -850,7 +868,8 @@ class ArcadeView(arcade.Window):
             thumb_x, slider_y - 2, thumb_w, track_h + 4, _SLIDER_THUMB_EDGE, 1,
         )
         self._text.draw(
-            f"Speed {scale:.2f}x   (drag to change)", left + 12, slider_y + track_h + 10,
+            f"Speed {scale:.2f}x   (drag to change)",
+            left + 12, slider_y + track_h + 10,
             _MUTED, font_size=10,
         )
 

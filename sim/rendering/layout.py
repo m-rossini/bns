@@ -119,8 +119,10 @@ def build_layout(viewport_w: float,
     area_w = max(1.0, viewport_w - area_left - margin)
     area_h = max(1.0, viewport_h - 2.0 * margin)
 
-    # Preferred 1:1 scale; scale down only if the world does not fit.
-    scale = min(area_w / world_w, area_h / world_h, 1.0)
+    # Scale to fit the available area. Cap at 1.0 only when the world is
+    # smaller than the area and we want 1:1; otherwise let the world grow to
+    # fill a maximised window so there is no grey border around it.
+    scale = min(area_w / world_w, area_h / world_h)
 
     # Integer-snap the cell step so cells land on whole pixels.
     step = max(1.0, round(cell_size * scale))

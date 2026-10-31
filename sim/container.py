@@ -10,7 +10,14 @@ that both read the calendar; neither owns the other.
 from typing import List, Optional, Type, Union
 
 from sim.components import GameSession
-from sim.config import BEAN_DENSITY_THRESHOLDS, SimulationConfig
+from sim.config import (
+    BEAN_DENSITY_THRESHOLDS,
+    DAYNIGHT_STRATEGY_NAMES,
+    PLACEMENT_STRATEGY_NAMES,
+    SEASON_STRATEGY_NAMES,
+    SimulationConfig,
+    WEATHER_STRATEGY_NAMES,
+)
 from sim.domain.calendar import Calendar
 from sim.domain.environment import Environment
 from sim.domain.session import GameSession as ConcreteGameSession
@@ -42,11 +49,9 @@ from sim.observability import get_logger
 
 logger = get_logger("container")
 
-_DAYNIGHT_NAMES = {"daynight", "daynightstrategy", "default"}
-_SEASON_NAMES = {"season", "seasonstrategy", "default"}
-_WEATHER_NAMES = {"weather", "weatherstrategy", "default"}
-
-_PLACEMENT_NAMES = {
+#: Name -> strategy class wiring for placement strategies (DI wiring; the
+#: valid names live in config.PLACEMENT_STRATEGY_NAMES).
+_PLACEMENT_CLASSES = {
     "poisson_disc": PoissonDiscStrategy,
     "symmetrical": SymmetricalStrategy,
     "colony_cluster": ColonyClusterStrategy,
@@ -121,11 +126,11 @@ class Container:
         self, config: SimulationConfig
     ) -> IPlacementStrategy:
         bp = config.bean_placement
-        cls = _PLACEMENT_NAMES.get(bp.strategy_name)
+        cls = _PLACEMENT_CLASSES.get(bp.strategy_name)
         if cls is None:
             raise ValueError(
                 f"Unknown placement strategy {bp.strategy_name!r}. "
-                f"Use one of: {sorted(_PLACEMENT_NAMES)}"
+                f"Use one of: {sorted(PLACEMENT_STRATEGY_NAMES)}"
             )
         if cls is PoissonDiscStrategy:
             return cls(
@@ -213,21 +218,21 @@ class Container:
         ec = config.environment
 
         season: Optional[ISeasonStrategy] = None
-        if self._resolve(ec.season_strategy, _SEASON_NAMES, "season"):
+        if self._resolve(ec.season_strategy, SEASON_STRATEGY_NAMES, "season"):
             season = SeasonStrategy(
                 seasons=config.seasons,
                 ticks_per_season=config.time.ticks_per_season,
             )
 
         daynight: Optional[IDayNightStrategy] = None
-        if self._resolve(ec.daynight_strategy, _DAYNIGHT_NAMES, "day/night"):
+        if self._resolve(ec.daynight_strategy, DAYNIGHT_STRATEGY_NAMES, "day/night"):
             daynight = DayNightStrategy(
                 config=config.daynight,
                 ticks_per_day=config.time.ticks_per_day,
             )
 
         weather: Optional[IWeatherStrategy] = None
-        if self._resolve(ec.weather_strategy, _WEATHER_NAMES, "weather"):
+        if self._resolve(ec.weather_strategy, WEATHER_STRATEGY_NAMES, "weather"):
             weather = WeatherStrategy(config=config.weather, world=self.world)
 
         return Environment(

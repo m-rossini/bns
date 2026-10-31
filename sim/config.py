@@ -269,6 +269,35 @@ BEAN_DENSITY_THRESHOLDS: Dict[str, float] = {
 #: Valid population density tiers.
 BEAN_DENSITY_TIERS: Tuple[str, ...] = tuple(BEAN_DENSITY_COEFFICIENTS.keys())
 
+#: Accepted strategy name aliases (case-insensitive) for configuration.
+#: These define what config values are valid for each strategy slot.
+DAYNIGHT_STRATEGY_NAMES: Tuple[str, ...] = (
+    "daynight",
+    "daynightstrategy",
+    "default",
+)
+SEASON_STRATEGY_NAMES: Tuple[str, ...] = (
+    "season",
+    "seasonstrategy",
+    "default",
+)
+WEATHER_STRATEGY_NAMES: Tuple[str, ...] = (
+    "weather",
+    "weatherstrategy",
+    "default",
+)
+
+#: Valid placement strategy names (implemented in sim.implementations.placement).
+PLACEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
+    "poisson_disc",
+    "symmetrical",
+    "colony_cluster",
+    "center_to_border",
+    "border_to_center",
+    "linear_gradient",
+    "resource_gradient",
+)
+
 
 @dataclass
 class BeanPlacementConfig:

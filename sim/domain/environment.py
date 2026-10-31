@@ -303,6 +303,7 @@ class Environment(IEnvironment):
 
         if (
             self._readings_enabled
+            and logger.isEnabledFor(logging.DEBUG)
             and tick - self._last_tick >= self._readings_interval
         ):
             self._log_reading(tick, day, season, weather)
@@ -312,21 +313,21 @@ class Environment(IEnvironment):
         if not logger.isEnabledFor(logging.DEBUG):
             return
         x, y = self._reference_point()
-        logger.debug(
-            "environment.reading tick=%s day=%s clock=%s season=%s phase=%s "
-            "weather=%s temperature=%.1f humidity=%.2f pressure=%.1f light=%.2f "
-            "gradient_position=%.2f",
-            tick,
-            day,
-            self._calendar.clock,
-            season,
-            self.phase,
-            weather,
-            self.temperature_at(x, y),
-            self.humidity_at(x, y),
-            self.pressure_at(x, y),
-            self.light_at(x, y),
-            self._position(x, y),
+        log_event(
+            logger,
+            "environment.reading",
+            level=logging.DEBUG,
+            tick=tick,
+            day=day,
+            clock=self._calendar.clock,
+            season=season,
+            phase=self.phase,
+            weather=weather,
+            temperature=self.temperature_at(x, y),
+            humidity=self.humidity_at(x, y),
+            pressure=self.pressure_at(x, y),
+            light=self.light_at(x, y),
+            gradient_position=self._position(x, y),
         )
 
     def reset(self) -> None:

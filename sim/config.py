@@ -222,7 +222,7 @@ class LoggingConfig:
     format: str = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
     date_format: str = "%H:%M:%S"
     business: bool = True       # emit gameplay/business events
-    readings: bool = False      # emit per-cell readings at DEBUG
+    readings: bool = True       # emit per-cell reading samples at DEBUG
     readings_interval: int = 60  # ticks between DEBUG reading samples
 
 

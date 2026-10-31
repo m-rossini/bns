@@ -485,6 +485,7 @@ class ArcadeView(arcade.Window):
             self._draw_precipitation(session)
 
         self._draw_barriers(session)
+        self._draw_beans(session)
         self._draw_grid(session)
         self._draw_selection(session)
 
@@ -586,6 +587,33 @@ class ArcadeView(arcade.Window):
             color = getattr(barrier, "color", (255, 208, 64))
             arcade.draw_lbwh_rectangle_filled(sx, sy, bw, bh, color)
             arcade.draw_lbwh_rectangle_outline(sx, sy, bw, bh, (0, 0, 0, 110), 1)
+
+    def _draw_beans(self, session: GameSession) -> None:
+        """Draw each bean as a small cross in its gender color.
+
+        Beans are graphical placeholders (small crosses) until full bean
+        entities are implemented. Color reflects gender: blue = male,
+        red = female.
+        """
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
+        beans = getattr(session, "beans", None) or []
+        if not beans:
+            return
+        cross_size = max(1.0, layout.cell_step * 0.35)
+        half = cross_size / 2.0
+        for bean in beans:
+            sx, sy = layout.world_to_screen(bean.x, bean.y)
+            # Vertical stroke.
+            arcade.draw_line(
+                sx, sy - half, sx, sy + half, bean.color, 1
+            )
+            # Horizontal stroke.
+            arcade.draw_line(
+                sx - half, sy, sx + half, sy, bean.color, 1
+            )
 
     def _draw_grid(self, session: GameSession) -> None:
         """Draw one line per cell boundary, derived from `world.cell_size`."""

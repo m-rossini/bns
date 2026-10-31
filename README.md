@@ -84,6 +84,24 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
   below freezing, storms need warmth and moisture, etc.).
 - **Rendering** — a full-height world on the right and a stack of information
   boxes on the left. The grid is drawn from the configured cell size.
+- **Bean placement** — initial unicellular beans are spawned by a
+  :class:`sim.domain.spawn_controller.SpawnController` driven by
+  `sim/config.BeanPlacementConfig`. The controller:
+
+  * Calculates target population from world area × density tier × variance
+    (area-based dynamic population calculus).
+  * Generates positions via a configurable :class:`IPlacementStrategy`
+    (poisson_disc, symmetrical, colony_cluster, center_to_border,
+    border_to_center, linear_gradient, resource_gradient).
+  * Assigns gender identity + visual color via an
+    :class:`IGenderController` whose ratio percentages must sum to exactly 100.
+  * Instantiates :class:`sim.components.Bean` entities, stored on
+    `GameSession.beans`, each drawn as a small cross in its gender color
+    (blue = male, red = female).
+
+  Logged events: `spawn.started`, `spawn.positions_generated`,
+  `gender.assigned`, `spawn.finished`.
+
 
 ---
 
@@ -491,10 +509,11 @@ Expected headless invariants:
 
 ## Known limitations
 
-- Beans, movement, collision are not implemented yet; the systems hook in
-  `main.py` is a placeholder. Barriers ARE implemented: `DEFAULT_CONFIG`
-  creates 6 yellow barriers (validated at ≤ 3 cells per direction) and the view
-  draws them.
+- Beans ARE implemented: `DEFAULT_CONFIG` spawns ~1300 beans via the spawn
+  controller (poisson_disc placement, average density, 50/50 male/female).
+  Beans are drawn as small crosses in their gender color. Bean movement,
+  collision and lifecycle systems are not yet implemented; the systems hook in
+  `main.py` is a placeholder.
 - Weather fronts are rebuilt from a seed every interval; `front_drift_cells`
   can move them between rebuilds but they do not animate continuously within an
   interval.

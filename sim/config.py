@@ -249,6 +249,81 @@ class BarrierConfig:
             raise ValueError("BarrierConfig.margin_cells cannot be negative")
 
 
+#: Population density coefficients (beans per unit of world surface area).
+#: Used by the bean placement controller to size the initial population.
+BEAN_DENSITY_COEFFICIENTS: Dict[str, float] = {
+    "sparse": 0.0005,      # 0.05% surface density
+    "average": 0.0020,     # 0.20% surface density
+    "heavy": 0.0060,       # 0.60% surface density
+    "super": 0.0150,       # 1.50% surface density
+}
+
+#: Noise spawn thresholds per density tier for the resource gradient strategy.
+BEAN_DENSITY_THRESHOLDS: Dict[str, float] = {
+    "sparse": 0.75,
+    "average": 0.50,
+    "heavy": 0.25,
+    "super": 0.05,
+}
+
+#: Valid population density tiers.
+BEAN_DENSITY_TIERS: Tuple[str, ...] = tuple(BEAN_DENSITY_COEFFICIENTS.keys())
+
+
+@dataclass
+class BeanPlacementConfig:
+    """Configuration for initial bean placement & gender system.
+
+    Drives the Spawn Controller: which placement strategy is active, the
+    population density tier, stochastic variance, gender ratio allocations,
+    and per-gender visual color mappings.
+    """
+
+    strategy_name: str = "poisson_disc"
+    density_tier: str = "average"
+    variance: float = 0.10
+    seed: int = 1337
+
+    # Gender ratios (must sum to 100).
+    gender_ratios: Dict[str, float] = field(
+        default_factory=lambda: {"male": 50.0, "female": 50.0}
+    )
+    # Per-gender visual color mappings (RGB).
+    gender_colors: Dict[str, Color] = field(
+        default_factory=lambda: {"male": (0, 0, 255), "female": (255, 0, 0)}
+    )
+
+    # Strategy parameters (all optional, strategy-specific).
+    base_spacing_scale: float = 1.0
+    max_retry_limit: int = 100
+    symmetry_axes: int = 4
+    area_per_cluster: float = 2000.0
+    cluster_spread_sigma: float = 30.0
+    falloff_exponent: float = 2.0
+    ring_thickness_ratio: float = 0.3
+    bias_strength: float = 1.5
+    noise_frequency: float = 0.01
+
+    def __post_init__(self) -> None:
+        if self.density_tier not in BEAN_DENSITY_COEFFICIENTS:
+            raise ValueError(
+                f"BeanPlacementConfig.density_tier must be one of "
+                f"{BEAN_DENSITY_TIERS}, got {self.density_tier!r}"
+            )
+        if not 0.0 <= self.variance <= 1.0:
+            raise ValueError("BeanPlacementConfig.variance must be in [0, 1]")
+        total = sum(self.gender_ratios.values())
+        if abs(total - 100.0) > 1e-6:
+            raise ValueError(
+                f"BeanPlacementConfig.gender_ratios must sum to 100, got {total}"
+            )
+        for gender, color in self.gender_colors.items():
+            if gender not in self.gender_ratios:
+                raise ValueError(
+                    f"BeanPlacementConfig.gender_colors has unknown gender {gender!r}"
+                )
+
+
 @dataclass
 class EnvironmentConfig:
     """Strategy class names and positional climate gradients.
@@ -304,6 +379,7 @@ class SimulationConfig:
     daynight: DayNightConfig = field(default_factory=DayNightConfig)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
     barriers: BarrierConfig = field(default_factory=BarrierConfig)
+    bean_placement: BeanPlacementConfig = field(default_factory=BeanPlacementConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: bool = False
@@ -422,6 +498,22 @@ DEFAULT_CONFIG = SimulationConfig(
         count=6,
         seed=4242,
         margin_cells=1,
+    ),
+    bean_placement=BeanPlacementConfig(
+        strategy_name="poisson_disc",
+        density_tier="average",
+        variance=0.10,
+        gender_ratios={"male": 50.0, "female": 50.0},
+        gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+        base_spacing_scale=1.0,
+        max_retry_limit=100,
+        symmetry_axes=4,
+        area_per_cluster=2000.0,
+        cluster_spread_sigma=30.0,
+        falloff_exponent=2.0,
+        ring_thickness_ratio=0.3,
+        bias_strength=1.5,
+        noise_frequency=0.01,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

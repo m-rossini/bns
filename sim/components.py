@@ -9,6 +9,25 @@ from typing import List, Optional, Tuple
 
 
 @dataclass
+class Bean:
+    """A unicellular organism placed in the world by the spawn controller.
+
+    ``gender`` and ``color`` come from the gender controller; visual
+    rendering draws a small cross in this color at ``(x, y)``.
+    """
+
+    id: int
+    x: float
+    y: float
+    gender: str
+    color: Tuple[int, int, int]
+
+    @property
+    def position(self) -> Tuple[float, float]:
+        return (self.x, self.y)
+
+
+@dataclass
 class Barrier:
     """A static obstacle in the world.
 
@@ -68,3 +87,4 @@ class GameSession:
     pause_time: float = 0.0      # accumulated paused duration
     end_reason: Optional[str] = None
     exit_requested: bool = False  # set by input; the app loop closes the window
+    beans: List[Bean] = field(default_factory=list)   # spawned beans

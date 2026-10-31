@@ -174,6 +174,38 @@ classDiagram
         +create_barriers(world) list[Barrier]
     }
 
+    class Bean {
+        +id: int
+        +x: float
+        +y: float
+        +gender: str
+        +color: tuple
+        +position: tuple
+    }
+
+    class SpawnController {
+        +config: SimulationConfig
+        +world: World
+        +session: GameSession
+        +placement: IPlacementStrategy
+        +gender: IGenderController
+        +spawn_beans() list[Bean]
+        +beans: list[Bean]
+    }
+
+    class PoissonDiscStrategy {
+        +name: str
+        +base_spacing_scale: float
+        +max_retry_limit: int
+        +generate_positions(n, width, height) list[tuple]
+    }
+
+    class GenderController {
+        +gender_names: tuple
+        +colors: dict
+        +assign_attributes(positions) list[tuple]
+    }
+
     class ArcadeView {
         +session: GameSession
         +set_input_handler(handler)
@@ -234,6 +266,15 @@ classDiagram
     class IBarrierStrategy {
         <<interface>>
     }
+    class IPlacementStrategy {
+        <<interface>>
+    }
+    class IGenderController {
+        <<interface>>
+    }
+    class ISpawnController {
+        <<interface>>
+    }
     class IEnvironment {
         <<interface>>
     }
@@ -252,6 +293,8 @@ classDiagram
     DayNightStrategy ..|> IDayNightStrategy
     WeatherStrategy ..|> IWeatherStrategy
     BarrierStrategy ..|> IBarrierStrategy
+    PoissonDiscStrategy ..|> IPlacementStrategy
+    GenderController ..|> IGenderController
     Environment ..|> IEnvironment
 
     Environment --> ICalendar
@@ -264,11 +307,15 @@ classDiagram
     WeatherStrategy --> IWorld
 
     BarrierStrategy --> IWorld
+    SpawnController --> IPlacementStrategy
+    SpawnController --> IGenderController
+    SpawnController --> GameSession
     Container --> BarrierStrategy
     Container --> World
     Container --> Calendar
     Container --> Environment
     Container --> GameSession
+    Container --> SpawnController
 
     ArcadeView --> GameSession
     KeyboardInput --> GameSession
@@ -315,6 +362,37 @@ sequenceDiagram
     C->>Log: container.built world, cells, seasons, strategies
 
     M->>Log: event=app.window_created (windowed only)
+```
+
+---
+
+## Bean spawn sequence
+
+The Spawn Controller runs the full placement pipeline at startup.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Container
+    participant SC as SpawnController
+    participant PS as IPlacementStrategy
+    participant GC as IGenderController
+    participant W as World
+    participant Sess as GameSession
+    participant Log as bean.spawn
+
+    C->>SC: SpawnController(config, world, session, PS, GC)
+    SC->>SC: target N = Round(area × rho × (1 + variance))
+    SC->>PS: generate_positions(N, width, height)
+    PS-->>SC: positions [(x, y), ...]
+    SC->>GC: assign_attributes(positions)
+    GC-->>SC: [(pos, gender, color), ...]
+    loop for each bean
+        SC->>SC: Bean(id, x, y, gender, color)
+        SC->>Sess: session.beans.append(bean)
+    end
+    SC->>Log: event=spawn.finished beans=...
+    Log-->>C: container.built ... beans=%s
 ```
 
 ---
@@ -574,6 +652,7 @@ classDiagram
         +world: WorldConfig
         +time: TimeConfig
         +barriers: BarrierConfig
+        +bean_placement: BeanPlacementConfig
         +seasons: list~SeasonConfig~
         +daynight: DayNightConfig
         +weather: WeatherConfig
@@ -596,6 +675,17 @@ classDiagram
         +count: int
         +seed: int
         +margin_cells: int
+    }
+
+    class BeanPlacementConfig {
+        +strategy_name: str
+        +density_tier: str
+        +variance: float
+        +seed: int
+        +gender_ratios: dict
+        +gender_colors: dict
+        +base_spacing_scale: float
+        +max_retry_limit: int
     }
 
     class TimeConfig {
@@ -686,6 +776,7 @@ classDiagram
     SimulationConfig *-- WorldConfig
     SimulationConfig *-- TimeConfig
     SimulationConfig *-- BarrierConfig
+    SimulationConfig *-- BeanPlacementConfig
     SimulationConfig *-- "1..*" SeasonConfig
     SimulationConfig *-- DayNightConfig
     SimulationConfig *-- WeatherConfig

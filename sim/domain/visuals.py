@@ -41,6 +41,9 @@ class SeasonPalette:
     sun_intensity: float = 1.0
     #: Share of the day with the sun above the horizon (0.5 = 12 h).
     daylight_fraction: float = 0.5
+    #: Human-readable meaning of this season's ground colour (from the
+    #  season strategy's config). Shown in the view legend.
+    ground_meaning: str = "growing season"
 
 
 @dataclass(frozen=True)

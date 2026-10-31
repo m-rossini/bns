@@ -147,14 +147,17 @@ class SeasonStrategy(ISeasonStrategy):
             pressure_hpa=definition.pressure_hpa,
             sun_intensity=definition.sun_intensity,
             daylight_fraction=definition.daylight_fraction,
+            ground_meaning=definition.ground_meaning,
         )
         logger.debug(
-            "season.palette season=%s progress=%.3f ground=%s sun=%.2f daylight=%.2f",
+            "season.palette season=%s progress=%.3f ground=%s sun=%.2f daylight=%.2f "
+            "ground_meaning=%s",
             definition.name,
             progress,
             ground,
             definition.sun_intensity,
             definition.daylight_fraction,
+            definition.ground_meaning,
         )
         return palette
 

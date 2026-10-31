@@ -321,7 +321,8 @@ class IEnvironment(ABC):
   season's over the final quarter of the season, so the hand-off is continuous.
 - `palette(calendar)` returns `SeasonPalette` with the season name, ground
   colour, detail colours, temperature baseline/swing, humidity, pressure,
-  `sun_intensity`, `daylight_fraction`.
+  `sun_intensity`, `daylight_fraction` and `ground_meaning` (the season's
+  human-readable ground-colour description, shown in the Environment legend).
 - The ground colour is season-driven, not random: green shades mark growing
   seasons (spring/summer) and brown shades mark dry or dormant seasons
   (autumn/winter). This is shown in the Environment box legend.

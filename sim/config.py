@@ -106,6 +106,10 @@ class SeasonConfig:
     temperature_swing: float = 7.0     # deg C, day/night amplitude
     humidity: float = 0.55             # 0..1 seasonal baseline
     pressure_hpa: float = 1013.0       # seasonal baseline
+    #: Human-readable meaning of this season's ground colour, shown in the
+    #  view legend (e.g. "growing season" vs "dry / dormant"). Owned by the
+    #  season strategy, not random.
+    ground_meaning: str = "growing season"
     #: Peak sun brightness the season allows (>1 summer, <1 winter).
     sun_intensity: float = 1.0
     #: Share of the day the sun is above the horizon (0.5 = 12 h).
@@ -312,6 +316,7 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=7.0,
             humidity=0.55,
             pressure_hpa=1012.0,
+            ground_meaning="growing season",
             sun_intensity=0.95,
             daylight_fraction=0.50,
             weather_weights={
@@ -327,6 +332,7 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=6.0,
             humidity=0.40,
             pressure_hpa=1015.0,
+            ground_meaning="peak growing season",
             sun_intensity=1.15,
             daylight_fraction=0.60,
             weather_weights={
@@ -342,6 +348,7 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=7.0,
             humidity=0.60,
             pressure_hpa=1010.0,
+            ground_meaning="dry / dormant",
             sun_intensity=0.82,
             daylight_fraction=0.45,
             weather_weights={
@@ -357,6 +364,7 @@ DEFAULT_CONFIG = SimulationConfig(
             temperature_swing=5.0,
             humidity=0.70,
             pressure_hpa=1008.0,
+            ground_meaning="dormant / cold",
             sun_intensity=0.55,
             daylight_fraction=0.34,
             weather_weights={

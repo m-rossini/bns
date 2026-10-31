@@ -7,10 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Directional Vector Angle
-* Bias Curve Strength
-
 Calculus:
     Project candidate onto directional vector -> normalized t in [0, 1].
     Acceptance-rejection sampling with linear weight:
@@ -24,6 +20,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import LinearGradientConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -36,14 +33,10 @@ logger = get_logger("placement.linear_gradient")
 class LinearGradientStrategy(IPlacementStrategy):
     name = "linear_gradient"
 
-    def __init__(
-        self,
-        direction_angle: float = 0.0,
-        bias_strength: float = 1.5,
-        seed: int = 1337,
-    ):
-        self.direction_angle = direction_angle
-        self.bias_strength = bias_strength
+    def __init__(self, config: LinearGradientConfig, seed: int = 1337):
+        self.config = config
+        self.direction_angle = config.direction_angle
+        self.bias_strength = config.bias_strength
         self.seed = seed
 
     def generate_positions(

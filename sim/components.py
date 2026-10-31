@@ -49,6 +49,7 @@ class GameState(Enum):
     START = auto()    # Title screen, press to begin
     PLAYING = auto()  # Simulation running, time passing
     PAUSED = auto()   # Simulation frozen, overlay shown
+    CONFIG = auto()   # Configuration screen: shows all config grouped by topic
     END = auto()      # Game over / population extinct / user quit
 
 

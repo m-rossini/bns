@@ -7,10 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Base Spacing Scale
-* Maximum Retry Limit
-
 Calculus:
     Minimum spacing radius r = sqrt(A / N) × BaseSpacingScale
     where A is total world area and N is the target population.
@@ -26,6 +22,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import PoissonDiscConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -38,14 +35,10 @@ logger = get_logger("placement.poisson_disc")
 class PoissonDiscStrategy(IPlacementStrategy):
     name = "poisson_disc"
 
-    def __init__(
-        self,
-        base_spacing_scale: float = 1.0,
-        max_retry_limit: int = 100,
-        seed: int = 1337,
-    ):
-        self.base_spacing_scale = base_spacing_scale
-        self.max_retry_limit = max_retry_limit
+    def __init__(self, config: PoissonDiscConfig, seed: int = 1337):
+        self.config = config
+        self.base_spacing_scale = config.base_spacing_scale
+        self.max_retry_limit = config.max_retry_limit
         self.seed = seed
 
     def generate_positions(

@@ -366,10 +366,185 @@ class ArcadeView(arcade.Window):
             accent=(240, 96, 96),
         )
 
+    def draw_config_screen(self, session: GameSession) -> None:
+        """Full-screen configuration overview grouped by topic."""
+        self.clear((8, 12, 20))
+        config = self.config
+        sw, sh = self._viewport_size()
+
+        self._draw_title_panel(
+            "CONFIGURATION",
+            "Press C or Esc to return to game   ·   Q to quit",
+            hint=None,
+            accent=_ACCENT,
+        )
+
+        y = sh - 120
+        x_left = _MARGIN
+        x_right = sw - _MARGIN - 400
+
+        def section(title: str):
+            nonlocal y
+            self._text.draw(
+                title, x_left, y, _ACCENT, font_size=14, bold=True,
+            )
+            y -= 22
+
+        def line(key: str, value, color=_TEXT, font_size: int = 11):
+            nonlocal y
+            self._text.draw(
+                f"{key}:", x_left, y, _MUTED, font_size=font_size,
+            )
+            self._text.draw(
+                str(value), x_left + 150, y, color, font_size=font_size,
+            )
+            y -= 18
+
+        # ---- WorldConfig ----
+        wc = config.world
+        section("WorldConfig")
+        line("width", wc.width)
+        line("height", wc.height)
+        line("cell_size", wc.cell_size)
+        line("orientation", str(wc.orientation))
+        line("wrap_around", str(wc.wrap_around))
+        line("cols", wc.cols)
+        line("rows", wc.rows)
+        y -= 10
+
+        # ---- TimeConfig ----
+        tc = config.time
+        section("TimeConfig")
+        line("ticks_per_day", tc.ticks_per_day)
+        line("ticks_per_season", tc.ticks_per_season)
+        line("start_tick", tc.start_tick)
+        line("initial_time_scale", tc.initial_time_scale)
+        line("time_scale_min", tc.time_scale_min)
+        line("time_scale_max", tc.time_scale_max)
+        y -= 10
+
+        # ---- Seasons ----
+        section("Seasons")
+        for s in config.seasons:
+            line(f"{s.name}", f"ground={s.ground_color}", _TEXT, font_size=10)
+            line(
+                "  base_temp", f"{s.base_temperature} ± {s.temperature_swing} °C",
+                _TEXT, font_size=9,
+            )
+            line(
+                "  humidity/pressure", f"{s.humidity:.0%} / {s.pressure_hpa} hPa",
+                _TEXT, font_size=9,
+            )
+            line(
+                "  sun/daylight", f"{s.sun_intensity:.2f} / {s.daylight_fraction:.2f}",
+                _TEXT, font_size=9,
+            )
+            line(
+                "  ground_meaning", s.ground_meaning, _DIM, font_size=9,
+            )
+            y -= 6
+        y -= 4
+
+        # ---- DayNightConfig ----
+        dn = config.daynight
+        section("DayNightConfig")
+        line("sun_speed", dn.sun_speed)
+        line("moon_speed", dn.moon_speed)
+        line("moon_phase_offset", dn.moon_phase_offset)
+        line("local_shading", dn.local_shading)
+        line("night_threshold", dn.night_threshold)
+        line("twilight_threshold", dn.twilight_threshold)
+        y -= 10
+
+        # ---- WeatherConfig ----
+        wx_cfg = config.weather
+        section("WeatherConfig")
+        line("change_interval", wx_cfg.change_interval)
+        line("front_count", wx_cfg.front_count)
+        line("background_coverage", wx_cfg.background_coverage)
+        line("front_radius_min", wx_cfg.front_radius_min_cells)
+        line("front_radius_max", wx_cfg.front_radius_max_cells)
+        y -= 10
+
+        # ---- BarrierConfig ----
+        bc = config.barriers
+        section("BarrierConfig")
+        line("color", str(bc.color))
+        line("max_span_cells", bc.max_span_cells)
+        line("count", bc.count)
+        line("seed", bc.seed)
+        line("margin_cells", bc.margin_cells)
+        y -= 10
+
+        # ---- BeanPlacementConfig ----
+        bpc = config.bean_placement
+        section("BeanPlacementConfig")
+        line("strategy_name", bpc.strategy_name)
+        line("density_tier", bpc.density_tier)
+        line("variance", bpc.variance)
+        line("seed", bpc.seed)
+        line("bean_radius", bpc.bean_radius)
+        line("gender_ratios", str(bpc.gender_ratios))
+        line("gender_colors", str(bpc.gender_colors))
+        y -= 6
+
+        # Per-strategy configs
+        section("Placement Strategy Configs")
+        pd = bpc.poisson_disc
+        line("poisson_disc.base_spacing_scale", pd.base_spacing_scale, font_size=10)
+        line("poisson_disc.max_retry_limit", pd.max_retry_limit, font_size=10)
+        sy = bpc.symmetrical
+        line("symmetrical.symmetry_axes", sy.symmetry_axes, font_size=10)
+        cc = bpc.colony_cluster
+        line("colony_cluster.area_per_cluster", cc.area_per_cluster, font_size=10)
+        line("colony_cluster.cluster_spread_sigma", cc.cluster_spread_sigma, font_size=10)
+        cb = bpc.center_to_border
+        line("center_to_border.falloff_exponent", cb.falloff_exponent, font_size=10)
+        bb = bpc.border_to_center
+        line("border_to_center.ring_thickness_ratio", bb.ring_thickness_ratio, font_size=10)
+        lg = bpc.linear_gradient
+        line("linear_gradient.direction_angle", lg.direction_angle, font_size=10)
+        line("linear_gradient.bias_strength", lg.bias_strength, font_size=10)
+        rg = bpc.resource_gradient
+        line("resource_gradient.noise_frequency", rg.noise_frequency, font_size=10)
+        line("resource_gradient.threshold", rg.threshold, font_size=10)
+        y -= 10
+
+        # ---- EnvironmentConfig ----
+        ec = config.environment
+        section("EnvironmentConfig")
+        line("weather_strategy", ec.weather_strategy)
+        line("season_strategy", ec.season_strategy)
+        line("daynight_strategy", ec.daynight_strategy)
+        line("microclimate", ec.microclimate)
+        line("temperature_gradient", str(ec.temperature_gradient))
+        line("humidity_gradient", str(ec.humidity_gradient))
+        line("pressure_gradient", str(ec.pressure_gradient))
+        line("light_gradient", str(ec.light_gradient))
+        y -= 10
+
+        # ---- LoggingConfig ----
+        lg_cfg = config.logging
+        section("LoggingConfig")
+        line("level", lg_cfg.level)
+        line("business", str(lg_cfg.business))
+        line("readings", str(lg_cfg.readings))
+        line("readings_interval", lg_cfg.readings_interval)
+        y -= 10
+
+        # ---- SimulationConfig ----
+        section("SimulationConfig")
+        line("tick_rate", config.tick_rate)
+        line("debug", str(config.debug))
+
+        y -= 20
+        self._text.draw(
+            "Press C or Esc to return to game   ·   Q to quit",
+            x_left, y, _DIM, font_size=10,
+        )
+
     # ------------------------------------------------------------------
     # Layout / world <-> screen mapping
-    # ------------------------------------------------------------------
-    def _sidebar_width(self) -> float:
         sw, _ = self._viewport_size()
         return max(_SIDEBAR_MIN, min(_SIDEBAR_MAX, sw * 0.30))
 
@@ -825,8 +1000,36 @@ class ArcadeView(arcade.Window):
                     f"cell ({col}, {row})   ·   x {wx:.0f}  y {wy:.0f}",
                     left + 12, top - 38, _MUTED, font_size=11,
                 )
+                # Cell contents: bean / barrier / empty
+                beans = getattr(session, "beans", None) or []
+                bean_at = None
+                for b in beans:
+                    if abs(b.x - wx) < 1.0 and abs(b.y - wy) < 1.0:
+                        bean_at = b
+                        break
+                barriers = getattr(world, "barriers", None) or []
+                barrier_at = None
+                for b in barriers:
+                    if b.kind == "rect":
+                        if (b.x <= wx <= b.x + b.width and b.y <= wy <= b.y + b.height):
+                            barrier_at = b
+                            break
+                if bean_at is not None:
+                    self._text.draw(
+                        f"BEAN   ·   gender={bean_at.gender}   ·   colour={bean_at.color}",
+                        left + 12, top - 70, _ACCENT, font_size=11,
+                    )
+                elif barrier_at is not None:
+                    self._text.draw(
+                        f"BARRIER   ·   kind={barrier_at.kind}   ·   colour={barrier_at.color}",
+                        left + 12, top - 70, _MUTED, font_size=11,
+                    )
+                else:
+                    self._text.draw(
+                        "EMPTY", left + 12, top - 70, _DIM, font_size=11,
+                    )
                 self._text.draw(
-                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, top - 70,
+                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, top - 92,
                     _TEXT, font_size=24, bold=True,
                 )
                 self._text.draw(
@@ -864,6 +1067,15 @@ class ArcadeView(arcade.Window):
             self._box(left, top, width, h, "Weather field")
             self._draw_weather_census(session, left + 12, top - 34, width - 24, h)
 
+        # ---- Gender census -------------------------------------------
+        remaining = cursor - h if 'h' in dir() else cursor - limit
+        remaining = max(0, remaining)
+        if remaining >= 80:
+            top = cursor
+            h = min(remaining, 120)
+            self._box(left, top, width, h, "Gender census")
+            self._draw_gender_census(session, left + 12, top - 34, width - 24)
+
         # ---- Controls (anchored to the bottom of the sidebar) ---------
         # Box height gives each key its own row plus a dedicated slider row
         # at the bottom, so nothing overlaps or clips against the window edge.
@@ -874,6 +1086,7 @@ class ArcadeView(arcade.Window):
         lines = [
             ("SPACE", "start / restart"),
             ("P", "pause / resume"),
+            ("C", "config screen"),
             ("Esc / Q", "quit"),
             ("Click", "inspect cell"),
         ]
@@ -966,6 +1179,33 @@ class ArcadeView(arcade.Window):
                 left + 16, y, _DIM, font_size=10,
             )
 
+    def _draw_gender_census(self, session: GameSession, left: float, top: float,
+                            width: float) -> None:
+        """How many beans of each gender: proves the field is balanced."""
+        beans = getattr(session, "beans", None) or []
+        if not beans:
+            self._text.draw(
+                "no beans", left, top, _DIM, font_size=11,
+            )
+            return
+        counts: dict = {}
+        for bean in beans:
+            counts[bean.gender] = counts.get(bean.gender, 0) + 1
+        total = len(beans)
+        present = [(name, count) for name, count in counts.items()]
+        present.sort(key=lambda item: item[1], reverse=True)
+        y = top
+        for gender, count in present:
+            color = getattr(session, "beans", None) and None  # placeholder
+            # Use a neutral colour; the gender label text carries the info.
+            arcade.draw_lbwh_rectangle_filled(left, y - 1, 8, 8, _ACCENT)
+            self._text.draw(gender, left + 16, y, _TEXT, font_size=11)
+            self._text.draw(
+                f"{count:>3} beans   ·   {count / total:>4.0%}",
+                left + width, y, _MUTED, font_size=11, anchor_x="right",
+            )
+            y -= 17
+
     def _draw_sun_track(self, session: GameSession, left: float, bottom: float,
                         width: float, height: float) -> None:
         celestial = self._celestial(session)
@@ -1013,6 +1253,8 @@ class ArcadeView(arcade.Window):
             self.draw_playing(self.session)
         elif state == GameState.PAUSED:
             self.draw_paused(self.session)
+        elif state == GameState.CONFIG:
+            self.draw_config_screen(self.session)
         elif state == GameState.END:
             self.draw_end_screen(self.session)
         # pyglet's Window.draw() calls flip() (glXSwapBuffers) after on_draw.

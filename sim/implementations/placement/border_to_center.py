@@ -7,9 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Outer Ring Thickness Ratio
-
 Calculus:
     R_min = R_max * (1 - RingThicknessRatio)
     r = sqrt(R_min^2 + u * (R_max^2 - R_min^2)), u ~ Uniform(0, 1)
@@ -23,6 +20,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import BorderToCenterConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -35,10 +33,9 @@ logger = get_logger("placement.border_to_center")
 class BorderToCenterStrategy(IPlacementStrategy):
     name = "border_to_center"
 
-    def __init__(
-        self, ring_thickness_ratio: float = 0.3, seed: int = 1337
-    ):
-        self.ring_thickness_ratio = max(0.0, min(1.0, ring_thickness_ratio))
+    def __init__(self, config: BorderToCenterConfig, seed: int = 1337):
+        self.config = config
+        self.ring_thickness_ratio = max(0.0, min(1.0, config.ring_thickness_ratio))
         self.seed = seed
 
     def generate_positions(

@@ -21,6 +21,7 @@ KEY_SPACE = 32
 KEY_P = 112
 KEY_Q = 113
 KEY_ESCAPE = 65307
+KEY_C = 99
 
 # Playback-speed range (kept in sync with the view's slider and TimeConfig).
 TIME_SCALE_MIN = 0.1
@@ -67,6 +68,9 @@ class KeyboardInput:
                 session.state = GameState.PAUSED
                 session.clock.paused = True
                 _emit(session, "session.paused", key=key)
+            elif key == KEY_C:
+                session.state = GameState.CONFIG
+                _emit(session, "session.config_opened", key=key)
             elif key in (KEY_Q, KEY_ESCAPE):
                 self._quit(session)
             else:
@@ -78,6 +82,15 @@ class KeyboardInput:
                 session.clock.paused = False
                 _emit(session, "session.resumed", key=key)
             elif key in (KEY_Q, KEY_ESCAPE):
+                self._quit(session)
+            else:
+                _emit(session, "session.key_ignored", key=key, level=logging.DEBUG)
+
+        elif state == GameState.CONFIG:
+            if key in (KEY_C, KEY_ESCAPE):
+                session.state = GameState.PLAYING
+                _emit(session, "session.config_closed", key=key)
+            elif key in (KEY_Q,):
                 self._quit(session)
             else:
                 _emit(session, "session.key_ignored", key=key, level=logging.DEBUG)

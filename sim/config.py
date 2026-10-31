@@ -300,17 +300,108 @@ PLACEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
 
 
 @dataclass
+class PoissonDiscConfig:
+    """Poisson-Disc placement strategy config.
+
+    ``base_spacing_scale`` scales the minimum spacing radius relative to the
+    density-derived value. ``max_retry_limit`` caps placement attempts per
+    bean before giving up.
+    """
+
+    base_spacing_scale: float = 1.0
+    max_retry_limit: int = 100
+
+
+@dataclass
+class SymmetricalConfig:
+    """Symmetrical spawn strategy config.
+
+    ``symmetry_axes`` is the number of rotational axes (k >= 1).
+    """
+
+    symmetry_axes: int = 4
+
+
+@dataclass
+class ColonyClusterConfig:
+    """Colony cluster placement strategy config.
+
+    ``area_per_cluster`` is the world area per cluster (cluster count =
+    round(world_area / area_per_cluster)). ``cluster_spread_sigma`` is the
+    standard deviation of beans around each mother centroid.
+    """
+
+    area_per_cluster: float = 2000.0
+    cluster_spread_sigma: float = 30.0
+
+
+@dataclass
+class CenterToBorderConfig:
+    """Center-to-Border radial placement strategy config (core-heavy).
+
+    ``falloff_exponent`` shapes the power-law distribution of radial distance;
+    higher values concentrate beans nearer the centre.
+    """
+
+    falloff_exponent: float = 2.0
+
+
+@dataclass
+class BorderToCenterConfig:
+    """Border-to-Center radial placement strategy config (periphery-heavy).
+
+    ``ring_thickness_ratio`` is the fraction of the world radius forming the
+    outer ring where beans are placed (1.0 = full world, 0.0 = only the edge).
+    """
+
+    ring_thickness_ratio: float = 0.3
+
+
+@dataclass
+class LinearGradientConfig:
+    """Linear gradient placement strategy config.
+
+    ``direction_angle`` is the bias direction in radians. ``bias_strength``
+    scales how strongly cell density varies along that direction.
+    """
+
+    direction_angle: float = 0.0
+    bias_strength: float = 1.5
+
+
+@dataclass
+class ResourceGradientConfig:
+    """Resource gradient placement strategy config.
+
+    ``noise_frequency`` scales the noise field relative to world size.
+    ``threshold`` is the noise value above which beans spawn (per density tier).
+    """
+
+    noise_frequency: float = 0.01
+    threshold: float = 0.50
+
+
+@dataclass
 class BeanPlacementConfig:
     """Configuration for initial bean placement & gender system.
 
-    Drives the Spawn Controller: which placement strategy is active, the
-    population density tier, stochastic variance, gender ratio allocations,
-    and per-gender visual color mappings.
+    ``strategy_name`` selects which placement implementation runs
+    (one of ``PLACEMENT_STRATEGY_NAMES``). Each strategy has its own dedicated
+    config object below; the container passes only the selected strategy's
+    config to that implementation.
+
+    ``density_tier``, ``variance`` and ``seed`` drive the area-based population
+    calculus. ``gender_ratios`` / ``gender_colors`` drive gender assignment.
+    ``bean_radius`` is the collision radius used for placement validation.
     """
 
+    #: Which placement implementation to run (one of PLACEMENT_STRATEGY_NAMES).
     strategy_name: str = "poisson_disc"
+    #: Population density tier (one of BEAN_DENSITY_TIERS).
     density_tier: str = "average"
+    #: Stochastic variance in [0, 1] applied to the population count.
     variance: float = 0.10
+    #: Seed for deterministic placement.
     seed: int = 1337
 
     # Gender ratios (must sum to 100).
@@ -321,20 +412,27 @@ class BeanPlacementConfig:
     gender_colors: Dict[str, Color] = field(
         default_factory=lambda: {"male": (0, 0, 255), "female": (255, 0, 0)}
     )
-
-    # Strategy parameters (all optional, strategy-specific).
-    base_spacing_scale: float = 1.0
-    max_retry_limit: int = 100
-    symmetry_axes: int = 4
-    area_per_cluster: float = 2000.0
-    cluster_spread_sigma: float = 30.0
-    falloff_exponent: float = 2.0
-    ring_thickness_ratio: float = 0.3
-    bias_strength: float = 1.5
-    noise_frequency: float = 0.01
     #: Radius of a bean (world units) used for collision-free placement.
     #: Beans, barriers and borders must not overlap.
     bean_radius: float = 5.0
+
+    # Per-strategy configs. Each strategy implementation receives only its own
+    # config object; the container selects the active one by ``strategy_name``.
+    poisson_disc: PoissonDiscConfig = field(default_factory=PoissonDiscConfig)
+    symmetrical: SymmetricalConfig = field(default_factory=SymmetricalConfig)
+    colony_cluster: ColonyClusterConfig = field(default_factory=ColonyClusterConfig)
+    center_to_border: CenterToBorderConfig = field(
+        default_factory=CenterToBorderConfig
+    )
+    border_to_center: BorderToCenterConfig = field(
+        default_factory=BorderToCenterConfig
+    )
+    linear_gradient: LinearGradientConfig = field(
+        default_factory=LinearGradientConfig
+    )
+    resource_gradient: ResourceGradientConfig = field(
+        default_factory=ResourceGradientConfig
+    )
 
     def __post_init__(self) -> None:
         if self.density_tier not in BEAN_DENSITY_COEFFICIENTS:
@@ -354,6 +452,29 @@ class BeanPlacementConfig:
                 raise ValueError(
                     f"BeanPlacementConfig.gender_colors has unknown gender {gender!r}"
                 )
+
+    def strategy_config(self, strategy_name: Optional[str] = None):
+        """Return the config object for the given strategy name.
+
+        Defaults to ``self.strategy_name``. Raises ``ValueError`` if the name
+        is unknown.
+        """
+        name = strategy_name or self.strategy_name
+        configs = {
+            "poisson_disc": self.poisson_disc,
+            "symmetrical": self.symmetrical,
+            "colony_cluster": self.colony_cluster,
+            "center_to_border": self.center_to_border,
+            "border_to_center": self.border_to_center,
+            "linear_gradient": self.linear_gradient,
+            "resource_gradient": self.resource_gradient,
+        }
+        if name not in configs:
+            raise ValueError(
+                f"Unknown placement strategy {name!r}. "
+                f"Use one of: {sorted(configs)}"
+            )
+        return configs[name]
 
 
 @dataclass
@@ -537,16 +658,32 @@ DEFAULT_CONFIG = SimulationConfig(
         variance=0.10,
         gender_ratios={"male": 50.0, "female": 50.0},
         gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
-        base_spacing_scale=1.0,
-        max_retry_limit=100,
-        symmetry_axes=4,
-        area_per_cluster=2000.0,
-        cluster_spread_sigma=30.0,
-        falloff_exponent=2.0,
-        ring_thickness_ratio=0.3,
-        bias_strength=1.5,
-        noise_frequency=0.01,
         bean_radius=5.0,
+        poisson_disc=PoissonDiscConfig(
+            base_spacing_scale=1.0,
+            max_retry_limit=100,
+        ),
+        symmetrical=SymmetricalConfig(
+            symmetry_axes=4,
+        ),
+        colony_cluster=ColonyClusterConfig(
+            area_per_cluster=2000.0,
+            cluster_spread_sigma=30.0,
+        ),
+        center_to_border=CenterToBorderConfig(
+            falloff_exponent=2.0,
+        ),
+        border_to_center=BorderToCenterConfig(
+            ring_thickness_ratio=0.3,
+        ),
+        linear_gradient=LinearGradientConfig(
+            direction_angle=0.0,
+            bias_strength=1.5,
+        ),
+        resource_gradient=ResourceGradientConfig(
+            noise_frequency=0.01,
+            threshold=0.05,
+        ),
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

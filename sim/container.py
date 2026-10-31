@@ -126,42 +126,24 @@ class Container:
         self, config: SimulationConfig
     ) -> IPlacementStrategy:
         bp = config.bean_placement
-        cls = _PLACEMENT_CLASSES.get(bp.strategy_name)
+        strategy_name = bp.strategy_name
+        configs = {
+            "poisson_disc": bp.poisson_disc,
+            "symmetrical": bp.symmetrical,
+            "colony_cluster": bp.colony_cluster,
+            "center_to_border": bp.center_to_border,
+            "border_to_center": bp.border_to_center,
+            "linear_gradient": bp.linear_gradient,
+            "resource_gradient": bp.resource_gradient,
+        }
+        cls = _PLACEMENT_CLASSES.get(strategy_name)
         if cls is None:
             raise ValueError(
-                f"Unknown placement strategy {bp.strategy_name!r}. "
+                f"Unknown placement strategy {strategy_name!r}. "
                 f"Use one of: {sorted(PLACEMENT_STRATEGY_NAMES)}"
             )
-        if cls is PoissonDiscStrategy:
-            return cls(
-                base_spacing_scale=bp.base_spacing_scale,
-                max_retry_limit=bp.max_retry_limit,
-                seed=bp.seed,
-            )
-        if cls is SymmetricalStrategy:
-            return cls(symmetry_axes=bp.symmetry_axes, seed=bp.seed)
-        if cls is ColonyClusterStrategy:
-            return cls(
-                area_per_cluster=bp.area_per_cluster,
-                cluster_spread_sigma=bp.cluster_spread_sigma,
-                seed=bp.seed,
-            )
-        if cls is CenterToBorderStrategy:
-            return cls(falloff_exponent=bp.falloff_exponent, seed=bp.seed)
-        if cls is BorderToCenterStrategy:
-            return cls(ring_thickness_ratio=bp.ring_thickness_ratio, seed=bp.seed)
-        if cls is LinearGradientStrategy:
-            return cls(
-                direction_angle=0.0, bias_strength=bp.bias_strength, seed=bp.seed
-            )
-        if cls is ResourceGradientStrategy:
-            threshold = BEAN_DENSITY_THRESHOLDS.get(bp.density_tier, 0.50)
-            return cls(
-                noise_frequency=bp.noise_frequency,
-                threshold=threshold,
-                seed=bp.seed,
-            )
-        return cls(seed=bp.seed)
+        cfg = configs[strategy_name]
+        return cls(config=cfg, seed=bp.seed)
 
     def _build_gender_controller(
         self, config: SimulationConfig
@@ -190,7 +172,12 @@ class Container:
     # ------------------------------------------------------------------
     def _season_names(self, config: SimulationConfig):
         names = [season.name for season in config.seasons]
-        return names or ["Spring"]
+        if not names:
+            raise ValueError(
+                "config.seasons must contain at least one season; "
+                "season names are mandatory (no default fallback)"
+            )
+        return names
 
     def _build_calendar(self, config: SimulationConfig) -> Calendar:
         return Calendar(

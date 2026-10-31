@@ -7,15 +7,12 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Falloff Exponent Curve
-
 Calculus:
     r = R_max * u^FalloffExponent,  u ~ Uniform(0, 1)
     theta ~ Uniform(0, 2pi)
     x = Center.x + r * cos(theta), y = Center.y + r * sin(theta)
 
-A higher falloff exponent concentrates more beans near the center.
+A higher falloff exponent concentrates beans nearer the centre.
 """
 
 from __future__ import annotations
@@ -24,6 +21,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import CenterToBorderConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -36,8 +34,9 @@ logger = get_logger("placement.center_to_border")
 class CenterToBorderStrategy(IPlacementStrategy):
     name = "center_to_border"
 
-    def __init__(self, falloff_exponent: float = 2.0, seed: int = 1337):
-        self.falloff_exponent = max(0.1, falloff_exponent)
+    def __init__(self, config: CenterToBorderConfig, seed: int = 1337):
+        self.config = config
+        self.falloff_exponent = max(0.1, config.falloff_exponent)
         self.seed = seed
 
     def generate_positions(

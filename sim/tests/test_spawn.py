@@ -5,6 +5,9 @@ import unittest
 from sim.config import (
     BEAN_DENSITY_COEFFICIENTS,
     BeanPlacementConfig,
+    ColonyClusterConfig,
+    PoissonDiscConfig,
+    SeasonConfig,
     SimulationConfig,
     WorldConfig,
 )
@@ -14,6 +17,16 @@ from sim.container import Container
 def _make_config(**overrides):
     base = SimulationConfig(
         world=WorldConfig(width=1200.0, height=800.0, cell_size=10.0),
+        seasons=[
+            SeasonConfig(
+                name="Spring", ground_color=(96, 170, 88),
+                base_temperature=14.0, temperature_swing=7.0,
+                humidity=0.55, pressure_hpa=1012.0,
+                sun_intensity=0.95, daylight_fraction=0.50,
+                ground_meaning="growing season",
+                weather_weights={"clear": 30, "cloudy": 30, "rain": 30, "storm": 10, "snow": 0},
+            ),
+        ],
         bean_placement=BeanPlacementConfig(
             strategy_name="poisson_disc",
             density_tier="average",
@@ -21,6 +34,8 @@ def _make_config(**overrides):
             seed=42,
             gender_ratios={"male": 50.0, "female": 50.0},
             gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+            bean_radius=5.0,
+            poisson_disc=PoissonDiscConfig(),
         ),
     )
     for key, value in overrides.items():
@@ -48,6 +63,8 @@ class TestPopulationCalculus(unittest.TestCase):
                     seed=42,
                     gender_ratios={"male": 50.0, "female": 50.0},
                     gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                    bean_radius=5.0,
+                    poisson_disc=PoissonDiscConfig(),
                 )
             )
         )
@@ -60,6 +77,8 @@ class TestPopulationCalculus(unittest.TestCase):
                     seed=42,
                     gender_ratios={"male": 50.0, "female": 50.0},
                     gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                    bean_radius=5.0,
+                    poisson_disc=PoissonDiscConfig(),
                 )
             )
         )
@@ -76,11 +95,24 @@ class TestPopulationCalculus(unittest.TestCase):
                     seed=seed,
                     gender_ratios={"male": 50.0, "female": 50.0},
                     gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                    bean_radius=5.0,
+                    poisson_disc=PoissonDiscConfig(),
                 )
             )
             counts.append(len(Container(cfg).beans))
         # With 20% variance, counts should differ across seeds (not all identical).
         self.assertGreater(len(set(counts)), 1)
+
+    def test_expected_population_matches_formula(self):
+        # variance=0 => N ≈ Round(A * rho). Collision-free placement may
+        # produce fewer due to minimum spacing constraints.
+        area = 1200.0 * 800.0  # 960000
+        rho = BEAN_DENSITY_COEFFICIENTS["average"]  # 0.0020
+        expected = round(area * rho)  # 1920
+        c = Container(_make_config())
+        # Expect a substantial fraction of the theoretical max.
+        self.assertGreater(len(c.beans), expected * 0.5)
+        self.assertLessEqual(len(c.beans), expected)
 
     def test_all_beans_have_gender_and_color_and_are_in_bounds(self):
         c = Container(_make_config())
@@ -103,6 +135,8 @@ class TestConfigValidation(unittest.TestCase):
                 seed=1,
                 gender_ratios={"male": 50.0, "female": 50.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             )
 
     def test_variance_out_of_range_rejected(self):
@@ -114,6 +148,8 @@ class TestConfigValidation(unittest.TestCase):
                 seed=1,
                 gender_ratios={"male": 50.0, "female": 50.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             )
         with self.assertRaises(ValueError):
             BeanPlacementConfig(
@@ -123,6 +159,8 @@ class TestConfigValidation(unittest.TestCase):
                 seed=1,
                 gender_ratios={"male": 50.0, "female": 50.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             )
 
     def test_gender_ratios_not_summing_to_100_rejected(self):
@@ -134,6 +172,8 @@ class TestConfigValidation(unittest.TestCase):
                 seed=1,
                 gender_ratios={"male": 50.0, "female": 40.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             )
 
     def test_invalid_strategy_name_rejected_by_container(self):
@@ -145,6 +185,8 @@ class TestConfigValidation(unittest.TestCase):
                 seed=1,
                 gender_ratios={"male": 50.0, "female": 50.0},
                 gender_colors={"male": (0, 0, 255), "female": (255, 0, 0)},
+                bean_radius=5.0,
+                poisson_disc=PoissonDiscConfig(),
             )
         )
         with self.assertRaises(ValueError):

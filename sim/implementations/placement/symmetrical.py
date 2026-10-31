@@ -7,9 +7,6 @@ All positions are **collision-free**: beans do not overlap each other, do not
 overlap barriers, and stay inside the world bounds (accounting for bean
 radius).
 
-Tunable attributes:
-* Symmetry Axes Count (k >= 1)
-
 Calculus:
     N_w = ceil(N / k)  target count per symmetrical segment
     Base coordinates generated randomly within a primary slice
@@ -23,6 +20,7 @@ import math
 import random
 from typing import List, Optional, Tuple
 
+from sim.config import SymmetricalConfig
 from sim.domain.beans import Bean, Position
 from sim.domain.placement_utils import is_valid_bean_position
 from sim.domain.world import World
@@ -35,8 +33,9 @@ logger = get_logger("placement.symmetrical")
 class SymmetricalStrategy(IPlacementStrategy):
     name = "symmetrical"
 
-    def __init__(self, symmetry_axes: int = 4, seed: int = 1337):
-        self.symmetry_axes = max(1, symmetry_axes)
+    def __init__(self, config: SymmetricalConfig, seed: int = 1337):
+        self.config = config
+        self.symmetry_axes = max(1, config.symmetry_axes)
         self.seed = seed
 
     def generate_positions(

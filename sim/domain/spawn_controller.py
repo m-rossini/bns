@@ -114,11 +114,13 @@ class SpawnController(ISpawnController):
         counts: Dict[str, int] = {}
         for _, gender, _ in attributed:
             counts[gender] = counts.get(gender, 0) + 1
+        colors = self.gender.colors
         log_event(
             logger,
             "spawn.attributes_assigned",
             count=len(attributed),
             counts=",".join(f"{g}={c}" for g, c in sorted(counts.items())),
+            colors=",".join(f"{g}={c}" for g, c in sorted(colors.items())),
         )
 
         # Step 6: instantiate Bean entities.

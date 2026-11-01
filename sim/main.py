@@ -109,13 +109,18 @@ def main() -> None:
         log_level=level,
         headless=os.environ.get("BEAN_HEADLESS", "0") == "1",
         tick_rate=config.tick_rate,
-        world=f"{config.world.width}x{config.world.height}",
-        cell_size=config.world.cell_size,
-        cols=config.world.cols,
-        rows=config.world.rows,
+        world=f"{config.width}x{config.height}",
+        cell_size=config.cell_size,
+        cols=config.cols,
+        rows=config.rows,
     )
 
-    container = Container(config)
+    try:
+        container = Container(config)
+    except Exception:
+        logger.exception("app.crashed config.invalid")
+        logging.shutdown()
+        return
 
     session = container.session
     environment = container.environment
@@ -151,15 +156,20 @@ def main() -> None:
     # pixel at default scale), plus a full-height sidebar. Integer-snapped so
     # cell rectangles land on whole pixels.
     _SIDEBAR_WIDTH = 360
-    view = ArcadeView(
-        session,
-        width=_SIDEBAR_WIDTH + int(config.world.width),
-        # World height plus top/bottom margins so the drawn world is 1:1
-        # (scale 1.0) at startup.
-        height=int(config.world.height) + 2 * 12,
-        title="Bean World",
-        tick_rate=config.tick_rate,
-    )
+    try:
+        view = ArcadeView(
+            session,
+            width=_SIDEBAR_WIDTH + int(config.width),
+            # World height plus top/bottom margins so the drawn world is 1:1
+            # (scale 1.0) at startup.
+            height=int(config.height) + 2 * 12,
+            title="Bean World",
+            tick_rate=config.tick_rate,
+        )
+    except Exception:
+        logger.exception("app.crashed view.init")
+        logging.shutdown()
+        return
 
     view.set_input_handler(KeyboardInput(session))
 
@@ -179,6 +189,8 @@ def main() -> None:
                 ticks=session.clock.tick,
                 reason=session.end_reason,
             )
+            view.close()
+            arcade.exit()
             view.close()
             arcade.exit()
 

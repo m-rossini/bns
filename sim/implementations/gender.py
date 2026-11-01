@@ -109,8 +109,9 @@ class GenderController(IGenderController):
         log_event(
             logger,
             "gender.assigned",
-            total=total,
-            quotas=",".join(f"{g}={q}" for g, q in quotas.items()),
+            count=total,
+            counts=",".join(f"{g}={q}" for g, q in sorted(quotas.items())),
+            colors=",".join(f"{g}={c}" for g, c in sorted(self._colors.items())),
         )
         return assignments
 

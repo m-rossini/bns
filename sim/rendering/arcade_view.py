@@ -1388,7 +1388,7 @@ class ConfigWindow(arcade.Window):
     def __init__(self, session: GameSession, world: World, config: SimulationConfig):
         super().__init__(width=900, height=700, title="Bean World - Configuration")
         self.session = session
-        self.config = config
+        self.sim_config = config
         self._text_cache: Dict[tuple, "arcade.Text"] = {}
 
     def on_draw(self) -> None:
@@ -1430,7 +1430,7 @@ class ConfigWindow(arcade.Window):
 
     def _draw_config_screen(self) -> None:
         sw, sh = self.width, self.height
-        cfg = self.config
+        cfg = self.sim_config
         x = 30
         y = sh - 30
         lh = 22

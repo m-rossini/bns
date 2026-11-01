@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from sim.components import GameSession
 from sim.config import (
@@ -111,11 +111,14 @@ class SpawnController(ISpawnController):
 
         # Steps 4-5: assign gender + color via the gender controller.
         attributed = self.gender.assign_attributes(positions)
+        counts: Dict[str, int] = {}
+        for _, gender, _ in attributed:
+            counts[gender] = counts.get(gender, 0) + 1
         log_event(
             logger,
             "spawn.attributes_assigned",
             count=len(attributed),
-            genders=",".join(f"{g}:{c}" for _, g, c in attributed),
+            counts=",".join(f"{g}={c}" for g, c in sorted(counts.items())),
         )
 
         # Step 6: instantiate Bean entities.

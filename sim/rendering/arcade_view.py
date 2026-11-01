@@ -545,6 +545,7 @@ class ArcadeView(arcade.Window):
 
     # ------------------------------------------------------------------
     # Layout / world <-> screen mapping
+    def _sidebar_width(self) -> float:
         sw, _ = self._viewport_size()
         return max(_SIDEBAR_MIN, min(_SIDEBAR_MAX, sw * 0.30))
 

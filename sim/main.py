@@ -109,7 +109,6 @@ def main() -> None:
         log_level=level,
         headless=os.environ.get("BEAN_HEADLESS", "0") == "1",
         tick_rate=config.tick_rate,
-        config=config,
         world=f"{config.world.width}x{config.world.height}",
         cell_size=config.world.cell_size,
         cols=config.world.cols,
@@ -166,8 +165,8 @@ def main() -> None:
             height=int(config.world.height) + 2 * 12,
             title="Bean World",
             tick_rate=config.tick_rate,
-            sim_config=config,
-    )
+            config=config,
+        )
     except Exception:
         logger.exception("app.crashed view.init")
         logging.shutdown()
@@ -191,8 +190,6 @@ def main() -> None:
                 ticks=session.clock.tick,
                 reason=session.end_reason,
             )
-            view.close()
-            arcade.exit()
             view.close()
             arcade.exit()
 

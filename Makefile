@@ -99,9 +99,6 @@ verify: build
 		$(CONTAINER_IMAGE)
 
 # Local compile + bounded headless run (no container).
-run-headless: $(ARCADE_STAMP)
-	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
-		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
 # --- Testing (pytest + coverage) ---
 

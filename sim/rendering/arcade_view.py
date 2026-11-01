@@ -1085,12 +1085,11 @@ class ArcadeView(arcade.Window):
             self._draw_gender_census(session, left + 12, top - 34, width - 24)
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
-        # Box height gives each key its own row plus a dedicated slider row
-        # at the bottom, so nothing overlaps or clips against the window edge.
         h = 160
         box_bottom = _MARGIN
         box_top = box_bottom + h
         self._box(left, box_top, width, h, "Controls")
+
         lines = [
             ("SPACE", "start / restart"),
             ("P", "pause / resume"),
@@ -1098,36 +1097,15 @@ class ArcadeView(arcade.Window):
             ("Esc / Q", "quit"),
             ("Click", "inspect cell"),
         ]
-        # Stack keys from the top down with even spacing.
+
         y = box_top - 34
         for key, action in lines:
             self._text.draw(key, left + 12, y, _ACCENT, font_size=11, bold=True)
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
             y -= 20
 
-        # ---- Configurations button (clickable) ----
-        btn_w = width - 24
-        btn_h = 24
-        btn_x = left + 12
-        btn_y = y - 10
-        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = self._slider_rect is None and _point_in_rect(
-            self._last_mouse_x, self._last_mouse_y,
-            (btn_x, btn_y, btn_w, btn_h)
-        )
-        btn_color = _ACCENT if hover else _MUTED
-        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
-        arcade.draw_lbwh_rectangle_outline(
-            btn_x, btn_y, btn_w, btn_h, btn_color, 1,
-        )
-        self._text.draw(
-            "Configurations", btn_x + 8, btn_y + 7, btn_color, font_size=10,
-        )
-
-        # ---- Playback-speed slider (dedicated row at the bottom) ----
-        # Slows/speeds the *perceived* ticker only; sim time progression
-        # (tick_rate, clock.tick) is unchanged. Value comes from config.
-        slider_y = box_bottom + 14      # track, with padding above box edge
+        # ---- Configurations slider (own row at bottom) ----
+        slider_y = box_bottom + 10
         track_w = width - 24
         track_h = 6
         track_x = left + 12
@@ -1148,8 +1126,7 @@ class ArcadeView(arcade.Window):
         )
         self._text.draw(
             f"Speed {scale:.2f}x   (drag to change)",
-            left + 12, slider_y + 18,     # label above the track, below the last key
-            _MUTED, font_size=10,
+            left + 12, slider_y + 10, _MUTED, font_size=10,
         )
 
     def _draw_weather_census(self, session: GameSession, left: float, top: float,

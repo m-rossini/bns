@@ -1108,7 +1108,7 @@ class ArcadeView(arcade.Window):
         btn_x = left + 12
         btn_y = y - 10
         self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = self._slider_rect is None and self._point_in_rect(
+        hover = self._slider_rect is None and _point_in_rect(
             self._last_mouse_x, self._last_mouse_y,
             (btn_x, btn_y, btn_w, btn_h)
         )

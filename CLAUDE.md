@@ -3,7 +3,7 @@
 ## Ground Rules
 
 - Local skills take precedence over user/machine skills.
-- **Git skill**: [`skills/git.md`](./skills/git.md) — the required local git
+- **Git skill**: [`~/.claude/skills/git/SKILL.md`] — the required local git
   workflow. Never commit to `main` directly; always work on a branch or in a
   worktree. Base branch is `main` (never `master`). Finish with
   commit → push → PR → merge → clean → update `main`.
@@ -15,7 +15,7 @@
 - All tunables live in `sim/config.py`. Do not hardcode constants elsewhere.
 - Verify with `make test` (local, headless) and `make test-container`
   (in-container, headless) before opening a pull request. See
-  [`skills/container-test.md`](./skills/container-test.md).
+  [`~/.claude/skills/container-test/SKILL.md`].
 - Never commit the `.venv`, caches, or ad-hoc screenshot scripts.
 
 ## Documentation

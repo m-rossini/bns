@@ -109,10 +109,10 @@ def main() -> None:
         log_level=level,
         headless=os.environ.get("BEAN_HEADLESS", "0") == "1",
         tick_rate=config.tick_rate,
-        world=f"{config.width}x{config.height}",
-        cell_size=config.cell_size,
-        cols=config.cols,
-        rows=config.rows,
+        world=f"{config.world.width}x{config.world.height}",
+        cell_size=config.world.cell_size,
+        cols=config.world.cols,
+        rows=config.world.rows,
     )
 
     try:

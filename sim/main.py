@@ -159,10 +159,10 @@ def main() -> None:
     try:
         view = ArcadeView(
             session,
-            width=_SIDEBAR_WIDTH + int(config.width),
+            width=_SIDEBAR_WIDTH + int(config.world.width),
             # World height plus top/bottom margins so the drawn world is 1:1
             # (scale 1.0) at startup.
-            height=int(config.height) + 2 * 12,
+            height=int(config.world.height) + 2 * 12,
             title="Bean World",
             tick_rate=config.tick_rate,
         )

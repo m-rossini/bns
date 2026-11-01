@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from sim.config import BeanPlacementConfig
 from sim.domain.beans import Position
 from sim.interfaces.gender import GenderAssignment, IGenderController
-from sim.observability import get_logger, log_event
+from sim.observability import get_logger
 
 logger = get_logger("gender")
 
@@ -106,13 +106,6 @@ class GenderController(IGenderController):
             color = self._colors[gender]
             assignments.append((position, gender, color))
 
-        log_event(
-            logger,
-            "gender.assigned",
-            count=total,
-            counts=",".join(f"{g}={q}" for g, q in sorted(quotas.items())),
-            colors=",".join(f"{g}={c}" for g, c in sorted(self._colors.items())),
-        )
         return assignments
 
     @property

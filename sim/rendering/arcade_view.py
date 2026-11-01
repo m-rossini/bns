@@ -545,6 +545,19 @@ class ArcadeView(arcade.Window):
         line("debug", str(config.debug))
 
         y -= 20
+        # ---- Configurations button (clickable) ----
+        btn_w = width - 24
+        btn_h = 24
+        btn_x = left + 12
+        btn_y = y - 10
+        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
+        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        btn_color = _ACCENT if hover else _MUTED
+        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
+        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
+        y -= 30
+
         self._text.draw(
             "Press C or Esc to return to game   ·   Q to quit",
             x_left, y, _DIM, font_size=10,
@@ -1103,6 +1116,19 @@ class ArcadeView(arcade.Window):
             self._text.draw(key, left + 12, y, _ACCENT, font_size=11, bold=True)
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
             y -= 20
+        # ---- Configurations button (clickable) ----
+        btn_w = width - 24
+        btn_h = 24
+        btn_x = left + 12
+        btn_y = y - 10
+        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
+        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        btn_color = _ACCENT if hover else _MUTED
+        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
+        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
+        y -= 30
+
 
         # ---- Configurations slider (own row at bottom) ----
         slider_y = box_bottom + 10
@@ -1603,6 +1629,18 @@ class ConfigWindow(arcade.Window):
         self._text_draw(f"{ec.daynight_strategy}", x + 200, y, _TEXT, font_size=12)
         y -= lh
         self._text_draw("microclimate", x, y, _MUTED, font_size=12)
+        btn_w = width - 24
+        btn_h = 24
+        btn_x = left + 12
+        btn_y = y - 10
+        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
+        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        btn_color = _ACCENT if hover else _MUTED
+        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
+        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
+        y -= 30
+
         self._text_draw(f"{ec.microclimate}", x + 200, y, _TEXT, font_size=12)
         y -= lh
         self._text_draw("temperature_gradient", x, y, _MUTED, font_size=12)

@@ -30,7 +30,9 @@ from typing import Dict, Optional, Tuple
 import arcade
 
 from sim.components import GameSession, GameState
+from sim.config import SimulationConfig
 from sim.domain.visuals import SeasonPalette, SkyPalette
+from sim.domain.world import World
 from sim.rendering.layout import WorldLayout, build_layout
 
 logger = logging.getLogger("bean.ui")

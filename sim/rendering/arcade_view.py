@@ -30,7 +30,6 @@ from typing import Dict, Optional, Tuple
 import arcade
 
 from sim.components import GameSession, GameState
-from sim.config import SimulationConfig
 from sim.domain.visuals import SeasonPalette, SkyPalette
 from sim.rendering.layout import WorldLayout, build_layout
 
@@ -170,11 +169,9 @@ class ArcadeView(arcade.Window):
         height: int = 800,
         title: str = "Bean World",
         tick_rate: float = 30.0,
-        sim_config: SimulationConfig | None = None,
     ):
         super().__init__(width, height, title, resizable=True)
         self.session = session
-        self.sim_config = sim_config
         self._tick_rate = max(tick_rate, 0.001)
         self._input = None
         self._text = _TextCache()
@@ -372,7 +369,7 @@ class ArcadeView(arcade.Window):
     def draw_config_screen(self, session: GameSession) -> None:
         """Full-screen configuration overview grouped by topic."""
         self.clear((8, 12, 20))
-        config = self.sim_config
+        config = self.config
         sw, sh = self._viewport_size()
 
         self._draw_title_panel(

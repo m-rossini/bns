@@ -165,7 +165,6 @@ def main() -> None:
             height=int(config.world.height) + 2 * 12,
             title="Bean World",
             tick_rate=config.tick_rate,
-            config=config,
         )
     except Exception:
         logger.exception("app.crashed view.init")
@@ -190,6 +189,8 @@ def main() -> None:
                 ticks=session.clock.tick,
                 reason=session.end_reason,
             )
+            view.close()
+            arcade.exit()
             view.close()
             arcade.exit()
 

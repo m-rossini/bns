@@ -200,6 +200,10 @@ class ArcadeView(arcade.Window):
         self._selected_cell: Optional[Tuple[int, int]] = None
         self._slider_rect: Optional[Tuple[float, float, float, float]] = None
         self._slider_dragging = False
+        self._config_open = False
+        self._config_rect: Optional[Tuple[float, float, float, float]] = None
+        self._last_mouse_x: float = 0.0
+        self._last_mouse_y: float = 0.0
         self._census_cache: Optional[tuple] = None
         self._census_counts: Dict[str, int] = {}
 
@@ -369,7 +373,7 @@ class ArcadeView(arcade.Window):
     def draw_config_screen(self, session: GameSession) -> None:
         """Full-screen configuration overview grouped by topic."""
         self.clear((8, 12, 20))
-        config = self.config
+        config = self.sim_config
         sw, sh = self._viewport_size()
 
         self._draw_title_panel(
@@ -1098,6 +1102,25 @@ class ArcadeView(arcade.Window):
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
             y -= 20
 
+        # ---- Configurations button (clickable) ----
+        btn_w = width - 24
+        btn_h = 24
+        btn_x = left + 12
+        btn_y = y - 10
+        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
+        hover = self._slider_rect is None and self._point_in_rect(
+            self._last_mouse_x, self._last_mouse_y,
+            (btn_x, btn_y, btn_w, btn_h)
+        )
+        btn_color = _ACCENT if hover else _MUTED
+        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(
+            btn_x, btn_y, btn_w, btn_h, btn_color, 1,
+        )
+        self._text.draw(
+            "Configurations", btn_x + 8, btn_y + 7, btn_color, font_size=10,
+        )
+
         # ---- Playback-speed slider (dedicated row at the bottom) ----
         # Slows/speeds the *perceived* ticker only; sim time progression
         # (tick_rate, clock.tick) is unchanged. Value comes from config.
@@ -1300,6 +1323,8 @@ class ArcadeView(arcade.Window):
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         sx, sy = self._mouse_to_screen(x, y)
+        self._last_mouse_x = sx
+        self._last_mouse_y = sy
         if self._slider_dragging and self._slider_rect is not None:
             self._apply_slider_scale(sx)
             return
@@ -1317,10 +1342,13 @@ class ArcadeView(arcade.Window):
         if self.session.state not in (GameState.PLAYING, GameState.PAUSED):
             return
         sx, sy = self._mouse_to_screen(x, y)
-        if self._slider_hit(sx, sy):
-            self._slider_dragging = True
-            self._apply_slider_scale(sx)
-            return
+        # Config button (in Controls box)
+        if self._config_rect is not None:
+            lx, ly, lw, lh = self._config_rect
+            if lx <= sx <= lx + lw and ly <= sy <= ly + lh:
+                self._config_open = not self._config_open
+                self.session.state = GameState.CONFIG if self._config_open else GameState.PLAYING
+                return
         self._slider_dragging = False
         world_xy = self._screen_to_world(sx, sy)
         world = self.session.world

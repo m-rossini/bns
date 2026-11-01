@@ -2,14 +2,15 @@
 
 ## Overview
 
-This skill provides local git operations for the Bean World simulation project. It ensures that git repositories are properly managed with the main branch as the base, and that work is done via new branches or worktrees to never modify the main branch directly.
-There is no GH Command, so you first try the MCP.
+This skill provides local git operations for any project. It ensures that git repositories are properly managed with the main branch as the base, and that work is done via new branches or worktrees to never modify the main branch directly.
+
+If there is no `gh` CLI tool available, the MCP GitHub tools should be used for pull request operations.
 
 ## Key Principles
 
 1. **Main Branch Preservation**: The main branch is never modified directly. All work is done on new branches or worktrees.
 2. **Branch Strategy**: If work is large, a worktree is suggested; otherwise, a branch is created.
-3. **Cleanup**: After work is complete, local merge and worktree branches are cleaned up upon user request
+3. **Cleanup**: After work is complete, local merge and worktree branches are cleaned up upon user request.
 4. **Full Lifecycle**: The skill handles the complete workflow: commit → push → PR → merge → clean → update main.
 
 ## Workflow

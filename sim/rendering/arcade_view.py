@@ -171,9 +171,11 @@ class ArcadeView(arcade.Window):
         height: int = 800,
         title: str = "Bean World",
         tick_rate: float = 30.0,
+        sim_config: SimulationConfig | None = None,
     ):
         super().__init__(width, height, title, resizable=True)
         self.session = session
+        self.sim_config = sim_config
         self._tick_rate = max(tick_rate, 0.001)
         self._input = None
         self._text = _TextCache()

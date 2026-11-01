@@ -165,6 +165,7 @@ def main() -> None:
             height=int(config.world.height) + 2 * 12,
             title="Bean World",
             tick_rate=config.tick_rate,
+            sim_config=config,
         )
     except Exception:
         logger.exception("app.crashed view.init")

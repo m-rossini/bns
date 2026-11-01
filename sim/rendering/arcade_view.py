@@ -200,7 +200,6 @@ class ArcadeView(arcade.Window):
         self._selected_cell: Optional[Tuple[int, int]] = None
         self._slider_rect: Optional[Tuple[float, float, float, float]] = None
         self._slider_dragging = False
-        self._config_open = False
         self._config_rect: Optional[Tuple[float, float, float, float]] = None
         self._last_mouse_x: float = 0.0
         self._last_mouse_y: float = 0.0
@@ -1277,8 +1276,6 @@ class ArcadeView(arcade.Window):
             self.draw_playing(self.session)
         elif state == GameState.PAUSED:
             self.draw_paused(self.session)
-        elif state == GameState.CONFIG:
-            self.draw_config_screen(self.session)
         elif state == GameState.END:
             self.draw_end_screen(self.session)
         # pyglet's Window.draw() calls flip() (glXSwapBuffers) after on_draw.
@@ -1346,8 +1343,7 @@ class ArcadeView(arcade.Window):
         if self._config_rect is not None:
             lx, ly, lw, lh = self._config_rect
             if lx <= sx <= lx + lw and ly <= sy <= ly + lh:
-                self._config_open = not self._config_open
-                self.session.state = GameState.CONFIG if self._config_open else GameState.PLAYING
+                ConfigWindow(self.session, self.session.world, self.sim_config)
                 return
         self._slider_dragging = False
         world_xy = self._screen_to_world(sx, sy)
@@ -1378,3 +1374,285 @@ class ArcadeView(arcade.Window):
 def _season_color(palette: SeasonPalette, ambient: float):
     """Readable text colour derived from the season ground colour."""
     return _mix(_shade(palette.ground, 0.6 + 0.4 * ambient), (255, 255, 255), 0.45)
+
+class ConfigWindow(arcade.Window):
+    """A separate window showing all simulation configuration parameters."""
+
+    def __init__(self, session: GameSession, world: World, config: SimulationConfig):
+        super().__init__(width=900, height=700, title="Bean World - Configuration")
+        self.session = session
+        self.config = config
+        self._text_cache: Dict[tuple, "arcade.Text"] = {}
+
+    def on_draw(self) -> None:
+        self.clear((8, 12, 20))
+        self._draw_config_screen()
+
+    def on_key_press(self, symbol: int, modifiers: int) -> None:
+        if symbol == arcade.key.ESCAPE or symbol == arcade.key.Q:
+            self.close()
+
+    def _text_draw(
+        self,
+        text: str,
+        x: float,
+        y: float,
+        color,
+        font_size: float = 12,
+        anchor_x: str = "left",
+        anchor_y: str = "baseline",
+        bold: bool = False,
+    ) -> "arcade.Text":
+        text = str(text)
+        color = tuple(color)
+        key = (text, color, float(font_size), anchor_x, anchor_y, bold)
+        item = self._text_cache.get(key)
+        if item is None:
+            if len(self._text_cache) >= 512:
+                self._text_cache.clear()
+            item = arcade.Text(
+                text, x, y, color=color, font_size=font_size,
+                anchor_x=anchor_x, anchor_y=anchor_y, bold=bold,
+            )
+            self._text_cache[key] = item
+        else:
+            item.x = x
+            item.y = y
+        item.draw()
+        return item
+
+    def _draw_config_screen(self) -> None:
+        sw, sh = self.width, self.height
+        cfg = self.config
+        x = 30
+        y = sh - 30
+        lh = 22
+
+        def section(title: str):
+            nonlocal y
+            self._text_draw(title.upper(), x, y, _ACCENT, font_size=14, bold=True)
+            y -= 26
+
+        def line(label: str, value, color=_TEXT, font_size: int = 12):
+            nonlocal y
+            self._text_draw(f"{label}:", x, y, _MUTED, font_size=font_size)
+            self._text_draw(str(value), x + 220, y, color, font_size=font_size)
+            y -= lh
+
+        wc = cfg.world
+        section("WorldConfig")
+        self._text_draw("width", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.width}", x + 220, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("height", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.height}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("cell_size", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.cell_size}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("orientation", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.orientation}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("wrap_around", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.wrap_around}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("cols", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.cols}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("rows", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wc.rows}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        tc = cfg.time
+        section("TimeConfig")
+        self._text_draw("ticks_per_day", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.ticks_per_day}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("ticks_per_season", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.ticks_per_season}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("start_tick", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.start_tick}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("initial_time_scale", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.initial_time_scale}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("time_scale_min", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.time_scale_min}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("time_scale_max", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{tc.time_scale_max}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        dn = config.daynight
+        section("DayNightConfig")
+        self._text_draw("sun_speed", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.sun_speed}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("moon_speed", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.moon_speed}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("moon_phase_offset", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.moon_phase_offset}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("local_shading", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.local_shading}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("shading_scale_x", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.shading_scale_x}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("shading_scale_y", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.shading_scale_y}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("night_threshold", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.night_threshold}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("twilight_threshold", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{dn.twilight_threshold}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        wcfg = config.weather
+        section("WeatherConfig")
+        self._text_draw("change_interval", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.change_interval}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("front_count", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.front_count}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("background_coverage", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.background_coverage}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("front_radius_min", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.front_radius_min_cells}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("front_radius_max", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.front_radius_max_cells}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("front_drift_cells", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.front_drift_cells}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("background_patch_scale", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{wcfg.background_patch_scale}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        bcfg = config.barriers
+        section("BarrierConfig")
+        self._text_draw("color", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bcfg.color}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("max_span_cells", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bcfg.max_span_cells}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("count", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bcfg.count}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("seed", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bcfg.seed}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("margin_cells", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bcfg.margin_cells}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        bpc = config.bean_placement
+        section("BeanPlacementConfig")
+        self._text_draw("strategy_name", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.strategy_name}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("density_tier", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.density_tier}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("variance", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.variance}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("seed", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.seed}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("bean_radius", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.bean_radius}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("gender_ratios", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.gender_ratios}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("gender_colors", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.gender_colors}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("poisson_disc.base_spacing_scale", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.poisson_disc.base_spacing_scale}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("poisson_disc.max_retry_limit", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.poisson_disc.max_retry_limit}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("symmetrical.symmetry_axes", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.symmetrical.symmetry_axes}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("colony_cluster.area_per_cluster", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.colony_cluster.area_per_cluster}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("colony_cluster.cluster_spread_sigma", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.colony_cluster.cluster_spread_sigma}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("center_to_border.falloff_exponent", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.center_to_border.falloff_exponent}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("border_to_center.ring_thickness_ratio", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.border_to_center.ring_thickness_ratio}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("linear_gradient.direction_angle", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.linear_gradient.direction_angle}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("linear_gradient.bias_strength", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.linear_gradient.bias_strength}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("resource_gradient.noise_frequency", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.resource_gradient.noise_frequency}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("resource_gradient.threshold", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{bpc.resource_gradient.threshold}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        ec = config.environment
+        section("EnvironmentConfig")
+        self._text_draw("weather_strategy", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.weather_strategy}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("season_strategy", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.season_strategy}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("daynight_strategy", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.daynight_strategy}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("microclimate", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.microclimate}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("temperature_gradient", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.temperature_gradient}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("humidity_gradient", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.humidity_gradient}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("pressure_gradient", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.pressure_gradient}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("light_gradient", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{ec.light_gradient}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        lc = config.logging
+        section("LoggingConfig")
+        self._text_draw("level", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{lc.level}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("business", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{lc.business}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("readings", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{lc.readings}", x + 200, y, _TEXT, font_size=12)
+        y -= lh
+        self._text_draw("readings_interval", x, y, _MUTED, font_size=12)
+        self._text_draw(f"{lc.readings_interval}", x + 200, y, _TEXT, font_size=12)
+        y -= 30
+
+        self._text_draw(
+            "Press ESC or Q to close", x_left, y, _DIM, font_size=10,
+        )
+

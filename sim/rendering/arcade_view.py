@@ -551,7 +551,7 @@ class ArcadeView(arcade.Window):
         btn_x = left + 12
         btn_y = y - 10
         self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
         btn_color = _ACCENT if hover else _MUTED
         arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
         arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
@@ -1122,7 +1122,7 @@ class ArcadeView(arcade.Window):
         btn_x = left + 12
         btn_y = y - 10
         self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
         btn_color = _ACCENT if hover else _MUTED
         arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
         arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
@@ -1634,7 +1634,7 @@ class ConfigWindow(arcade.Window):
         btn_x = left + 12
         btn_y = y - 10
         self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = self._point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
+        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
         btn_color = _ACCENT if hover else _MUTED
         arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
         arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)

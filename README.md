@@ -468,7 +468,9 @@ Example (`LOG_LEVEL=DEBUG`):
   It is opened from the `C` key or the sidebar button, guarded against
   duplicates, and returns the session to `PLAYING` when closed. Its contents
   are generated from the config dataclasses (`_config_rows`), so a new field
-  appears automatically instead of being forgotten.
+  appears automatically instead of being forgotten. Both windows claim
+  Arcade's global active window while drawing their own frame, and closing
+  the config window hands it back to the main window.
 - **Text** — all text uses cached `arcade.Text` objects. `arcade.draw_text` is
   never called; it is extremely slow and emits a `PerformanceWarning`.
 - **Pointer mapping** — screen layout uses the active viewport size and mouse

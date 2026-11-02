@@ -1174,6 +1174,10 @@ class ArcadeView(arcade.Window):
     # Arcade window events
     # ------------------------------------------------------------------
     def on_draw(self) -> None:
+        # Two windows can exist at once (main + config). Arcade's draw calls
+        # use the module-global active window, so each window claims it while
+        # drawing its own frame.
+        arcade.set_window(self)
         self._ensure_layout()
         state = self.session.state
         if state in (GameState.START, GameState.END):
@@ -1213,6 +1217,9 @@ class ArcadeView(arcade.Window):
 
     def _on_config_closed(self) -> None:
         self._config_window = None
+        # Closing the config window clears Arcade's global "active window";
+        # restore the main window so the next frame has a draw target.
+        arcade.set_window(self)
         if self.session.state == GameState.CONFIG:
             self.session.state = GameState.PLAYING
 
@@ -1328,6 +1335,7 @@ class ConfigWindow(arcade.Window):
         self._text_cache: Dict[tuple, "arcade.Text"] = {}
 
     def on_draw(self) -> None:
+        arcade.set_window(self)
         self.clear((8, 12, 20))
         self._draw_config_screen()
 

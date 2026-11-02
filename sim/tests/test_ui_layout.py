@@ -118,3 +118,29 @@ def test_config_seasons_are_rendered_per_entry():
     keys = [key for key, _ in rows]
     assert "name" in keys
     assert "sun_intensity" in keys
+
+
+def test_closing_config_window_restores_the_active_window(monkeypatch):
+    """Arcade clears its global window on close; the main window must claim it.
+
+    Without this, the first frame after closing the config window raises
+    ``RuntimeError: No window is active``.
+    """
+    import sim.rendering.arcade_view as av
+
+    claimed = []
+    monkeypatch.setattr(av.arcade, "set_window", claimed.append)
+
+    class _Session:
+        state = av.GameState.CONFIG
+
+    class _View:
+        _config_window = object()
+        session = _Session()
+
+    view = _View()
+    av.ArcadeView._on_config_closed(view)
+
+    assert claimed == [view], "main window was not made active again"
+    assert view._config_window is None
+    assert view.session.state == av.GameState.PLAYING

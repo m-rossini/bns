@@ -374,7 +374,9 @@ Screens:
 - **PAUSED** — playing scene dimmed with a `PAUSED` overlay.
 - **CONFIG** — the world stays visible; a separate `ConfigWindow` lists every
   `SimulationConfig` value, grouped by topic and generated from the config
-  dataclasses. Closing it returns to `PLAYING`.
+  dataclasses. Both windows claim Arcade's global active window while they
+  draw, and closing the config window hands it back to the main window before
+  returning to `PLAYING`.
 - **END** — `GAME OVER`, reason, restart hint.
 
 Layout:

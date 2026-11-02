@@ -25,7 +25,9 @@ Rendering contract
 
 import logging
 import math
-from typing import Dict, Optional, Tuple
+from dataclasses import fields, is_dataclass
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 import arcade
 
@@ -71,6 +73,84 @@ _WEATHER_DIM = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow"
 _MARGIN = 12.0
 _GAP = 8.0
 _SIDEBAR_MIN = 300.0
+
+# Height of the bottom-anchored "Controls" box: title, config button, five
+# key rows, then the playback-speed slider in its own band. The sidebar
+# reserves exactly this much so nothing can ever overlap it.
+_CONTROLS_BOX_H = (
+    32        # title band
+    + 24 + 14  # config button + gap
+    + 5 * 20   # key rows
+    + 12       # gap before slider
+    + 34       # slider label + track
+)
+
+_KEY_ROW_H = 20.0
+_KEY_COUNT = 5
+_BUTTON_H = 24.0
+_SLIDER_TRACK_H = 6.0
+_SLIDER_THUMB_W = 10.0
+
+
+def _format_config_value(value) -> str:
+    """One-line, readable rendering of a config value."""
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}: {_format_config_value(v)}" for k, v in value.items()) + "}"
+    if isinstance(value, (list, tuple)):
+        inner = ", ".join(_format_config_value(v) for v in value)
+        return f"[{inner}]" if isinstance(value, list) else f"({inner})"
+    if value is None:
+        return "none"
+    return str(value)
+
+
+def _clip(text: str, limit: int) -> str:
+    """Trim a rendered value so it cannot bleed into the next column."""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _config_rows(obj) -> List[Tuple[str, str]]:
+    """Flatten a config dataclass into ``(key, rendered_value)`` rows."""
+    rows: List[Tuple[str, str]] = []
+    for field_info in fields(obj):
+        value = getattr(obj, field_info.name)
+        if is_dataclass(value):
+            for key, text in _config_rows(value):
+                rows.append((f"{field_info.name}.{key}", text))
+        else:
+            rows.append((field_info.name, _format_config_value(value)))
+    return rows
+
+
+def controls_geometry(left: float, width: float, box_bottom: float):
+    """Layout of the bottom-anchored Controls box.
+
+    Returns ``(box_top, button_rect, keys_top, slider_rect)``. The bands are
+    computed from one place so the drawing code and any hit-testing (or test)
+    cannot drift apart: the button never touches the keys, and the keys never
+    touch the slider.
+    """
+    box_top = box_bottom + _CONTROLS_BOX_H
+    button_rect = (
+        left + 12.0,
+        box_top - 32.0 - _BUTTON_H,
+        width - 24.0,
+        _BUTTON_H,
+    )
+    keys_top = button_rect[1] - 16.0
+    slider_rect = (
+        left + 12.0,
+        box_bottom + 12.0,
+        width - 24.0,
+        _SLIDER_TRACK_H,
+    )
+    return box_top, button_rect, keys_top, slider_rect
 _SIDEBAR_MAX = 360.0
 _TEXT_CACHE_LIMIT = 1024
 
@@ -205,6 +285,7 @@ class ArcadeView(arcade.Window):
         self._slider_rect: Optional[Tuple[float, float, float, float]] = None
         self._slider_dragging = False
         self._config_rect: Optional[Tuple[float, float, float, float]] = None
+        self._config_window: Optional["ConfigWindow"] = None
         self._last_mouse_x: float = 0.0
         self._last_mouse_y: float = 0.0
         self._census_cache: Optional[tuple] = None
@@ -371,196 +452,6 @@ class ArcadeView(arcade.Window):
             f"Reason: {session.end_reason or 'ended'}",
             hint="SPACE to restart   ·   Esc to quit",
             accent=(240, 96, 96),
-        )
-
-    def draw_config_screen(self, session: GameSession) -> None:
-        """Full-screen configuration overview grouped by topic."""
-        self.clear((8, 12, 20))
-        config = self.sim_config
-        sw, sh = self._viewport_size()
-
-        self._draw_title_panel(
-            "CONFIGURATION",
-            "Press C or Esc to return to game   ·   Q to quit",
-            hint=None,
-            accent=_ACCENT,
-        )
-
-        y = sh - 120
-        x_left = _MARGIN
-        x_right = sw - _MARGIN - 400
-
-        def section(title: str):
-            nonlocal y
-            self._text.draw(
-                title, x_left, y, _ACCENT, font_size=14, bold=True,
-            )
-            y -= 22
-
-        def line(key: str, value, color=_TEXT, font_size: int = 11):
-            nonlocal y
-            self._text.draw(
-                f"{key}:", x_left, y, _MUTED, font_size=font_size,
-            )
-            self._text.draw(
-                str(value), x_left + 150, y, color, font_size=font_size,
-            )
-            y -= 18
-
-        # ---- WorldConfig ----
-        wc = config.world
-        section("WorldConfig")
-        line("width", wc.width)
-        line("height", wc.height)
-        line("cell_size", wc.cell_size)
-        line("orientation", str(wc.orientation))
-        line("wrap_around", str(wc.wrap_around))
-        line("cols", wc.cols)
-        line("rows", wc.rows)
-        y -= 10
-
-        # ---- TimeConfig ----
-        tc = config.time
-        section("TimeConfig")
-        line("ticks_per_day", tc.ticks_per_day)
-        line("ticks_per_season", tc.ticks_per_season)
-        line("start_tick", tc.start_tick)
-        line("initial_time_scale", tc.initial_time_scale)
-        line("time_scale_min", tc.time_scale_min)
-        line("time_scale_max", tc.time_scale_max)
-        y -= 10
-
-        # ---- Seasons ----
-        section("Seasons")
-        for s in config.seasons:
-            line(f"{s.name}", f"ground={s.ground_color}", _TEXT, font_size=10)
-            line(
-                "  base_temp", f"{s.base_temperature} ± {s.temperature_swing} °C",
-                _TEXT, font_size=9,
-            )
-            line(
-                "  humidity/pressure", f"{s.humidity:.0%} / {s.pressure_hpa} hPa",
-                _TEXT, font_size=9,
-            )
-            line(
-                "  sun/daylight", f"{s.sun_intensity:.2f} / {s.daylight_fraction:.2f}",
-                _TEXT, font_size=9,
-            )
-            line(
-                "  ground_meaning", s.ground_meaning, _DIM, font_size=9,
-            )
-            y -= 6
-        y -= 4
-
-        # ---- DayNightConfig ----
-        dn = config.daynight
-        section("DayNightConfig")
-        line("sun_speed", dn.sun_speed)
-        line("moon_speed", dn.moon_speed)
-        line("moon_phase_offset", dn.moon_phase_offset)
-        line("local_shading", dn.local_shading)
-        line("night_threshold", dn.night_threshold)
-        line("twilight_threshold", dn.twilight_threshold)
-        y -= 10
-
-        # ---- WeatherConfig ----
-        wx_cfg = config.weather
-        section("WeatherConfig")
-        line("change_interval", wx_cfg.change_interval)
-        line("front_count", wx_cfg.front_count)
-        line("background_coverage", wx_cfg.background_coverage)
-        line("front_radius_min", wx_cfg.front_radius_min_cells)
-        line("front_radius_max", wx_cfg.front_radius_max_cells)
-        y -= 10
-
-        # ---- BarrierConfig ----
-        bc = config.barriers
-        section("BarrierConfig")
-        line("color", str(bc.color))
-        line("max_span_cells", bc.max_span_cells)
-        line("count", bc.count)
-        line("seed", bc.seed)
-        line("margin_cells", bc.margin_cells)
-        y -= 10
-
-        # ---- BeanPlacementConfig ----
-        bpc = config.bean_placement
-        section("BeanPlacementConfig")
-        line("strategy_name", bpc.strategy_name)
-        line("density_tier", bpc.density_tier)
-        line("variance", bpc.variance)
-        line("seed", bpc.seed)
-        line("bean_radius", bpc.bean_radius)
-        line("gender_ratios", str(bpc.gender_ratios))
-        line("gender_colors", str(bpc.gender_colors))
-        y -= 6
-
-        # Per-strategy configs
-        section("Placement Strategy Configs")
-        pd = bpc.poisson_disc
-        line("poisson_disc.base_spacing_scale", pd.base_spacing_scale, font_size=10)
-        line("poisson_disc.max_retry_limit", pd.max_retry_limit, font_size=10)
-        sy = bpc.symmetrical
-        line("symmetrical.symmetry_axes", sy.symmetry_axes, font_size=10)
-        cc = bpc.colony_cluster
-        line("colony_cluster.area_per_cluster", cc.area_per_cluster, font_size=10)
-        line("colony_cluster.cluster_spread_sigma", cc.cluster_spread_sigma, font_size=10)
-        cb = bpc.center_to_border
-        line("center_to_border.falloff_exponent", cb.falloff_exponent, font_size=10)
-        bb = bpc.border_to_center
-        line("border_to_center.ring_thickness_ratio", bb.ring_thickness_ratio, font_size=10)
-        lg = bpc.linear_gradient
-        line("linear_gradient.direction_angle", lg.direction_angle, font_size=10)
-        line("linear_gradient.bias_strength", lg.bias_strength, font_size=10)
-        rg = bpc.resource_gradient
-        line("resource_gradient.noise_frequency", rg.noise_frequency, font_size=10)
-        line("resource_gradient.threshold", rg.threshold, font_size=10)
-        y -= 10
-
-        # ---- EnvironmentConfig ----
-        ec = config.environment
-        section("EnvironmentConfig")
-        line("weather_strategy", ec.weather_strategy)
-        line("season_strategy", ec.season_strategy)
-        line("daynight_strategy", ec.daynight_strategy)
-        line("microclimate", ec.microclimate)
-        line("temperature_gradient", str(ec.temperature_gradient))
-        line("humidity_gradient", str(ec.humidity_gradient))
-        line("pressure_gradient", str(ec.pressure_gradient))
-        line("light_gradient", str(ec.light_gradient))
-        y -= 10
-
-        # ---- LoggingConfig ----
-        lg_cfg = config.logging
-        section("LoggingConfig")
-        line("level", lg_cfg.level)
-        line("business", str(lg_cfg.business))
-        line("readings", str(lg_cfg.readings))
-        line("readings_interval", lg_cfg.readings_interval)
-        y -= 10
-
-        # ---- SimulationConfig ----
-        section("SimulationConfig")
-        line("tick_rate", config.tick_rate)
-        line("debug", str(config.debug))
-
-        y -= 20
-        # ---- Configurations button (clickable) ----
-        btn_w = width - 24
-        btn_h = 24
-        btn_x = left + 12
-        btn_y = y - 10
-        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
-        btn_color = _ACCENT if hover else _MUTED
-        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
-        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
-        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
-        y -= 30
-
-        self._text.draw(
-            "Press C or Esc to return to game   ·   Q to quit",
-            x_left, y, _DIM, font_size=10,
         )
 
     # ------------------------------------------------------------------
@@ -889,7 +780,7 @@ class ArcadeView(arcade.Window):
 
         left = _MARGIN
         width = self._sidebar_width() - _MARGIN
-        controls_h = 96
+        controls_h = _CONTROLS_BOX_H
         limit = _MARGIN + controls_h + _GAP
         cursor = sh - _MARGIN
 
@@ -1098,11 +989,31 @@ class ArcadeView(arcade.Window):
             self._draw_gender_census(session, left + 12, top - 34, width - 24)
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
-        h = 160
+        # Vertical order, top to bottom: button, keys, slider. Each block owns
+        # a reserved band (see `controls_geometry`) so no two widgets can ever
+        # share pixels.
         box_bottom = _MARGIN
-        box_top = box_bottom + h
-        self._box(left, box_top, width, h, "Controls")
+        box_top, button_rect, keys_top, slider_rect = controls_geometry(
+            left, width, box_bottom,
+        )
+        self._box(left, box_top, width, _CONTROLS_BOX_H, "Controls")
 
+        # ---- Configurations button: first row under the title ----
+        btn_x, btn_y, btn_w, btn_h = button_rect
+        self._config_rect = button_rect
+        hover = _point_in_rect(
+            self._last_mouse_x, self._last_mouse_y, self._config_rect,
+        )
+        btn_color = _ACCENT if hover else _MUTED
+        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
+        arcade.draw_lbwh_rectangle_outline(
+            btn_x, btn_y, btn_w, btn_h, btn_color, 1,
+        )
+        self._text.draw(
+            "Configurations", btn_x + 8, btn_y + 7, btn_color, font_size=10,
+        )
+
+        # ---- Key bindings, below the button ----
         lines = [
             ("SPACE", "start / restart"),
             ("P", "pause / resume"),
@@ -1110,49 +1021,40 @@ class ArcadeView(arcade.Window):
             ("Esc / Q", "quit"),
             ("Click", "inspect cell"),
         ]
-
-        y = box_top - 34
+        y = keys_top
         for key, action in lines:
             self._text.draw(key, left + 12, y, _ACCENT, font_size=11, bold=True)
             self._text.draw(action, left + 96, y, _MUTED, font_size=11)
-            y -= 20
-        # ---- Configurations button (clickable) ----
-        btn_w = width - 24
-        btn_h = 24
-        btn_x = left + 12
-        btn_y = y - 10
-        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
-        btn_color = _ACCENT if hover else _MUTED
-        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
-        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
-        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
-        y -= 30
+            y -= _KEY_ROW_H
 
+        # ---- Playback-speed slider: own band at the very bottom ----
+        track_x, slider_y, track_w, track_h = slider_rect
+        self._slider_rect = slider_rect
 
-        # ---- Configurations slider (own row at bottom) ----
-        slider_y = box_bottom + 10
-        track_w = width - 24
-        track_h = 6
-        track_x = left + 12
-        thumb_w = 10
         scale = session.clock.time_scale
         fraction = (scale - _TIME_SCALE_MIN) / max(1e-6, _TIME_SCALE_MAX - _TIME_SCALE_MIN)
         fraction = max(0.0, min(1.0, fraction))
-        thumb_x = track_x + fraction * track_w - thumb_w / 2.0
-        self._slider_rect = (track_x, slider_y, track_w, track_h)
+        thumb_x = track_x + fraction * track_w - _SLIDER_THUMB_W / 2.0
 
-        arcade.draw_lbwh_rectangle_filled(track_x, slider_y, track_w, track_h, _SLIDER_TRACK)
+        # Label sits above the track, inside the slider band only.
+        self._text.draw(
+            f"Speed {scale:.2f}x  (drag)",
+            track_x, slider_y + track_h + 6, _MUTED, font_size=10,
+        )
+        arcade.draw_lbwh_rectangle_filled(
+            track_x, slider_y, track_w, track_h, _SLIDER_TRACK,
+        )
         filled = fraction * track_w
         if filled > 0:
-            arcade.draw_lbwh_rectangle_filled(track_x, slider_y, filled, track_h, _SLIDER_TRACK_FILLED)
-        arcade.draw_lbwh_rectangle_filled(thumb_x, slider_y, thumb_w, track_h, _SLIDER_THUMB)
-        arcade.draw_lbwh_rectangle_outline(
-            thumb_x, slider_y, thumb_w, track_h, _SLIDER_THUMB_EDGE, 1,
+            arcade.draw_lbwh_rectangle_filled(
+                track_x, slider_y, filled, track_h, _SLIDER_TRACK_FILLED,
+            )
+        arcade.draw_lbwh_rectangle_filled(
+            thumb_x, slider_y - 2, _SLIDER_THUMB_W, track_h + 4, _SLIDER_THUMB,
         )
-        self._text.draw(
-            f"Speed {scale:.2f}x   (drag to change)",
-            left + 12, slider_y + 10, _MUTED, font_size=10,
+        arcade.draw_lbwh_rectangle_outline(
+            thumb_x, slider_y - 2, _SLIDER_THUMB_W, track_h + 4,
+            _SLIDER_THUMB_EDGE, 1,
         )
 
     def _draw_weather_census(self, session: GameSession, left: float, top: float,
@@ -1283,6 +1185,10 @@ class ArcadeView(arcade.Window):
             self.draw_playing(self.session)
         elif state == GameState.PAUSED:
             self.draw_paused(self.session)
+        elif state == GameState.CONFIG:
+            # Keep the world visible behind the separate config window.
+            self.draw_playing(self.session)
+            self._open_config_window()
         elif state == GameState.END:
             self.draw_end_screen(self.session)
         # pyglet's Window.draw() calls flip() (glXSwapBuffers) after on_draw.
@@ -1295,6 +1201,21 @@ class ArcadeView(arcade.Window):
             "event=ui.window_resized width=%s height=%s", width, height
         )
 
+    def _open_config_window(self) -> None:
+        """Open the config window once; ignore repeated requests."""
+        if self._config_window is not None:
+            return
+        self.session.state = GameState.CONFIG
+        self._config_window = ConfigWindow(
+            self.session, self.session.world, self.sim_config,
+            on_closed=self._on_config_closed,
+        )
+
+    def _on_config_closed(self) -> None:
+        self._config_window = None
+        if self.session.state == GameState.CONFIG:
+            self.session.state = GameState.PLAYING
+
     def _slider_hit(self, sx: float, sy: float) -> bool:
         if self._slider_rect is None:
             return False
@@ -1304,8 +1225,11 @@ class ArcadeView(arcade.Window):
         fraction = max(0.0, min(1.0, fraction))
         thumb_w = 10
         thumb_x = lx + fraction * lw - thumb_w / 2.0
-        thumb_rect = (thumb_x, ly - 2, thumb_w, lh + 4)
-        return _point_in_rect(sx, sy, (lx, ly, lw, lh)) or _point_in_rect(sx, sy, thumb_rect)
+        # Generous vertical band so the thin track is easy to grab; it stays
+        # inside the slider's own row and never reaches the button above.
+        track = (lx, ly - 8, lw, lh + 16)
+        thumb_rect = (thumb_x, ly - 8, thumb_w, lh + 16)
+        return _point_in_rect(sx, sy, track) or _point_in_rect(sx, sy, thumb_rect)
 
     def _slider_scale_from_x(self, sx: float) -> float:
         if self._slider_rect is None:
@@ -1346,12 +1270,17 @@ class ArcadeView(arcade.Window):
         if self.session.state not in (GameState.PLAYING, GameState.PAUSED):
             return
         sx, sy = self._mouse_to_screen(x, y)
-        # Config button (in Controls box)
-        if self._config_rect is not None:
-            lx, ly, lw, lh = self._config_rect
-            if lx <= sx <= lx + lw and ly <= sy <= ly + lh:
-                ConfigWindow(self.session, self.session.world, self.sim_config)
-                return
+        # Config button (in Controls box): opens the separate config window.
+        if self._config_rect is not None and _point_in_rect(
+            sx, sy, self._config_rect
+        ):
+            self._open_config_window()
+            return
+        # Playback-speed slider: press anywhere on the track starts a drag.
+        if self._slider_hit(sx, sy):
+            self._slider_dragging = True
+            self._apply_slider_scale(sx)
+            return
         self._slider_dragging = False
         world_xy = self._screen_to_world(sx, sy)
         world = self.session.world
@@ -1385,18 +1314,36 @@ def _season_color(palette: SeasonPalette, ambient: float):
 class ConfigWindow(arcade.Window):
     """A separate window showing all simulation configuration parameters."""
 
-    def __init__(self, session: GameSession, world: World, config: SimulationConfig):
-        super().__init__(width=900, height=700, title="Bean World - Configuration")
+    def __init__(
+        self,
+        session: GameSession,
+        world: World,
+        config: SimulationConfig,
+        on_closed=None,
+    ):
+        super().__init__(width=1200, height=880, title="Bean World - Configuration")
         self.session = session
         self.sim_config = config
+        self._on_closed = on_closed
         self._text_cache: Dict[tuple, "arcade.Text"] = {}
 
     def on_draw(self) -> None:
         self.clear((8, 12, 20))
         self._draw_config_screen()
 
+    def on_close(self) -> None:
+        self.close()
+
+    def close(self) -> None:
+        # Reset the game state exactly once, whether the window was closed by
+        # ESC/Q, the window manager, or programmatically.
+        callback, self._on_closed = self._on_closed, None
+        super().close()
+        if callback is not None:
+            callback()
+
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        if symbol == arcade.key.ESCAPE or symbol == arcade.key.Q:
+        if symbol in (arcade.key.ESCAPE, arcade.key.Q):
             self.close()
 
     def _text_draw(
@@ -1429,249 +1376,71 @@ class ConfigWindow(arcade.Window):
         return item
 
     def _draw_config_screen(self) -> None:
+        """Render every config dataclass field, grouped by top-level topic.
+
+        The field list is generated from the dataclasses themselves, so a new
+        config field shows up here automatically instead of being forgotten.
+        """
         sw, sh = self.width, self.height
         cfg = self.sim_config
-        x = 30
-        y = sh - 30
-        lh = 22
 
-        def section(title: str):
-            nonlocal y
-            self._text_draw(title.upper(), x, y, _ACCENT, font_size=14, bold=True)
-            y -= 26
-
-        def line(label: str, value, color=_TEXT, font_size: int = 12):
-            nonlocal y
-            self._text_draw(f"{label}:", x, y, _MUTED, font_size=font_size)
-            self._text_draw(str(value), x + 220, y, color, font_size=font_size)
-            y -= lh
-
-        wc = cfg.world
-        section("WorldConfig")
-        self._text_draw("width", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.width}", x + 220, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("height", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.height}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("cell_size", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.cell_size}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("orientation", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.orientation}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("wrap_around", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.wrap_around}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("cols", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.cols}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("rows", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wc.rows}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        tc = cfg.time
-        section("TimeConfig")
-        self._text_draw("ticks_per_day", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.ticks_per_day}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("ticks_per_season", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.ticks_per_season}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("start_tick", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.start_tick}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("initial_time_scale", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.initial_time_scale}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("time_scale_min", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.time_scale_min}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("time_scale_max", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{tc.time_scale_max}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        dn = config.daynight
-        section("DayNightConfig")
-        self._text_draw("sun_speed", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.sun_speed}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("moon_speed", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.moon_speed}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("moon_phase_offset", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.moon_phase_offset}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("local_shading", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.local_shading}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("shading_scale_x", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.shading_scale_x}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("shading_scale_y", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.shading_scale_y}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("night_threshold", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.night_threshold}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("twilight_threshold", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{dn.twilight_threshold}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        wcfg = config.weather
-        section("WeatherConfig")
-        self._text_draw("change_interval", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.change_interval}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("front_count", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.front_count}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("background_coverage", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.background_coverage}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("front_radius_min", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.front_radius_min_cells}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("front_radius_max", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.front_radius_max_cells}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("front_drift_cells", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.front_drift_cells}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("background_patch_scale", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{wcfg.background_patch_scale}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        bcfg = config.barriers
-        section("BarrierConfig")
-        self._text_draw("color", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bcfg.color}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("max_span_cells", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bcfg.max_span_cells}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("count", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bcfg.count}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("seed", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bcfg.seed}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("margin_cells", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bcfg.margin_cells}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        bpc = config.bean_placement
-        section("BeanPlacementConfig")
-        self._text_draw("strategy_name", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.strategy_name}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("density_tier", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.density_tier}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("variance", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.variance}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("seed", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.seed}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("bean_radius", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.bean_radius}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("gender_ratios", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.gender_ratios}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("gender_colors", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.gender_colors}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("poisson_disc.base_spacing_scale", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.poisson_disc.base_spacing_scale}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("poisson_disc.max_retry_limit", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.poisson_disc.max_retry_limit}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("symmetrical.symmetry_axes", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.symmetrical.symmetry_axes}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("colony_cluster.area_per_cluster", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.colony_cluster.area_per_cluster}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("colony_cluster.cluster_spread_sigma", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.colony_cluster.cluster_spread_sigma}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("center_to_border.falloff_exponent", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.center_to_border.falloff_exponent}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("border_to_center.ring_thickness_ratio", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.border_to_center.ring_thickness_ratio}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("linear_gradient.direction_angle", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.linear_gradient.direction_angle}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("linear_gradient.bias_strength", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.linear_gradient.bias_strength}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("resource_gradient.noise_frequency", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.resource_gradient.noise_frequency}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("resource_gradient.threshold", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{bpc.resource_gradient.threshold}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        ec = config.environment
-        section("EnvironmentConfig")
-        self._text_draw("weather_strategy", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.weather_strategy}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("season_strategy", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.season_strategy}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("daynight_strategy", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.daynight_strategy}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("microclimate", x, y, _MUTED, font_size=12)
-        btn_w = width - 24
-        btn_h = 24
-        btn_x = left + 12
-        btn_y = y - 10
-        self._config_rect = (btn_x, btn_y, btn_w, btn_h)
-        hover = _point_in_rect(self._last_mouse_x, self._last_mouse_y, self._config_rect)
-        btn_color = _ACCENT if hover else _MUTED
-        arcade.draw_lbwh_rectangle_filled(btn_x, btn_y, btn_w, btn_h, _PANEL_BG)
-        arcade.draw_lbwh_rectangle_outline(btn_x, btn_y, btn_w, btn_h, btn_color, 1)
-        self._text.draw('Configurations', btn_x + 8, btn_y + 7, btn_color, font_size=10)
-        y -= 30
-
-        self._text_draw(f"{ec.microclimate}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("temperature_gradient", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.temperature_gradient}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("humidity_gradient", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.humidity_gradient}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("pressure_gradient", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.pressure_gradient}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("light_gradient", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{ec.light_gradient}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
-
-        lc = config.logging
-        section("LoggingConfig")
-        self._text_draw("level", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{lc.level}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("business", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{lc.business}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("readings", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{lc.readings}", x + 200, y, _TEXT, font_size=12)
-        y -= lh
-        self._text_draw("readings_interval", x, y, _MUTED, font_size=12)
-        self._text_draw(f"{lc.readings_interval}", x + 200, y, _TEXT, font_size=12)
-        y -= 30
+        sections = []
+        for f in fields(cfg):
+            value = getattr(cfg, f.name)
+            if is_dataclass(value):
+                sections.append((f.name, _config_rows(value)))
+            elif isinstance(value, (list, tuple)) and value and is_dataclass(value[0]):
+                rows = []
+                for index, item in enumerate(value):
+                    for key, text in _config_rows(item):
+                        rows.append((f"[{index}] {key}", text))
+                sections.append((f.name, rows))
+            elif isinstance(value, (bool, int, float, str)):
+                sections.append(
+                    (f.name, [(f.name, _format_config_value(value))])
+                )
 
         self._text_draw(
-            "Press ESC or Q to close", x_left, y, _DIM, font_size=10,
+            "CONFIGURATION", 20, sh - 26, _ACCENT, font_size=18, bold=True,
+        )
+        self._text_draw(
+            "generated from the config dataclasses   ·   C / ESC / Q to close",
+            20, sh - 46, _MUTED, font_size=10,
         )
 
+        columns = 3
+        col_gap = 18.0
+        col_w = (sw - 2 * 20 - (columns - 1) * col_gap) / columns
+        line_h = 15.0
+        section_gap = 10.0
+        title_h = 18.0
+        top = sh - 72
+
+        # Balance the sections across columns by total height.
+        per_column = [[] for _ in range(columns)]
+        heights = [0.0] * columns
+        for title, rows in sections:
+            height = title_h + len(rows) * line_h + section_gap
+            target = heights.index(min(heights))
+            per_column[target].append((title, rows))
+            heights[target] += height
+
+        for index, column in enumerate(per_column):
+            x = 20.0 + index * (col_w + col_gap)
+            y = top
+            for title, rows in column:
+                self._text_draw(
+                    title.upper(), x, y, _ACCENT, font_size=12, bold=True,
+                )
+                y -= title_h
+                for key, text in rows:
+                    if y < 12:
+                        break
+                    self._text_draw(
+                        _clip(key, 26), x, y, _MUTED, font_size=10,
+                    )
+                    self._text_draw(
+                        _clip(text, 30), x + 170, y, _TEXT, font_size=10,
+                    )
+                    y -= line_h
+                y -= section_gap

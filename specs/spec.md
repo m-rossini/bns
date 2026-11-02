@@ -372,6 +372,9 @@ Screens:
 - **START** — sky, stars at night, sun/moon arc, title panel with controls.
 - **PLAYING** — world on the right, stacked information boxes on the left.
 - **PAUSED** — playing scene dimmed with a `PAUSED` overlay.
+- **CONFIG** — the world stays visible; a separate `ConfigWindow` lists every
+  `SimulationConfig` value, grouped by topic and generated from the config
+  dataclasses. Closing it returns to `PLAYING`.
 - **END** — `GAME OVER`, reason, restart hint.
 
 Layout:
@@ -404,6 +407,10 @@ Rendering contract:
 - **Pointer mapping** — layout uses the active viewport size and mouse
   coordinates are scaled from the window size, so clicks line up on HiDPI or
   scaled displays. The layout is recomputed when the viewport changes.
+- **Controls box** — three reserved bands from `controls_geometry()`: config
+  button (top), key bindings (middle), playback-speed slider (bottom). The
+  sidebar reserves the same height for the box, so no widget can overlap
+  another and a click can never be attributed to the wrong control.
 - **Playback-speed slider** — in the Controls box. Drag to slow / speed the
   perceived ticker; it sets `GameClock.time_scale` (clamped to
   `time_scale_min`/`time_scale_max`) and never changes `tick_rate` or
@@ -820,8 +827,9 @@ Environment variables:
   align exactly with the selected cell and orange marker.
 - Default 1:1 window sizing; integer-snapped cell rectangles.
 - Cached `arcade.Text` rendering; no `draw_text` `PerformanceWarning`.
-- Input: `SPACE` / `P` / `Q` / `Esc`, hover and click-to-inspect, slider sets
-  `GameClock.time_scale` (perception only).
+- Input: `SPACE` / `P` / `C` / `Q` / `Esc`, hover and click-to-inspect,
+  slider sets `GameClock.time_scale` (perception only), `C` or the sidebar
+  button opens the generated configuration window.
 - Pause-aware fixed-step clock and a bounded headless mode.
 - Structured operational and business logging with a runtime level.
 - Container image plus Makefile targets, including `make verify`.

@@ -41,10 +41,18 @@ Requires Python 3.10+ and `arcade` (installed by `make install`).
 |-----|--------|
 | `SPACE` | Start, or restart after the end screen |
 | `P` | Pause / resume |
+| `C` | Open the configuration window (`C` / `Esc` / `Q` closes it) |
 | `Q` / `Esc` | Quit (works from every state) |
 | Left click | Inspect a cell; the selection stays pinned |
 | Click outside the world | Clear the pinned selection |
+| Click "Configurations" (sidebar "Controls") | Open the configuration window |
 | Drag the speed slider (sidebar "Controls") | Slow / speed the perceived ticker |
+
+The **Controls** box is laid out in three reserved bands so the widgets can
+never overlap: the config button on top, the key bindings in the middle, and
+the playback-speed slider on its own row at the bottom. The configuration
+window is a separate `arcade.Window` that lists every value of the active
+`SimulationConfig`, generated from the config dataclasses themselves.
 
 The simulation clock only advances while the session is `PLAYING`. `START` and
 `PAUSED` freeze simulation time while still redrawing the screen. The speed
@@ -447,11 +455,20 @@ Example (`LOG_LEVEL=DEBUG`):
   screen units that honour `cell_size`, ready for beans to be drawn per cell.
 - **Barriers** — drawn as filled cell-aligned rectangles in the barrier
   strategy's colour (default yellow), with a dark outline.
+- **Controls box** — three reserved bands from `controls_geometry()`: config
+  button (top), key bindings (middle), playback-speed slider (bottom). The
+  sidebar reserves the same height when stacking the boxes above, so no
+  widget can overlap another.
 - **Playback-speed slider** — in the Controls box. Drag to slow / speed the
   perceived ticker; it sets `GameClock.time_scale` (clamped to
   `time_scale_min`/`time_scale_max`) and never changes `tick_rate` or
   sim-time progression. The initial value comes from
   `TimeConfig.initial_time_scale`.
+- **Configuration window** — a separate `arcade.Window` (`ConfigWindow`).
+  It is opened from the `C` key or the sidebar button, guarded against
+  duplicates, and returns the session to `PLAYING` when closed. Its contents
+  are generated from the config dataclasses (`_config_rows`), so a new field
+  appears automatically instead of being forgotten.
 - **Text** — all text uses cached `arcade.Text` objects. `arcade.draw_text` is
   never called; it is extremely slow and emits a `PerformanceWarning`.
 - **Pointer mapping** — screen layout uses the active viewport size and mouse

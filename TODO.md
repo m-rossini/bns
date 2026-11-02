@@ -24,6 +24,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 18 | Weather strategy receives climate inputs (season, environment, world) | `feat/barrier-climate` | [x] |
 | 19 | Season strategy owns sun amount; others derive luminosity/temperature from it | `feat/barrier-climate` | [x] |
 | 20 | Update docs including diagrams | `main` | [x] |
+| 21 | Controls box: config button, keys and slider must never overlap | `main` | [x] |
+| 22 | Config screen crashes (`x_left`, `width`, `config.*` undefined) | `main` | [x] |
+| 23 | Slider press was never hit-tested (dead `_slider_hit`) | `main` | [x] |
+| 24 | Config screen generated from the config dataclasses | `main` | [x] |
 
 ## Verification log
 
@@ -43,6 +47,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Container `make build` — OK.
 - Container `make verify LOG_LEVEL=DEBUG BEAN_HEADLESS_FRAMES=300` — OK.
 - PR #24 (barrier-climate) merged; PR #25 (render-playback) merged; PR #27 (ui-polish) merged; `main` at `3bd6a82`, clean.
+- Controls bands: button `y=172..196`, slider `y=24..30` — 142 px apart, no overlap, verified by `sim/tests/test_ui_layout.py`.
+- Slider press starts a drag and changes `time_scale` (1.00 → 3.61 in the smoke run).
+- `C` and the sidebar button both open one `ConfigWindow`; closing it returns the session to `PLAYING`; duplicate windows rejected.
+- Config screen renders all 135 config values across three columns without error.
+- `make test-cov` in-container: 82 tests pass, coverage report written to `htmlcov/`.
 
 ## Worktrees
 

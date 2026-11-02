@@ -258,8 +258,27 @@ classDiagram
         -_world_to_screen(wx, wy)
         -_selected_cell: tuple
         -_hover_cell: tuple
+        -_config_rect: tuple
         -_slider_rect: tuple
+        -_config_window: ConfigWindow
+        -_open_config_window()
+        -_on_config_closed()
         -_text: _TextCache
+    }
+
+    class ConfigWindow {
+        +session: GameSession
+        +sim_config: SimulationConfig
+        +on_draw()
+        +on_close()
+        +close()
+        -_draw_config_screen()
+        -_on_closed: callable
+    }
+
+    class controls_geometry {
+        <<function>>
+        +controls_geometry(left, width, box_bottom)
     }
 
     class WorldLayout {
@@ -589,7 +608,8 @@ flowchart LR
         BAR[_draw_barriers<br/>strategy colour]
         G[_draw_grid<br/>one line per cell boundary]
         SEL[_draw_selection<br/>integer cell index]
-        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Inspector,<br/>Weather field, Controls<br/>speed slider]
+        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Inspector,<br/>Weather field, Controls<br/>button + keys + slider]
+        CW[ConfigWindow<br/>separate arcade.Window<br/>generated from dataclasses]
         TX[_TextCache<br/>arcade.Text objects]
     end
 
@@ -604,6 +624,7 @@ flowchart LR
     V --> SB
     W --> TX
     SB --> TX
+    SB -->|C / button| CW
     MOUSE -->|screen → world → cell_index| SEL
     MOUSE -->|slider → set_time_scale| K
     K -->|time_scale| S

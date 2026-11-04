@@ -12,7 +12,9 @@ from typing import List, Optional, Type, Union
 from sim.components import GameSession
 from sim.config import (
     BEAN_DENSITY_THRESHOLDS,
+    CREATION_STRATEGY_NAMES,
     DAYNIGHT_STRATEGY_NAMES,
+    MOVEMENT_STRATEGY_NAMES,
     PLACEMENT_STRATEGY_NAMES,
     SEASON_STRATEGY_NAMES,
     SimulationConfig,
@@ -24,8 +26,13 @@ from sim.domain.session import GameSession as ConcreteGameSession
 from sim.domain.spawn_controller import SpawnController
 from sim.domain.world import World
 from sim.implementations.barrier import BarrierStrategy
+from sim.implementations.creation import (
+    DensityBasedCreationStrategy,
+    FixedAmountCreationStrategy,
+)
 from sim.implementations.daynight import DayNightStrategy
 from sim.implementations.gender import GenderController
+from sim.implementations.movement import StraightLineMovementStrategy
 from sim.implementations.placement import (
     BorderToCenterStrategy,
     CenterToBorderStrategy,
@@ -38,7 +45,9 @@ from sim.implementations.placement import (
 from sim.implementations.season import SeasonStrategy
 from sim.implementations.weather import WeatherStrategy
 from sim.interfaces.barrier import IBarrierStrategy
+from sim.interfaces.creation import IBeanCreationStrategy
 from sim.interfaces.gender import IGenderController
+from sim.interfaces.movement import IMovementStrategy
 from sim.interfaces.environment import (
     IDayNightStrategy,
     ISeasonStrategy,
@@ -80,11 +89,18 @@ class Container:
         self.gender_controller: IGenderController = self._build_gender_controller(
             config
         )
+        self.creation_strategy: IBeanCreationStrategy = self._build_creation_strategy(
+            config
+        )
         self.spawn_controller: ISpawnController = self._build_spawn_controller(config)
         self.beans = self._spawn_beans()
+        self.movement_strategy: IMovementStrategy = self._build_movement_strategy(
+            config
+        )
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
-            "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s beans=%s",
+            "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s "
+            "creation=%s movement=%s beans=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -97,6 +113,8 @@ class Container:
             config.environment.weather_strategy,
             len(self.world.barriers),
             config.bean_placement.strategy_name,
+            config.creation.strategy_name,
+            config.movement.strategy_name,
             len(self.beans),
         )
 
@@ -150,15 +168,45 @@ class Container:
     ) -> IGenderController:
         return GenderController(config.bean_placement)
 
+    def _build_creation_strategy(
+        self, config: SimulationConfig
+    ) -> IBeanCreationStrategy:
+        cc = config.creation
+        if cc.strategy_name == "density_based":
+            return DensityBasedCreationStrategy(config.bean_placement)
+        if cc.strategy_name == "fixed_amount":
+            return FixedAmountCreationStrategy(
+                config=cc.fixed_amount,
+                placement_config=config.bean_placement,
+            )
+        raise ValueError(
+            f"Unknown creation strategy {cc.strategy_name!r}. "
+            f"Use one of: {sorted(CREATION_STRATEGY_NAMES)}"
+        )
+
     def _build_spawn_controller(
         self, config: SimulationConfig
     ) -> ISpawnController:
         return SpawnController(
-            config=config,
             world=self.world,
             session=self.session,
+            creation_strategy=self.creation_strategy,
             placement_strategy=self.placement_strategy,
             gender_controller=self.gender_controller,
+        )
+
+    def _build_movement_strategy(
+        self, config: SimulationConfig
+    ) -> IMovementStrategy:
+        mc = config.movement
+        if mc.strategy_name == "straight_line":
+            return StraightLineMovementStrategy(
+                config=mc,
+                bean_radius=config.bean_placement.bean_radius,
+            )
+        raise ValueError(
+            f"Unknown movement strategy {mc.strategy_name!r}. "
+            f"Use one of: {sorted(MOVEMENT_STRATEGY_NAMES)}"
         )
 
     def _spawn_beans(self) -> List:

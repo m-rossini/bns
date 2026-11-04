@@ -28,6 +28,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 22 | Config screen crashes (`x_left`, `width`, `config.*` undefined) | `main` | [x] |
 | 23 | Slider press was never hit-tested (dead `_slider_hit`) | `main` | [x] |
 | 24 | Config screen generated from the config dataclasses | `main` | [x] |
+| 25 | Bean creation strategy interface + `DensityBasedCreationStrategy` (current behaviour) | `feat/bean-movement` | [x] |
+| 26 | `FixedAmountCreationStrategy` with configurable `total_beans`, reusing the placement strategy | `feat/bean-movement` | [x] |
+| 27 | `IMovementStrategy` + `StraightLineMovementStrategy`: global direction/speed, in-place updates, edge bounce | `feat/bean-movement` | [x] |
+| 28 | Detect and log bean↔barrier and bean↔bean collisions (no response yet) | `feat/bean-movement` | [x] |
+| 29 | Run movement only while `PLAYING`; renderer draws live bean positions | `feat/bean-movement` | [x] |
 
 ## Verification log
 
@@ -52,6 +57,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - `C` and the sidebar button both open one `ConfigWindow`; closing it returns the session to `PLAYING`; duplicate windows rejected.
 - Config screen renders all 135 config values across three columns without error.
 - `make test-cov` in-container: 82 tests pass, coverage report written to `htmlcov/`.
+- `make test-cov` in-container after bean movement: 101 tests pass (creation + movement suites included).
+- `make verify LOG_LEVEL=WARNING BEAN_HEADLESS_FRAMES=300`: headless run exits 0 with beans moving.
+- Fixed-amount smoke: totals 50 / 200 / 1300 / 2000 each produced exactly that many beans.
+- Movement smoke: bean x advanced by `speed × dt`; velocity seeded once, bounce flips the component.
 
 ## Worktrees
 

@@ -33,6 +33,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 27 | `IMovementStrategy` + `StraightLineMovementStrategy`: global direction/speed, in-place updates, edge bounce | `feat/bean-movement` | [x] |
 | 28 | Detect and log bean↔barrier and bean↔bean collisions (no response yet) | `feat/bean-movement` | [x] |
 | 29 | Run movement only while `PLAYING`; renderer draws live bean positions | `feat/bean-movement` | [x] |
+| 30 | Movement logs (`bean.bounced`, `bean.collided_*`) move to DEBUG | `fix/run-and-log-levels` | [x] |
+| 31 | `make run` opens the game window instead of running headless in a container | `fix/run-and-log-levels` | [x] |
 
 ## Verification log
 
@@ -61,6 +63,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - `make verify LOG_LEVEL=WARNING BEAN_HEADLESS_FRAMES=300`: headless run exits 0 with beans moving.
 - Fixed-amount smoke: totals 50 / 200 / 1300 / 2000 each produced exactly that many beans.
 - Movement smoke: bean x advanced by `speed × dt`; velocity seeded once, bounce flips the component.
+- Movement logs: 0 `bean.bounced` / `collided` lines at `LOG_LEVEL=INFO`, 322 at `DEBUG` in a 60-frame headless run.
+- `make run` now launches the window locally (`app.window_created width=1560 height=824`); headless lives at `make run-container` / `make run-headless`.
 
 ## Worktrees
 

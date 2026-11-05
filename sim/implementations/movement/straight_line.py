@@ -10,6 +10,7 @@ motion yet (bean-bean and bean-barrier events are separate).
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Dict, List, Sequence, Tuple
 
@@ -118,6 +119,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
                 log_event(
                     logger,
                     "bean.bounced",
+                    level=logging.DEBUG,
                     bean_id=bean.id,
                     edge="+".join(edges),
                     x=round(bean.x, 3),
@@ -140,6 +142,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     log_event(
                         logger,
                         "bean.collided_barrier",
+                        level=logging.DEBUG,
                         bean_id=bean.id,
                         barrier_id=barrier.id,
                         x=round(bean.x, 3),
@@ -171,6 +174,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
                                 log_event(
                                     logger,
                                     "bean.collided_bean",
+                                    level=logging.DEBUG,
                                     bean_id=a.id,
                                     other_id=b.id,
                                     x=round(a.x, 3),

@@ -1113,14 +1113,14 @@ class ArcadeView(arcade.Window):
             self._box(left, top, width, h, "Weather field")
             self._draw_weather_census(session, left + 12, top - 34, width - 24, h)
 
-        # ---- Gender census -------------------------------------------
+        # ---- Beans census -------------------------------------------
         remaining = cursor - h if 'h' in dir() else cursor - limit
         remaining = max(0, remaining)
         if remaining >= 80:
             top = cursor
-            h = min(remaining, 120)
-            self._box(left, top, width, h, "Gender census")
-            self._draw_gender_census(session, left + 12, top - 34, width - 24)
+            h = min(remaining, 180)
+            self._box(left, top, width, h, "Beans Census")
+            self._draw_beans_census(session, left + 12, top - 34, width - 24)
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
         # Vertical order, top to bottom: button, keys, slider. Each block owns
@@ -1245,32 +1245,89 @@ class ArcadeView(arcade.Window):
                 left + 16, y, _DIM, font_size=10,
             )
 
-    def _draw_gender_census(self, session: GameSession, left: float, top: float,
+    def _draw_beans_census(self, session: GameSession, left: float, top: float,
                             width: float) -> None:
-        """How many beans of each gender: proves the field is balanced."""
+        """Bean census: initial, alive, and dead counts by gender."""
         beans = getattr(session, "beans", None) or []
         if not beans:
             self._text.draw(
                 "no beans", left, top, _DIM, font_size=11,
             )
             return
-        counts: dict = {}
+
+        # Initial counts (stored at spawn)
+        initial_female = getattr(session, "initial_female", 0)
+        initial_male = getattr(session, "initial_male", 0)
+
+        # Current alive/dead counts
+        alive_female = alive_male = 0
+        dead_female = dead_male = 0
         for bean in beans:
-            counts[bean.gender] = counts.get(bean.gender, 0) + 1
-        total = len(beans)
-        present = [(name, count) for name, count in counts.items()]
-        present.sort(key=lambda item: item[1], reverse=True)
+            is_dormant = bean.phenotype is not None and bean.phenotype.is_dormant
+            if bean.gender == "female":
+                if is_dormant:
+                    dead_female += 1
+                else:
+                    alive_female += 1
+            else:  # male
+                if is_dormant:
+                    dead_male += 1
+                else:
+                    alive_male += 1
+
         y = top
-        for gender, count in present:
-            color = getattr(session, "beans", None) and None  # placeholder
-            # Use a neutral colour; the gender label text carries the info.
-            arcade.draw_lbwh_rectangle_filled(left, y - 1, 8, 8, _ACCENT)
-            self._text.draw(gender, left + 16, y, _TEXT, font_size=11)
+
+        # Header row
+        self._text.draw("Gender", left, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw("Initial", left + 80, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw("Alive", left + 160, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw("Dead", left + 240, y, _ACCENT, font_size=11, bold=True)
+        y -= 17
+
+        # Female row
+        color_f = (255, 64, 64)  # red
+        arcade.draw_lbwh_rectangle_filled(left, y - 1, 8, 8, color_f)
+        self._text.draw("Female", left + 16, y, _TEXT, font_size=11)
+        self._text.draw(f"{initial_female:>3}", left + 80, y, _TEXT, font_size=11)
+        self._text.draw(f"{alive_female:>3}", left + 160, y, _TEXT, font_size=11)
+        self._text.draw(f"{dead_female:>3}", left + 240, y, _TEXT, font_size=11)
+        y -= 17
+
+        # Male row
+        color_m = (0, 128, 255)  # blue
+        arcade.draw_lbwh_rectangle_filled(left, y - 1, 8, 8, color_m)
+        self._text.draw("Male", left + 16, y, _TEXT, font_size=11)
+        self._text.draw(f"{initial_male:>3}", left + 80, y, _TEXT, font_size=11)
+        self._text.draw(f"{alive_male:>3}", left + 160, y, _TEXT, font_size=11)
+        self._text.draw(f"{dead_male:>3}", left + 240, y, _TEXT, font_size=11)
+        y -= 17
+
+        # Total row
+        total_initial = initial_female + initial_male
+        total_alive = alive_female + alive_male
+        total_dead = dead_female + dead_male
+        self._text.draw("Total", left + 16, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw(f"{total_initial:>3}", left + 80, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw(f"{total_alive:>3}", left + 160, y, _ACCENT, font_size=11, bold=True)
+        self._text.draw(f"{total_dead:>3}", left + 240, y, _ACCENT, font_size=11, bold=True)
+
+        # End simulation message if no alive beans
+        if total_alive == 0 and total_initial > 0:
+            y -= 20
             self._text.draw(
-                f"{count:>3} beans   ·   {count / total:>4.0%}",
-                left + width, y, _MUTED, font_size=11, anchor_x="right",
+                "All beans dormant. Simulation ended.",
+                left, y, _ACCENT, font_size=11, bold=True,
             )
-            y -= 17
+            y -= 15
+            self._text.draw(
+                f"Duration: {session.clock.tick} ticks ({session.clock.tick/30:.1f}s)",
+                left, y, _MUTED, font_size=10,
+            )
+            y -= 13
+            self._text.draw(
+                f"Season: {session.environment.season if session.environment else 'N/A'}",
+                left, y, _MUTED, font_size=10,
+            )
 
     def _draw_sun_track(self, session: GameSession, left: float, bottom: float,
                         width: float, height: float) -> None:

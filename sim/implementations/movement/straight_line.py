@@ -120,6 +120,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
             edges: List[str] = []
             bounced = False
 
+            # World edge collisions
             if x < min_x:
                 if bounce:
                     x = min_x + (min_x - x)
@@ -154,6 +155,10 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     y = max_y
                 edges.append("top")
 
+            # Barrier collisions - resolve by reflecting and pushing out
+            barrier_bounced = self._resolve_barrier_collisions(bean, world, radius, x, y)
+            bounced = bounced or barrier_bounced
+
             # A large step could still leave the bean outside after reflection.
             if x < min_x:
                 x = min_x
@@ -183,7 +188,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     acceleration=acceleration,
                 )
 
-                # Extra cost for bouncing
+                # Extra cost for bouncing (world edges or barriers)
                 if bounced:
                     bean.phenotype.current_energy = max(
                         0.0, bean.phenotype.current_energy - BOUNCE_ENERGY_COST
@@ -212,6 +217,64 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     x=round(bean.x, 3),
                     y=round(bean.y, 3),
                 )
+
+    def _resolve_barrier_collisions(
+        self, bean: Bean, world: IWorld, radius: float, x: float, y: float
+    ) -> bool:
+        """Resolve bean-barrier collisions by reflecting velocity and pushing out.
+
+        Returns True if any collision occurred.
+        """
+        barriers = world.barriers
+        if not barriers:
+            return False
+
+        bounced = False
+        for barrier in barriers:
+            if not _overlaps_barrier(x, y, radius, barrier):
+                continue
+
+            # Compute collision normal (direction from barrier center to bean)
+            if barrier.kind == "rect":
+                # Find closest point on rectangle to bean center
+                left, bottom = barrier.x, barrier.y
+                right, top = barrier.x + barrier.width, barrier.y + barrier.height
+                cx = min(max(x, left), right)
+                cy = min(max(y, bottom), top)
+                nx, ny = x - cx, y - cy
+            elif barrier.kind == "circle":
+                cx = barrier.x + barrier.radius
+                cy = barrier.y + barrier.radius
+                nx, ny = x - cx, y - cy
+            else:
+                continue
+
+            # Normalize
+            dist = math.hypot(nx, ny)
+            if dist == 0.0:
+                # Bean center exactly at barrier center - push in random direction
+                nx, ny = 1.0, 0.0
+                dist = 1.0
+            else:
+                nx, ny = nx / dist, ny / dist
+
+            # Reflect velocity around normal
+            # v' = v - 2(v·n)n
+            vx = bean.vx or 0.0
+            vy = bean.vy or 0.0
+            dot = vx * nx + vy * ny
+            bean.vx = vx - 2 * dot * nx
+            bean.vy = vy - 2 * dot * ny
+
+            # Push bean out of barrier
+            overlap = radius - dist
+            if overlap > 0:
+                x += nx * overlap * 1.01  # Slight extra to avoid sticking
+                y += ny * overlap * 1.01
+
+            bounced = True
+
+        return bounced
 
     # ------------------------------------------------------------------
     # Collision detection (logging only)

@@ -70,6 +70,24 @@ def _step(
         ):
             movement_strategy.update(session.beans, session.world, fixed_step)
 
+        # Check if all beans are dormant (energy depleted) - end simulation
+        if session.state == GameState.PLAYING:
+            alive_count = sum(
+                1 for bean in session.beans
+                if bean.phenotype is not None and not bean.phenotype.is_dormant
+            )
+            if alive_count == 0 and len(session.beans) > 0:
+                session.state = GameState.END
+                session.end_reason = "all_beans_dormant"
+                log_event(
+                    logger,
+                    "session.all_beans_dormant",
+                    ticks=session.clock.tick,
+                    initial_population=len(session.beans),
+                    initial_female=getattr(session, "initial_female", 0),
+                    initial_male=getattr(session, "initial_male", 0),
+                )
+
     return ticks_executed
 
 
@@ -103,6 +121,9 @@ def run_headless(
             session, environment, movement_strategy, energy_strategy, frame_dt, fixed_step,
             max_ticks=max_ticks,
         )
+        # Stop early if simulation ended (all beans dormant)
+        if session.state == GameState.END:
+            break
 
     env_tick = environment.tick if environment is not None else 0
     if environment is not None:

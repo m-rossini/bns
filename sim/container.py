@@ -260,6 +260,11 @@ class Container:
         """Run the spawn controller and store resulting beans in the session."""
         beans = self.spawn_controller.spawn_beans()
         self.session.beans = beans
+        # Track initial gender counts for census
+        initial_female = sum(1 for b in beans if b.gender == "female")
+        initial_male = sum(1 for b in beans if b.gender == "male")
+        self.session.initial_female = initial_female
+        self.session.initial_male = initial_male
         return beans
 
     # ------------------------------------------------------------------

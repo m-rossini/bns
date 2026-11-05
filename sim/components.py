@@ -8,7 +8,7 @@ from enum import Enum, auto
 from typing import List, Optional, Tuple
 
 
-@dataclass
+@dataclass(slots=True)
 class Bean:
     """A unicellular organism placed in the world by the spawn controller.
 

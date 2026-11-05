@@ -102,6 +102,23 @@ def test_bean_bean_collision_is_logged(caplog):
     assert all(r.levelno == logging.DEBUG for r in caplog.records)
 
 
+def test_collision_work_is_skipped_when_debug_is_off(caplog):
+    """Collision detection only feeds DEBUG logs, so INFO must skip it."""
+    world = _world()
+    world.add_barrier(
+        Barrier(id=7, kind="rect", x=90.0, y=90.0, width=30.0, height=30.0)
+    )
+    beans = [_bean(bean_id=1, x=100.0, y=100.0), _bean(bean_id=2, x=101.0, y=100.0)]
+    strategy = StraightLineMovementStrategy(
+        MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
+    )
+
+    with caplog.at_level(logging.INFO, logger="bean.movement.straight_line"):
+        strategy.update(beans, world, dt=1.0)
+
+    assert caplog.records == []
+
+
 def test_step_moves_beans_only_while_playing():
     world = _world()
     bean = _bean(x=50.0, y=50.0)

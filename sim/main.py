@@ -32,9 +32,12 @@ def _step(
     movement_strategy,
     real_dt: float,
     fixed_step: float,
+    max_ticks: int = 5,
 ) -> int:
     """Advance the pause-aware clock and every system that depends on it."""
-    ticks_executed = advance_clock(session.clock, real_dt, fixed_step)
+    ticks_executed = advance_clock(
+        session.clock, real_dt, fixed_step, max_ticks=max_ticks
+    )
 
     # The environment advances once per simulation tick, so environment.tick
     # always tracks clock.tick. Bean movement runs on the same tick, but only
@@ -57,6 +60,7 @@ def run_headless(
     environment: Environment | None,
     movement_strategy,
     fixed_step: float,
+    max_ticks: int = 5,
 ) -> None:
     """Run a bounded number of deterministic frames without a window."""
     frames = int(os.environ.get("BEAN_HEADLESS_FRAMES", "600"))
@@ -76,7 +80,10 @@ def run_headless(
     session.start_time = time.time()
 
     for _ in range(max(0, frames)):
-        _step(session, environment, movement_strategy, frame_dt, fixed_step)
+        _step(
+            session, environment, movement_strategy, frame_dt, fixed_step,
+            max_ticks=max_ticks,
+        )
 
     env_tick = environment.tick if environment is not None else 0
     if environment is not None:
@@ -132,6 +139,7 @@ def main() -> None:
 
     headless = os.environ.get("BEAN_HEADLESS", "0") == "1"
     fixed_step = 1.0 / config.tick_rate
+    max_ticks = config.time.max_ticks_per_frame
 
     # Initial playback scale from config; changes *perception* only, never the
     # fixed tick rate or sim time progression.
@@ -143,7 +151,10 @@ def main() -> None:
 
     if headless:
         try:
-            run_headless(session, environment, movement_strategy, fixed_step)
+            run_headless(
+                session, environment, movement_strategy, fixed_step,
+                max_ticks=max_ticks,
+            )
         except Exception:
             logger.exception("app.crashed mode=headless")
             raise
@@ -186,7 +197,10 @@ def main() -> None:
         now = time.perf_counter()
         real_dt = now - last_time
         last_time = now
-        _step(session, environment, movement_strategy, real_dt, fixed_step)
+        _step(
+            session, environment, movement_strategy, real_dt, fixed_step,
+            max_ticks=max_ticks,
+        )
 
         if session.exit_requested:
             log_event(

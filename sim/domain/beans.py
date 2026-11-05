@@ -14,7 +14,7 @@ Color = Tuple[int, int, int]
 Position = Tuple[float, float]
 
 
-@dataclass
+@dataclass(slots=True)
 class Bean:
     """A unicellular organism placed in the world.
 

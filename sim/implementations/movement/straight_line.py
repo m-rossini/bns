@@ -19,6 +19,11 @@ from sim.domain.beans import Bean
 from sim.interfaces.movement import IMovementStrategy
 from sim.interfaces.world import IWorld
 from sim.observability import get_logger, log_event
+from sim.implementations.movement.numba_collisions import (
+    check_barrier_collisions_numba,
+    check_bean_collisions_numba,
+    NUMBA_AVAILABLE,
+)
 
 logger = get_logger("movement.straight_line")
 
@@ -43,9 +48,11 @@ def _overlaps_barrier(bean_x: float, bean_y: float, radius: float, barrier) -> b
 class StraightLineMovementStrategy(IMovementStrategy):
     name = "straight_line"
 
-    def __init__(self, config: MovementConfig, bean_radius: float):
+    def __init__(self, config: MovementConfig, bean_radius: float, world_width: float = 0.0, world_height: float = 0.0):
         self.config = config
         self.bean_radius = max(0.0, bean_radius)
+        self.world_width = world_width
+        self.world_height = world_height
         dx, dy = config.direction
         length = math.hypot(dx, dy)
         self.unit_direction: Tuple[float, float] = (dx / length, dy / length)
@@ -58,8 +65,11 @@ class StraightLineMovementStrategy(IMovementStrategy):
             return
         self._seed_velocities(beans)
         self._move(beans, world, dt)
-        self._log_barrier_collisions(beans, world)
-        self._log_bean_collisions(beans)
+        # Collision detection only feeds DEBUG logging for now (there is no
+        # response), so skip the spatial work entirely unless DEBUG is on.
+        if logger.isEnabledFor(logging.DEBUG):
+            self._log_barrier_collisions(beans, world)
+            self._log_bean_collisions(beans)
 
     def _seed_velocities(self, beans: Sequence[Bean]) -> None:
         """Give beans their initial velocity the first time they move."""
@@ -75,6 +85,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
         min_x, max_x = radius, max(radius, world.width - radius)
         min_y, max_y = radius, max(radius, world.height - radius)
         bounce = self.config.bounce_on_edges
+        log_bounces = logger.isEnabledFor(logging.DEBUG)
 
         for bean in beans:
             x = bean.x + bean.vx * dt
@@ -112,10 +123,19 @@ class StraightLineMovementStrategy(IMovementStrategy):
                 edges.append("top")
 
             # A large step could still leave the bean outside after reflection.
-            bean.x = min(max(x, min_x), max_x)
-            bean.y = min(max(y, min_y), max_y)
+            if x < min_x:
+                x = min_x
+            elif x > max_x:
+                x = max_x
+            if y < min_y:
+                y = min_y
+            elif y > max_y:
+                y = max_y
 
-            if edges:
+            bean.x = x
+            bean.y = y
+
+            if edges and log_bounces:
                 log_event(
                     logger,
                     "bean.bounced",
@@ -135,23 +155,62 @@ class StraightLineMovementStrategy(IMovementStrategy):
         barriers = world.barriers
         if not barriers:
             return
-        radius = self.bean_radius
-        for bean in beans:
-            for barrier in barriers:
-                if _overlaps_barrier(bean.x, bean.y, radius, barrier):
-                    log_event(
-                        logger,
-                        "bean.collided_barrier",
-                        level=logging.DEBUG,
-                        bean_id=bean.id,
-                        barrier_id=barrier.id,
-                        x=round(bean.x, 3),
-                        y=round(bean.y, 3),
-                    )
+
+        # Use numba-accelerated collision detection if available
+        if NUMBA_AVAILABLE:
+            collisions = check_barrier_collisions_numba(beans, barriers, self.bean_radius)
+            for bean_idx, barrier_idx in collisions:
+                bean = beans[bean_idx]
+                barrier = barriers[barrier_idx]
+                log_event(
+                    logger,
+                    "bean.collided_barrier",
+                    level=logging.DEBUG,
+                    bean_id=bean.id,
+                    barrier_id=barrier.id,
+                    x=round(bean.x, 3),
+                    y=round(bean.y, 3),
+                )
+        else:
+            # Fallback to pure Python
+            radius = self.bean_radius
+            for bean in beans:
+                for barrier in barriers:
+                    if _overlaps_barrier(bean.x, bean.y, radius, barrier):
+                        log_event(
+                            logger,
+                            "bean.collided_barrier",
+                            level=logging.DEBUG,
+                            bean_id=bean.id,
+                            barrier_id=barrier.id,
+                            x=round(bean.x, 3),
+                            y=round(bean.y, 3),
+                        )
 
     def _log_bean_collisions(self, beans: Sequence[Bean]) -> None:
         if len(beans) < 2:
             return
+
+        # Use numba-accelerated collision detection if available
+        if NUMBA_AVAILABLE and self.world_width > 0 and self.world_height > 0:
+            collisions = check_bean_collisions_numba(
+                beans, self.bean_radius, self.world_width, self.world_height
+            )
+            for a_idx, b_idx in collisions:
+                a = beans[a_idx]
+                b = beans[b_idx]
+                log_event(
+                    logger,
+                    "bean.collided_bean",
+                    level=logging.DEBUG,
+                    bean_id=a.id,
+                    other_id=b.id,
+                    x=round(a.x, 3),
+                    y=round(a.y, 3),
+                )
+            return
+
+        # Fallback to pure Python spatial hash
         cell = max(1.0, 2.0 * self.bean_radius)
         buckets: Dict[Tuple[int, int], List[Bean]] = {}
         for bean in beans:

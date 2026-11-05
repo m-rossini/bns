@@ -52,6 +52,16 @@ class GradientOrientation(str, Enum):
 GRADIENT_ORIENTATIONS: Tuple[GradientOrientation, ...] = tuple(GradientOrientation)
 
 
+@dataclass(frozen=True)
+class RandomConfig:
+    """Global random number generator configuration.
+
+    If ``seed`` is None, the system entropy source is used (non-reproducible).
+    If ``seed`` is an int, the generator is fully deterministic.
+    """
+    seed: Optional[int] = None
+
+
 @dataclass
 class WorldConfig:
     width: float = 1200.0
@@ -313,6 +323,12 @@ MOVEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
     "straight_line",
 )
 
+#: Valid energy strategy names (implemented in sim.implementations.energy).
+ENERGY_STRATEGY_NAMES: Tuple[str, ...] = (
+    "fixed",
+    "per_day",
+)
+
 
 @dataclass
 class PoissonDiscConfig:
@@ -559,14 +575,17 @@ class CreationConfig:
 class MovementConfig:
     """Bean movement rules.
 
-    ``direction`` is a global direction vector; ``speed`` is in world units per
-    second. Each bean keeps its own velocity after the first update so it can
-    bounce on the edges independently. Collisions are detected and logged but
-    do not change the motion yet.
+    ``speed`` is in world units per second. Each bean gets its own initial
+    velocity (random direction by default) so they bounce around independently.
+    Collisions are detected and logged but do not change the motion yet.
     """
 
     strategy_name: str = "straight_line"
     speed: float = 60.0
+    #: If True (default), each bean gets a random initial direction.
+    #: If False, all beans start with the global ``direction`` vector.
+    random_initial_direction: bool = True
+    #: Global direction vector used when ``random_initial_direction=False``.
     direction: Tuple[float, float] = (1.0, 0.0)
     bounce_on_edges: bool = True
 
@@ -581,6 +600,22 @@ class MovementConfig:
         dx, dy = self.direction
         if dx == 0.0 and dy == 0.0:
             raise ValueError("MovementConfig.direction cannot be the zero vector")
+
+
+@dataclass
+class EnergyConfig:
+    """Bean energy system configuration.
+
+    Controls how beans gain and consume energy.
+    """
+
+    strategy_name: str = "fixed"  # "fixed" | "per_day" | "environmental"
+    # Fixed energy gain per tick (world units per second)
+    energy_per_tick: float = 0.5
+    # Lump sum per day (for per_day strategy)
+    energy_per_day: float = 50.0
+    # Environmental strategy: base energy from resources (future)
+    resource_energy_factor: float = 1.0
 
 
 @dataclass
@@ -641,8 +676,10 @@ class SimulationConfig:
     bean_placement: BeanPlacementConfig = field(default_factory=BeanPlacementConfig)
     creation: CreationConfig = field(default_factory=CreationConfig)
     movement: MovementConfig = field(default_factory=MovementConfig)
+    energy: EnergyConfig = field(default_factory=EnergyConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    random: RandomConfig = field(default_factory=RandomConfig)
     debug: bool = False
     tick_rate: float = 30.0  # simulation ticks per second
 

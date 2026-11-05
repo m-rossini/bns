@@ -22,7 +22,7 @@ def test_bean_moves_in_place_along_the_global_direction():
     world = _world()
     bean = _bean()
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=10.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=10.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     strategy.update([bean], world, dt=1.0)
@@ -39,7 +39,7 @@ def test_bean_bounces_off_the_right_edge_and_keeps_its_id(caplog):
     bean = _bean(x=94.0, y=50.0)
     original = bean
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=10.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=10.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
@@ -58,7 +58,7 @@ def test_beans_keep_independent_velocities_after_bouncing():
     left = _bean(bean_id=1, x=20.0, y=50.0)
     right = _bean(bean_id=2, x=94.0, y=50.0)
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=10.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=10.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     strategy.update([left, right], world, dt=1.0)
@@ -74,7 +74,7 @@ def test_bean_barrier_collision_is_logged(caplog):
     )
     bean = _bean(x=100.0, y=100.0)
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=0.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
@@ -90,7 +90,7 @@ def test_bean_bean_collision_is_logged(caplog):
     first = _bean(bean_id=1, x=100.0, y=100.0)
     second = _bean(bean_id=2, x=101.0, y=100.0)
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=0.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
@@ -110,7 +110,7 @@ def test_collision_work_is_skipped_when_debug_is_off(caplog):
     )
     beans = [_bean(bean_id=1, x=100.0, y=100.0), _bean(bean_id=2, x=101.0, y=100.0)]
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=0.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
 
     with caplog.at_level(logging.INFO, logger="bean.movement.straight_line"):
@@ -126,14 +126,14 @@ def test_step_moves_beans_only_while_playing():
     session.beans = [bean]
     session.clock = GameClock(paused=False)
     strategy = StraightLineMovementStrategy(
-        MovementConfig(speed=10.0, direction=(1.0, 0.0)), bean_radius=5.0
+        MovementConfig(speed=10.0, direction=(1.0, 0.0), random_initial_direction=False), bean_radius=5.0
     )
     fixed_step = 1.0
 
-    _step(session, None, strategy, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
     assert bean.x == 60.0
 
     session.state = GameState.PAUSED
     session.clock.paused = True
-    _step(session, None, strategy, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
     assert bean.x == 60.0

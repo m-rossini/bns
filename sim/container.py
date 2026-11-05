@@ -14,6 +14,7 @@ from sim.config import (
     BEAN_DENSITY_THRESHOLDS,
     CREATION_STRATEGY_NAMES,
     DAYNIGHT_STRATEGY_NAMES,
+    ENERGY_STRATEGY_NAMES,
     MOVEMENT_STRATEGY_NAMES,
     PLACEMENT_STRATEGY_NAMES,
     SEASON_STRATEGY_NAMES,
@@ -26,6 +27,7 @@ from sim.domain.session import GameSession as ConcreteGameSession
 from sim.domain.spawn_controller import SpawnController
 from sim.domain.world import World
 from sim.implementations.barrier import BarrierStrategy
+from sim.implementations.energy import FixedEnergyStrategy, PerDayEnergyStrategy
 from sim.implementations.creation import (
     DensityBasedCreationStrategy,
     FixedAmountCreationStrategy,
@@ -44,6 +46,7 @@ from sim.implementations.placement import (
 )
 from sim.implementations.season import SeasonStrategy
 from sim.implementations.weather import WeatherStrategy
+from sim.interfaces.energy import IEnergyStrategy
 from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.creation import IBeanCreationStrategy
 from sim.interfaces.gender import IGenderController
@@ -55,6 +58,7 @@ from sim.interfaces.environment import (
 )
 from sim.interfaces.placement import IPlacementStrategy, ISpawnController
 from sim.observability import get_logger
+from sim.random import init_random
 
 logger = get_logger("container")
 
@@ -76,6 +80,8 @@ Strategy = Union[IWeatherStrategy, ISeasonStrategy, IDayNightStrategy]
 class Container:
     def __init__(self, config: SimulationConfig):
         self.config = config
+        # Initialize global random generator first so all subsystems can use it
+        init_random(config.random)
         self.barrier_strategy: IBarrierStrategy = BarrierStrategy(config.barriers)
         self.world = self._build_world(config)
         self.calendar = self._build_calendar(config)
@@ -97,10 +103,13 @@ class Container:
         self.movement_strategy: IMovementStrategy = self._build_movement_strategy(
             config
         )
+        self.energy_strategy: IEnergyStrategy = self._build_energy_strategy(config)
+        # Assign genotypes to beans after spawning
+        self._assign_genotypes()
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
             "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s "
-            "creation=%s movement=%s beans=%s",
+            "creation=%s movement=%s energy=%s beans=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -115,8 +124,33 @@ class Container:
             config.bean_placement.strategy_name,
             config.creation.strategy_name,
             config.movement.strategy_name,
+            config.energy.strategy_name,
             len(self.beans),
         )
+
+    def _assign_genotypes(self) -> None:
+        """Assign default genotype and phenotype to all beans."""
+        from sim.domain.genotype import Genotype, create_default_phenotype
+
+        for bean in self.beans:
+            # Create genotype with the bean's gender-assigned color as base_color
+            genotype = Genotype(
+                energy_capacity=1000.0,
+                metabolic_rate=1.0,
+                drag_coefficient=0.01,
+                max_speed=60.0,
+                acceleration=30.0,
+                base_color=bean.color,  # Use gender-assigned color
+                dormant_color=(139, 69, 19),
+            )
+            bean.genotype = genotype
+            bean.phenotype = create_default_phenotype(genotype)
+            # Initialize velocity from movement strategy
+            bean.phenotype.velocity = (bean.vx or 0.0, bean.vy or 0.0)
+            # Update phenotype color from genotype (sets to base_color)
+            bean.phenotype.update_color(genotype)
+            # Sync bean color from phenotype
+            bean.update_color_from_phenotype()
 
     # ------------------------------------------------------------------
     # World
@@ -211,10 +245,26 @@ class Container:
             f"Use one of: {sorted(MOVEMENT_STRATEGY_NAMES)}"
         )
 
+    def _build_energy_strategy(self, config: SimulationConfig) -> IEnergyStrategy:
+        ec = config.energy
+        if ec.strategy_name == "fixed":
+            return FixedEnergyStrategy(config=ec)
+        if ec.strategy_name == "per_day":
+            return PerDayEnergyStrategy(config=ec)
+        raise ValueError(
+            f"Unknown energy strategy {ec.strategy_name!r}. "
+            f"Use one of: {sorted(ENERGY_STRATEGY_NAMES)}"
+        )
+
     def _spawn_beans(self) -> List:
         """Run the spawn controller and store resulting beans in the session."""
         beans = self.spawn_controller.spawn_beans()
         self.session.beans = beans
+        # Track initial gender counts for census
+        initial_female = sum(1 for b in beans if b.gender == "female")
+        initial_male = sum(1 for b in beans if b.gender == "male")
+        self.session.initial_female = initial_female
+        self.session.initial_male = initial_male
         return beans
 
     # ------------------------------------------------------------------

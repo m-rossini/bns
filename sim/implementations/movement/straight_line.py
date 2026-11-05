@@ -1,8 +1,8 @@
 """Straight-line movement strategy.
 
-Every bean starts with the configured global direction and speed, then moves in
-a straight line. When it reaches a world edge it reflects and continues; each
-bean keeps its own velocity so it can bounce independently.
+Every bean starts with a random direction (or configured global direction) and
+speed, then moves in a straight line. When it reaches a world edge it reflects
+and continues; each bean keeps its own velocity so it can bounce independently.
 
 Collisions are detected after the move and logged, but do not change the
 motion yet (bean-bean and bean-barrier events are separate).
@@ -24,6 +24,7 @@ from sim.implementations.movement.numba_collisions import (
     check_bean_collisions_numba,
     NUMBA_AVAILABLE,
 )
+from sim.random import random_direction, get_rng
 
 logger = get_logger("movement.straight_line")
 
@@ -53,6 +54,7 @@ class StraightLineMovementStrategy(IMovementStrategy):
         self.bean_radius = max(0.0, bean_radius)
         self.world_width = world_width
         self.world_height = world_height
+        # Global direction (used only when random_initial_direction=False)
         dx, dy = config.direction
         length = math.hypot(dx, dy)
         self.unit_direction: Tuple[float, float] = (dx / length, dy / length)
@@ -74,9 +76,13 @@ class StraightLineMovementStrategy(IMovementStrategy):
     def _seed_velocities(self, beans: Sequence[Bean]) -> None:
         """Give beans their initial velocity the first time they move."""
         speed = self.config.speed
-        ux, uy = self.unit_direction
+        rng = get_rng()
         for bean in beans:
             if bean.vx is None or bean.vy is None:
+                if self.config.random_initial_direction:
+                    ux, uy = random_direction(rng)
+                else:
+                    ux, uy = self.unit_direction
                 bean.vx = ux * speed
                 bean.vy = uy * speed
 

@@ -55,6 +55,7 @@ from sim.interfaces.environment import (
 )
 from sim.interfaces.placement import IPlacementStrategy, ISpawnController
 from sim.observability import get_logger
+from sim.random import init_random
 
 logger = get_logger("container")
 
@@ -76,6 +77,8 @@ Strategy = Union[IWeatherStrategy, ISeasonStrategy, IDayNightStrategy]
 class Container:
     def __init__(self, config: SimulationConfig):
         self.config = config
+        # Initialize global random generator first so all subsystems can use it
+        init_random(config.random)
         self.barrier_strategy: IBarrierStrategy = BarrierStrategy(config.barriers)
         self.world = self._build_world(config)
         self.calendar = self._build_calendar(config)

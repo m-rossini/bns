@@ -52,6 +52,16 @@ class GradientOrientation(str, Enum):
 GRADIENT_ORIENTATIONS: Tuple[GradientOrientation, ...] = tuple(GradientOrientation)
 
 
+@dataclass(frozen=True)
+class RandomConfig:
+    """Global random number generator configuration.
+
+    If ``seed`` is None, the system entropy source is used (non-reproducible).
+    If ``seed`` is an int, the generator is fully deterministic.
+    """
+    seed: Optional[int] = None
+
+
 @dataclass
 class WorldConfig:
     width: float = 1200.0
@@ -559,14 +569,17 @@ class CreationConfig:
 class MovementConfig:
     """Bean movement rules.
 
-    ``direction`` is a global direction vector; ``speed`` is in world units per
-    second. Each bean keeps its own velocity after the first update so it can
-    bounce on the edges independently. Collisions are detected and logged but
-    do not change the motion yet.
+    ``speed`` is in world units per second. Each bean gets its own initial
+    velocity (random direction by default) so they bounce around independently.
+    Collisions are detected and logged but do not change the motion yet.
     """
 
     strategy_name: str = "straight_line"
     speed: float = 60.0
+    #: If True (default), each bean gets a random initial direction.
+    #: If False, all beans start with the global ``direction`` vector.
+    random_initial_direction: bool = True
+    #: Global direction vector used when ``random_initial_direction=False``.
     direction: Tuple[float, float] = (1.0, 0.0)
     bounce_on_edges: bool = True
 
@@ -643,6 +656,7 @@ class SimulationConfig:
     movement: MovementConfig = field(default_factory=MovementConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    random: RandomConfig = field(default_factory=RandomConfig)
     debug: bool = False
     tick_rate: float = 30.0  # simulation ticks per second
 

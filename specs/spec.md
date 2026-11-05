@@ -422,9 +422,10 @@ container; they do not create them.
   moves it in a straight line. Each bean keeps its own velocity, so bounces are
   independent.
 - On a world edge the bean reflects and clamps inside the world; `bean.bounced`
-  is logged.
+  is logged at DEBUG.
 - Collisions are detected after the move: `bean.collided_barrier` and
-  `bean.collided_bean` are separate events. No collision response yet.
+  `bean.collided_bean` are separate events, also at DEBUG. No collision
+  response yet.
 - `main._step` calls `update(beans, world, fixed_step)` once per simulation
   tick, and only while the session is `PLAYING`.
 
@@ -720,10 +721,10 @@ MovementConfig(
 
 `StraightLineMovementStrategy` seeds each bean's `vx`/`vy` from that global
 direction and speed on its first update, then mutates `Bean.x`/`Bean.y` in
-place every tick. Edges reflect the movement and log `bean.bounced`. Collision
-detection runs after the move and emits `bean.collided_barrier` and
-`bean.collided_bean`; no collision response is applied yet. Movement only runs
-while the session is `PLAYING`.
+place every tick. Edges reflect the movement and log `bean.bounced` at DEBUG.
+Collision detection runs after the move and emits `bean.collided_barrier` and
+`bean.collided_bean` at DEBUG; no collision response is applied yet. Movement
+only runs while the session is `PLAYING`.
 
 ### 9.8 Logging
 
@@ -793,8 +794,8 @@ Events: `app.start`, `app.window_created`, `app.window_closing`, `app.stop`,
 `environment.day_changed`, `environment.season_changed`,
 `environment.weather_changed`, `environment.reading` (DEBUG),
 `weather.field_rebuilt`, `weather.front` (DEBUG), `season.palette` (DEBUG),
-`ui.cell_inspected`, `bean.bounced`, `bean.collided_barrier`,
-`bean.collided_bean`, `spawn.positions_batch`, `spawn.shortfall`.
+`ui.cell_inspected`, `bean.bounced` (DEBUG), `bean.collided_barrier` (DEBUG),
+`bean.collided_bean` (DEBUG), `spawn.positions_batch`, `spawn.shortfall`.
 
 Reading samples are emitted only at `DEBUG` and at most once per
 `readings_interval` ticks.

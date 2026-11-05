@@ -70,6 +70,14 @@ _WEATHER_TINT = {
 }
 _WEATHER_DIM = {"clear": 1.0, "cloudy": 0.82, "rain": 0.68, "storm": 0.5, "snow": 0.85}
 
+#: Weather tints and precipitation are sampled in blocks of this many cells.
+#: Weather patches span many cells, so drawing one block per sample looks the
+#: same while removing most of the per-cell `weather_at` calls and draw calls.
+_WEATHER_BLOCK_CELLS = 3
+
+#: Number of decorative ground specks, drawn from one cached shape list.
+_DETAIL_COUNT = 150
+
 _MARGIN = 12.0
 _GAP = 8.0
 _SIDEBAR_MIN = 300.0
@@ -286,6 +294,18 @@ class ArcadeView(arcade.Window):
         self._slider_dragging = False
         self._config_rect: Optional[Tuple[float, float, float, float]] = None
         self._config_window: Optional["ConfigWindow"] = None
+        #: Cached, block-sampled weather conditions. The weather field only
+        #: changes once per `WeatherConfig.change_interval` ticks, so querying
+        #: every cell every frame is wasted work.
+        self._weather_blocks_key: Optional[tuple] = None
+        self._weather_blocks_cache: List[Tuple[int, int, str]] = []
+        #: Shape list for the weather tints, rebuilt only when the field,
+        #: ambient light bucket or layout changes.
+        self._weather_shapes = None
+        self._weather_shapes_key: Optional[tuple] = None
+        #: Cached decorative ground specks (static positions and colours).
+        self._detail_shapes = None
+        self._detail_shapes_key: Optional[tuple] = None
         self._last_mouse_x: float = 0.0
         self._last_mouse_y: float = 0.0
         self._census_cache: Optional[tuple] = None
@@ -576,42 +596,144 @@ class ArcadeView(arcade.Window):
         self._draw_grid(session)
         self._draw_selection(session)
 
+    def _weather_blocks(self, session: GameSession) -> List[Tuple[int, int, str]]:
+        """Block-sampled weather conditions, cached until the field changes.
+
+        The weather strategy rebuilds only every `change_interval` ticks, so the
+        per-cell readings are constant in between. Sampling one cell per block
+        and caching the result removes thousands of `weather_at` calls per
+        frame.
+        """
+        layout = self._layout
+        env = session.environment
+        if layout is None or env is None:
+            return []
+        step = _WEATHER_BLOCK_CELLS
+        weather_cfg = getattr(self.sim_config, "weather", None)
+        interval = getattr(weather_cfg, "change_interval", None)
+        season = getattr(env, "season", None)
+        key = (
+            env.tick // interval if interval else None,
+            season,
+            layout.cols,
+            layout.rows,
+            layout.cell_size,
+        )
+        if interval and self._weather_blocks_key == key:
+            return self._weather_blocks_cache
+
+        world_cell = layout.cell_size
+        blocks: List[Tuple[int, int, str]] = []
+        for col in range(0, layout.cols, step):
+            for row in range(0, layout.rows, step):
+                cx = (col + step / 2.0) * world_cell
+                cy = (row + step / 2.0) * world_cell
+                blocks.append((col, row, env.weather_at(cx, cy)))
+        if interval:
+            self._weather_blocks_key = key
+            self._weather_blocks_cache = blocks
+        return blocks
+
     def _draw_weather_cells(self, session: GameSession, palette, ambient: float) -> None:
         self._ensure_layout()
         layout = self._layout
         if layout is None:
             return
-        env = session.environment
-        if env is None:
-            return
         cell = layout.cell_step
         if cell < 2:
             return
 
-        for col in range(layout.cols):
-            for row in range(layout.rows):
-                cx, cy = layout.cell_center(col, row)
-                wx, wy = layout.world_to_screen(cx, cy)
-                tint = _WEATHER_TINT.get(env.weather_at(cx, cy))
-                if tint is None:
-                    continue
-                color, alpha = tint
-                a = int(255 * alpha * (0.35 + 0.65 * (1.0 - ambient)))
-                arcade.draw_lbwh_rectangle_filled(
-                    wx - cell / 2, wy - cell / 2, cell, cell, (*color, max(0, a))
-                )
+        # Weather tints are coarse blocks that only change when the weather
+        # field is rebuilt, so they are built into one reusable shape list
+        # instead of one immediate-mode rectangle per block per frame. The tint
+        # alpha also depends on ambient light, hence the coarse bucket.
+        step = _WEATHER_BLOCK_CELLS
+        world_cell = layout.cell_size
+        blocks = self._weather_blocks(session)
+        tints = _WEATHER_TINT
+        alpha_factor = 0.35 + 0.65 * (1.0 - ambient)
+
+        if self._weather_blocks_key is not None:
+            key = (
+                self._weather_blocks_key,
+                int(ambient * 10),
+                layout.left,
+                layout.bottom,
+                layout.scale,
+                layout.cols,
+                layout.rows,
+            )
+            if self._weather_shapes_key != key:
+                shapes = arcade.shape_list.ShapeElementList()
+                for col, row, condition in blocks:
+                    tint = tints.get(condition)
+                    if tint is None:
+                        continue
+                    color, alpha = tint
+                    a = int(255 * alpha * alpha_factor)
+                    if a <= 0:
+                        continue
+                    sx, sy = layout.world_to_screen(col * world_cell, row * world_cell)
+                    block_w = min(step, layout.cols - col) * cell
+                    block_h = min(step, layout.rows - row) * cell
+                    shapes.append(
+                        arcade.shape_list.create_rectangle_filled(
+                            sx + block_w / 2.0, sy + block_h / 2.0,
+                            block_w, block_h, (*color, a),
+                        )
+                    )
+                self._weather_shapes = shapes
+                self._weather_shapes_key = key
+            if self._weather_shapes is not None:
+                self._weather_shapes.draw()
+            return
+
+        # No config to key the cache on: draw directly.
+        for col, row, condition in blocks:
+            tint = tints.get(condition)
+            if tint is None:
+                continue
+            color, alpha = tint
+            a = int(255 * alpha * alpha_factor)
+            if a <= 0:
+                continue
+            sx, sy = layout.world_to_screen(col * world_cell, row * world_cell)
+            block_w = min(step, layout.cols - col) * cell
+            block_h = min(step, layout.rows - row) * cell
+            arcade.draw_lbwh_rectangle_filled(
+                sx, sy, block_w, block_h, (*color, a)
+            )
 
     def _draw_details(self, session: GameSession, palette, ambient: float) -> None:
         factor = 0.45 + 0.55 * ambient
         details = palette.details or ((120, 140, 120),)
-        for i in range(150):
-            wx = (i * 97.31 + 17.0) % self._world_width
-            wy = (i * 57.73 + 29.0) % self._world_height
-            sx, sy = self._world_to_screen(wx, wy)
-            radius = 1.3 + (i % 4) * 0.5
-            arcade.draw_circle_filled(
-                sx, sy, radius, _shade(details[i % len(details)], factor)
-            )
+        layout = self._layout
+        key = (
+            tuple(details),
+            int(factor * 10),
+            layout.left if layout else 0.0,
+            layout.bottom if layout else 0.0,
+            layout.scale if layout else 0.0,
+            self._world_width,
+            self._world_height,
+        )
+        if self._detail_shapes_key != key:
+            shapes = arcade.shape_list.ShapeElementList()
+            for i in range(_DETAIL_COUNT):
+                wx = (i * 97.31 + 17.0) % self._world_width
+                wy = (i * 57.73 + 29.0) % self._world_height
+                sx, sy = self._world_to_screen(wx, wy)
+                radius = 1.3 + (i % 4) * 0.5
+                shapes.append(
+                    arcade.shape_list.create_ellipse_filled(
+                        sx, sy, radius * 2, radius * 2,
+                        _shade(details[i % len(details)], factor),
+                    )
+                )
+            self._detail_shapes = shapes
+            self._detail_shapes_key = key
+        if self._detail_shapes is not None:
+            self._detail_shapes.draw()
 
     def _draw_precipitation(self, session: GameSession) -> None:
         self._ensure_layout()
@@ -627,30 +749,38 @@ class ArcadeView(arcade.Window):
         if cell < 3:
             return
 
-        for col in range(layout.cols):
-            for row in range(layout.rows):
-                cx, cy = layout.cell_center(col, row)
-                condition = env.weather_at(cx, cy)
-                if condition not in ("rain", "storm", "snow"):
-                    continue
-                # Only a deterministic subset of cells draw precipitation so a
-                # rainy front never floods the screen with lines.
-                if (col * 7 + row * 13 + (tick // 10)) % 3 != 0:
-                    continue
+        # Same block sampling as the weather tints: precipitation is sparse,
+        # so testing one sample per block is enough to place drops. Segments
+        # are accumulated and drawn in one batch instead of one call per drop.
+        step = _WEATHER_BLOCK_CELLS
+        rain: List[Tuple[float, float]] = []
+        snow: List[Tuple[float, float]] = []
+        for col, row, condition in self._weather_blocks(session):
+            if condition not in ("rain", "storm", "snow"):
+                continue
+            # Only a deterministic subset of blocks draw precipitation so a
+            # rainy front never floods the screen with lines.
+            if (col * 7 + row * 13 + (tick // 10)) % 3 != 0:
+                continue
 
-                sl, sb = layout.cell_screen_rect(col, row)[:2]
-                count = 2 if condition == "storm" else 1
-                speed = 3.4 if condition == "storm" else 2.2
+            sl, sb = layout.cell_screen_rect(col, row)[:2]
+            block = cell * step
+            count = 2 if condition == "storm" else 1
+            speed = 3.4 if condition == "storm" else 2.2
 
-                for i in range(count):
-                    px = sl + ((i * 37.0 + col * 13.0) % max(1.0, cell))
-                    py = sb + ((tick * speed + i * 41.0 + row * 17.0) % max(1.0, cell))
-                    if condition == "snow":
-                        arcade.draw_circle_filled(px, py, 1.6, (240, 246, 255, 210))
-                    else:
-                        arcade.draw_line(
-                            px, py, px - 2, py - 8, (170, 200, 240, 160), 1
-                        )
+            for i in range(count):
+                px = sl + ((i * 37.0 + col * 13.0) % max(1.0, block))
+                py = sb + ((tick * speed + i * 41.0 + row * 17.0) % max(1.0, block))
+                if condition == "snow":
+                    snow.append((px, py))
+                else:
+                    rain.append((px, py))
+                    rain.append((px - 2, py - 8))
+
+        if rain:
+            arcade.draw_lines(rain, (170, 200, 240, 160), 1)
+        if snow:
+            arcade.draw_points(snow, (240, 246, 255, 210), 3)
 
     def _draw_barriers(self, session: GameSession) -> None:
         """Draw each barrier as a filled, cell-aligned rectangle in its colour.
@@ -676,11 +806,11 @@ class ArcadeView(arcade.Window):
             arcade.draw_lbwh_rectangle_outline(sx, sy, bw, bh, (0, 0, 0, 110), 1)
 
     def _draw_beans(self, session: GameSession) -> None:
-        """Draw each bean as a small cross in its gender color.
+        """Draw beans as colored points using batched `draw_points` (one draw call per color).
 
-        Beans are graphical placeholders (small crosses) until full bean
-        entities are implemented. Color reflects gender: blue = male,
-        red = female.
+        This is significantly faster than the previous per-bean line drawing or
+        SpriteList approaches because it submits all points of one color in a
+        single GPU instanced draw call.
         """
         self._ensure_layout()
         layout = self._layout
@@ -689,18 +819,17 @@ class ArcadeView(arcade.Window):
         beans = getattr(session, "beans", None) or []
         if not beans:
             return
-        cross_size = max(1.0, layout.cell_step * 0.35)
-        half = cross_size / 2.0
+
+        # Group points by color (typically 2: male/female, but could be more).
+        points_by_color: Dict[Tuple[int, int, int], List[Tuple[float, float]]] = {}
         for bean in beans:
             sx, sy = layout.world_to_screen(bean.x, bean.y)
-            # Vertical stroke.
-            arcade.draw_line(
-                sx, sy - half, sx, sy + half, bean.color, 1
-            )
-            # Horizontal stroke.
-            arcade.draw_line(
-                sx - half, sy, sx + half, sy, bean.color, 1
-            )
+            points_by_color.setdefault(bean.color, []).append((sx, sy))
+
+        # Point size scales slightly with cell size for visibility.
+        point_size = max(2.0, layout.cell_step * 0.15)
+        for color, points in points_by_color.items():
+            arcade.draw_points(points, color, point_size)
 
     def _draw_grid(self, session: GameSession) -> None:
         """Draw one line per cell boundary, derived from `world.cell_size`."""
@@ -715,12 +844,17 @@ class ArcadeView(arcade.Window):
         grid_right = layout.left + layout.cols * step
         grid_top = layout.bottom + layout.rows * step
 
+        lines: List[Tuple[float, float]] = []
         for col in range(1, layout.cols):
             sx = layout.left + col * step
-            arcade.draw_line(sx, layout.bottom, sx, grid_top, (*color, 90), 1)
+            lines.append((sx, layout.bottom))
+            lines.append((sx, grid_top))
         for row in range(1, layout.rows):
             sy = layout.bottom + row * step
-            arcade.draw_line(layout.left, sy, grid_right, sy, (*color, 90), 1)
+            lines.append((layout.left, sy))
+            lines.append((grid_right, sy))
+        if lines:
+            arcade.draw_lines(lines, (*color, 90), 1)
 
         arcade.draw_lbwh_rectangle_outline(
             layout.left, layout.bottom,

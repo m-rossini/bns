@@ -17,7 +17,7 @@ project brief lives in [`spec.md`](./spec.md); architecture diagrams live in
 # Local development
 make venv
 make install
-make run-local          # opens the window
+make run                # opens the window
 
 # Bounded headless run (no display, no OpenGL import)
 make run-headless
@@ -25,7 +25,7 @@ BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=2000 python -m sim.main
 
 # Container (podman preferred, docker fallback)
 make build
-make run                # headless, detached
+make run-container      # headless, detached
 make logs               # follow it
 make verify             # headless, foreground, exits with the logs
 make run-container-ui   # windowed through the host X11 socket
@@ -445,9 +445,9 @@ BEAN_LOG_LEVEL=WARNING python -m sim.main
 | `season.palette` | DEBUG | season, progress, ground colour, sun intensity, daylight fraction |
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
 | `barrier.generated` | wiring | count, max_span_cells, color |
-| `bean.bounced` | bean hits a world edge | bean_id, edge, x, y |
-| `bean.collided_barrier` | bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
-| `bean.collided_bean` | two beans overlap (logging only) | bean_id, other_id, x, y |
+| `bean.bounced` | DEBUG, bean hits a world edge | bean_id, edge, x, y |
+| `bean.collided_barrier` | DEBUG, bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
+| `bean.collided_bean` | DEBUG, two beans overlap (logging only) | bean_id, other_id, x, y |
 | `spawn.positions_batch` | fixed-amount creation batch | batch, requested, produced, total |
 | `spawn.shortfall` | fixed amount could not reach the total | requested, produced |
 | `session.time_scale` | slider | scale |
@@ -522,7 +522,7 @@ source. Containers default to `BEAN_HEADLESS=1`.
 
 ```bash
 make build
-make run                         # detached headless
+make run-container               # detached headless
 make logs                        # follow
 make status
 make stop
@@ -541,7 +541,7 @@ status.
 python3 -m compileall sim        # syntax
 make test                        # compile + bounded headless locally
 make verify LOG_LEVEL=DEBUG      # compile + headless in the container
-make run-local                   # windowed smoke test
+make run                         # windowed smoke test
 ```
 
 Expected headless invariants:

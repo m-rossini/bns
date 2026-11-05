@@ -89,6 +89,10 @@ class TimeConfig:
     initial_time_scale: float = 1.0    # perceived speed at startup (1.0 = real time)
     time_scale_min: float = 0.1        # slowest the slider can go
     time_scale_max: float = 4.0        # fastest the slider can go
+    #: Upper bound on simulation ticks a single frame may run. Keeps a stalled
+    #: frame (window resize, long draw) from building a backlog that the next
+    #: frame can never drain: the loop stays responsive and drops old time.
+    max_ticks_per_frame: int = 5
 
 
 @dataclass(frozen=True)

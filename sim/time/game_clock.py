@@ -15,10 +15,16 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, value))
 
 
-def advance_clock(clock: GameClock, real_dt: float, fixed_step: float) -> int:
+def advance_clock(clock: GameClock, real_dt: float, fixed_step: float,
+                  max_ticks: int = 5) -> int:
     """Advance the clock by real_dt seconds of wall time.
 
     Returns the number of simulation ticks executed this frame.
+
+    At most ``max_ticks`` ticks run per frame. A long frame (a window resize,
+    a slow draw, a debugger pause) therefore cannot build a backlog that the
+    next frame has to drain: the accumulator is capped and the excess wall
+    time is dropped, trading a little simulated time for a responsive loop.
     """
     clock.real_dt = real_dt
     clock.sim_dt = 0.0
@@ -26,12 +32,18 @@ def advance_clock(clock: GameClock, real_dt: float, fixed_step: float) -> int:
     if clock.paused:
         return 0
 
+    max_ticks = max(1, int(max_ticks))
+
     # Accumulate scaled simulation time. time_scale only affects perception:
     # the fixed step (tick_rate) is unchanged.
     clock.accumulator += real_dt * clock.time_scale
 
+    backlog_cap = fixed_step * max_ticks
+    if clock.accumulator > backlog_cap:
+        clock.accumulator = backlog_cap
+
     ticks_executed = 0
-    while clock.accumulator >= fixed_step:
+    while ticks_executed < max_ticks and clock.accumulator >= fixed_step:
         clock.accumulator -= fixed_step
         clock.sim_dt += fixed_step
         clock.tick += 1

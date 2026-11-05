@@ -203,6 +203,8 @@ class Container:
             return StraightLineMovementStrategy(
                 config=mc,
                 bean_radius=config.bean_placement.bean_radius,
+                world_width=self.world.width,
+                world_height=self.world.height,
             )
         raise ValueError(
             f"Unknown movement strategy {mc.strategy_name!r}. "

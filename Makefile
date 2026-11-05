@@ -144,8 +144,10 @@ build:
 	fi
 	$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) -f Containerfile .
 
-# `make run` is the safe default: headless in a container, exits on its own.
-run: run-container
+# `make run` opens the game window locally.
+# `make run-container` is the headless container default (detached, exits on
+# its own); `make run-headless` is a bounded headless run in the venv.
+run: run-local
 
 # Containers run detached (`-d`). Follow output with `make logs`,
 # shut down with `make stop`, inspect with `make status`.

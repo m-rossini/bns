@@ -34,7 +34,7 @@ def test_bean_moves_in_place_along_the_global_direction():
     assert bean.position == (110.0, 100.0)
 
 
-def test_bean_bounces_off_the_right_edge_and_keeps_its_id():
+def test_bean_bounces_off_the_right_edge_and_keeps_its_id(caplog):
     world = _world(width=100.0, height=100.0)
     bean = _bean(x=94.0, y=50.0)
     original = bean
@@ -42,12 +42,15 @@ def test_bean_bounces_off_the_right_edge_and_keeps_its_id():
         MovementConfig(speed=10.0, direction=(1.0, 0.0)), bean_radius=5.0
     )
 
-    strategy.update([bean], world, dt=1.0)
+    with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
+        strategy.update([bean], world, dt=1.0)
 
     assert bean is original
     assert bean.id == 1
     assert bean.x == 86.0          # 94 + 10 = 104; reflect around 95 => 86
     assert bean.vx == -10.0
+    assert "event=bean.bounced" in caplog.text
+    assert all(r.levelno == logging.DEBUG for r in caplog.records)
 
 
 def test_beans_keep_independent_velocities_after_bouncing():
@@ -74,11 +77,12 @@ def test_bean_barrier_collision_is_logged(caplog):
         MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
     )
 
-    with caplog.at_level(logging.INFO, logger="bean.movement.straight_line"):
+    with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
         strategy.update([bean], world, dt=1.0)
 
     assert "event=bean.collided_barrier" in caplog.text
     assert "barrier_id=7" in caplog.text
+    assert all(r.levelno == logging.DEBUG for r in caplog.records)
 
 
 def test_bean_bean_collision_is_logged(caplog):
@@ -89,12 +93,30 @@ def test_bean_bean_collision_is_logged(caplog):
         MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
     )
 
-    with caplog.at_level(logging.INFO, logger="bean.movement.straight_line"):
+    with caplog.at_level(logging.DEBUG, logger="bean.movement.straight_line"):
         strategy.update([first, second], world, dt=1.0)
 
     assert "event=bean.collided_bean" in caplog.text
     assert "bean_id=1" in caplog.text
     assert "other_id=2" in caplog.text
+    assert all(r.levelno == logging.DEBUG for r in caplog.records)
+
+
+def test_collision_work_is_skipped_when_debug_is_off(caplog):
+    """Collision detection only feeds DEBUG logs, so INFO must skip it."""
+    world = _world()
+    world.add_barrier(
+        Barrier(id=7, kind="rect", x=90.0, y=90.0, width=30.0, height=30.0)
+    )
+    beans = [_bean(bean_id=1, x=100.0, y=100.0), _bean(bean_id=2, x=101.0, y=100.0)]
+    strategy = StraightLineMovementStrategy(
+        MovementConfig(speed=0.0, direction=(1.0, 0.0)), bean_radius=5.0
+    )
+
+    with caplog.at_level(logging.INFO, logger="bean.movement.straight_line"):
+        strategy.update(beans, world, dt=1.0)
+
+    assert caplog.records == []
 
 
 def test_step_moves_beans_only_while_playing():

@@ -78,7 +78,7 @@ class WeatherStrategy(IWeatherStrategy):
         season = climate.season
         weights = climate.adjusted_weather_weights()
 
-        rng = random.Random((self._config.seed, interval, season))
+        rng = random.Random(f"{self._config.seed}-{interval}-{season}")
         self._base = self._choose(rng, weights)
 
         min_cells = min(self._cols, self._rows)

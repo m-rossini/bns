@@ -104,8 +104,6 @@ class Container:
             config
         )
         self.energy_strategy: IEnergyStrategy = self._build_energy_strategy(config)
-        # Assign genotypes to beans after spawning
-        self._assign_genotypes()
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
             "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s "
@@ -127,30 +125,6 @@ class Container:
             config.energy.strategy_name,
             len(self.beans),
         )
-
-    def _assign_genotypes(self) -> None:
-        """Assign default genotype and phenotype to all beans."""
-        from sim.domain.genotype import Genotype, create_default_phenotype
-
-        for bean in self.beans:
-            # Create genotype with the bean's gender-assigned color as base_color
-            genotype = Genotype(
-                energy_capacity=1000.0,
-                metabolic_rate=1.0,
-                drag_coefficient=0.01,
-                max_speed=60.0,
-                acceleration=30.0,
-                base_color=bean.color,  # Use gender-assigned color
-                dormant_color=(139, 69, 19),
-            )
-            bean.genotype = genotype
-            bean.phenotype = create_default_phenotype(genotype)
-            # Initialize velocity from movement strategy
-            bean.phenotype.velocity = (bean.vx or 0.0, bean.vy or 0.0)
-            # Update phenotype color from genotype (sets to base_color)
-            bean.phenotype.update_color(genotype)
-            # Sync bean color from phenotype
-            bean.update_color_from_phenotype()
 
     # ------------------------------------------------------------------
     # World
@@ -258,7 +232,11 @@ class Container:
 
     def _spawn_beans(self) -> List:
         """Run the spawn controller and store resulting beans in the session."""
-        beans = self.spawn_controller.spawn_beans()
+        cc = self.config.creation
+        beans = self.spawn_controller.spawn_beans(
+            genotype_ranges=cc.genotype_ranges,
+            genotype_seed=cc.genotype_seed,
+        )
         self.session.beans = beans
         # Track initial gender counts for census
         initial_female = sum(1 for b in beans if b.gender == "female")

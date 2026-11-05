@@ -539,6 +539,24 @@ class FixedAmountCreationConfig:
 
 
 @dataclass
+class GenotypeConfig:
+    """Per-gene ranges for drawing randomized genotypes at bean creation.
+
+    Each field is a ``(min, max)`` tuple. At creation time, one value per bean
+    is drawn uniformly from each range using the configured seed, so every bean
+    in the initial population can have distinct genetic traits. ``base_color``
+    is not ranged here — it comes from the gender controller — and
+    ``dormant_color`` is a fixed brown.
+    """
+
+    energy_capacity: Tuple[float, float] = (800.0, 1200.0)
+    metabolic_rate: Tuple[float, float] = (0.5, 2.0)
+    drag_coefficient: Tuple[float, float] = (0.005, 0.02)
+    max_speed: Tuple[float, float] = (40.0, 80.0)
+    acceleration: Tuple[float, float] = (15.0, 45.0)
+
+
+@dataclass
 class CreationConfig:
     """Selects how the initial bean population is created.
 
@@ -551,6 +569,10 @@ class CreationConfig:
     fixed_amount: FixedAmountCreationConfig = field(
         default_factory=FixedAmountCreationConfig
     )
+    #: Per-gene ranges for drawing randomized genotypes at creation.
+    genotype_ranges: GenotypeConfig = field(default_factory=GenotypeConfig)
+    #: Seed for the per-bean genotype random draw.
+    genotype_seed: int = 1337
 
     def __post_init__(self) -> None:
         if self.strategy_name not in CREATION_STRATEGY_NAMES:
@@ -833,6 +855,8 @@ DEFAULT_CONFIG = SimulationConfig(
     creation=CreationConfig(
         strategy_name="density_based",
         fixed_amount=FixedAmountCreationConfig(total_beans=1300),
+        genotype_ranges=GenotypeConfig(),
+        genotype_seed=1337,
     ),
     movement=MovementConfig(
         strategy_name="straight_line",

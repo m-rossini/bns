@@ -467,11 +467,81 @@ class ArcadeView(arcade.Window):
     def draw_end_screen(self, session: GameSession) -> None:
         self.clear(_shade(self._sky_color(session), 0.35))
         self._draw_backdrop(session)
-        self._draw_title_panel(
-            "GAME OVER",
-            f"Reason: {session.end_reason or 'ended'}",
-            hint="SPACE to restart   ·   Esc to quit",
-            accent=(240, 96, 96),
+        sw, sh = self._viewport_size()
+        panel_w = min(620, sw - 60)
+        panel_h = 420
+        left = (sw - panel_w) / 2
+        bottom = (sh - panel_h) / 2
+        self._panel(left, bottom, panel_w, panel_h)
+
+        cx = sw / 2
+        self._text.draw(
+            "GAME OVER", cx, bottom + panel_h - 70, (240, 96, 96),
+            font_size=44, anchor_x="center", anchor_y="center", bold=True,
+        )
+        self._text.draw(
+            f"Reason: {session.end_reason or 'ended'}", cx, bottom + panel_h - 120,
+            _TEXT, font_size=19, anchor_x="center", anchor_y="center",
+        )
+
+        # --- Statistics wind-down ---------------------------------------
+        env = session.environment
+        calendar = env.calendar if env is not None else None
+        weather = env.weather if env is not None else "clear"
+        season = calendar.season if calendar is not None else "Static"
+        year = calendar.year if calendar is not None else 1
+        day = calendar.day if calendar is not None else 1
+        clock = calendar.clock if calendar is not None else "00:00"
+        tick = session.clock.tick
+
+        beans = getattr(session, "beans", None) or []
+        initial_female = getattr(session, "initial_female", 0)
+        initial_male = getattr(session, "initial_male", 0)
+        alive_female = alive_male = 0
+        dead_female = dead_male = 0
+        for bean in beans:
+            is_dormant = bean.phenotype is not None and bean.phenotype.is_dormant
+            if bean.gender == "female":
+                if is_dormant:
+                    dead_female += 1
+                else:
+                    alive_female += 1
+            else:
+                if is_dormant:
+                    dead_male += 1
+                else:
+                    alive_male += 1
+        total_initial = initial_female + initial_male
+        total_alive = alive_female + alive_male
+        total_dead = dead_female + dead_male
+
+        stats = [
+            (f"Ticks played: {tick}", _TEXT),
+            (f"Day {day}  ·  {clock}", _TEXT),
+            (f"Season: {season}  ·  Year: {year}", _TEXT),
+            (f"Weather: {weather}", _WEATHER_LABEL.get(weather, _TEXT)),
+            ("", None),
+            ("BEANS", _ACCENT),
+            (f"  Initial: {total_initial:>3}  (F:{initial_female:>2} M:{initial_male:>2})", _TEXT),
+            (f"  Alive:   {total_alive:>3}  (F:{alive_female:>2} M:{alive_male:>2})", _TEXT),
+            (f"  Dormant: {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
+        ]
+
+        y = bottom + panel_h - 164
+        line_h = 20
+        for text, color in stats:
+            if text == "":
+                y -= line_h * 0.6
+                continue
+            self._text.draw(
+                text, cx, y, color, font_size=14,
+                anchor_x="center", anchor_y="center",
+            )
+            y -= line_h
+
+        self._text.draw(
+            "SPACE to restart   ·   Esc to quit", cx, bottom + 60, _MUTED,
+            font_size=13, anchor_x="center", anchor_y="center",
         )
 
     # ------------------------------------------------------------------

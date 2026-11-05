@@ -44,7 +44,7 @@ def _step(
     # always tracks clock.tick. Bean movement runs on the same tick, but only
     # while the session is actually playing.
     for _ in range(ticks_executed):
-        if environment is not None:
+        if environment is not None and session.state == GameState.PLAYING:
             environment.advance_tick()
         if (
             energy_strategy is not None
@@ -238,10 +238,11 @@ def main() -> None:
         now = time.perf_counter()
         real_dt = now - last_time
         last_time = now
-        _step(
-            session, environment, movement_strategy, energy_strategy, real_dt, fixed_step,
-            max_ticks=max_ticks,
-        )
+        if session.state != GameState.END:
+            _step(
+                session, environment, movement_strategy, energy_strategy, real_dt, fixed_step,
+                max_ticks=max_ticks,
+            )
 
         if session.exit_requested:
             log_event(

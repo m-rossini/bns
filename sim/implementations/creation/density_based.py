@@ -8,10 +8,16 @@ colours are still delegated to the configured strategies.
 from __future__ import annotations
 
 import random
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from sim.config import BEAN_DENSITY_COEFFICIENTS, BeanPlacementConfig
+from sim.config import BEAN_DENSITY_COEFFICIENTS, BeanPlacementConfig, GenotypeConfig
 from sim.domain.beans import Bean, Position
+from sim.domain.genotype import (
+    DEFAULT_GENOTYPE,
+    Genotype,
+    create_default_phenotype,
+    draw_genotype,
+)
 from sim.domain.world import World
 from sim.interfaces.creation import IBeanCreationStrategy
 from sim.interfaces.gender import IGenderController
@@ -39,6 +45,8 @@ class DensityBasedCreationStrategy(IBeanCreationStrategy):
         world: World,
         placement_strategy: IPlacementStrategy,
         gender_controller: IGenderController,
+        genotype_ranges: Optional[GenotypeConfig] = None,
+        genotype_seed: int = 0,
     ) -> List[Bean]:
         cfg = self.config
         area = float(world.width * world.height)
@@ -71,7 +79,9 @@ class DensityBasedCreationStrategy(IBeanCreationStrategy):
             strategy=cfg.strategy_name,
         )
 
-        beans = self._instantiate(positions, gender_controller)
+        beans = self._instantiate(
+            positions, gender_controller, genotype_ranges, genotype_seed
+        )
 
         counts: Dict[str, int] = {}
         for bean in beans:
@@ -89,10 +99,41 @@ class DensityBasedCreationStrategy(IBeanCreationStrategy):
 
     @staticmethod
     def _instantiate(
-        positions: List[Position], gender_controller: IGenderController
+        positions: List[Position],
+        gender_controller: IGenderController,
+        genotype_ranges: Optional[GenotypeConfig] = None,
+        genotype_seed: int = 0,
     ) -> List[Bean]:
         attributed = gender_controller.assign_attributes(positions)
-        return [
-            Bean(id=index, x=x, y=y, gender=gender, color=color)
-            for index, ((x, y), gender, color) in enumerate(attributed, start=1)
-        ]
+        rng = random.Random(genotype_seed)
+        beans: List[Bean] = []
+        for index, ((x, y), gender, color) in enumerate(attributed, start=1):
+            if genotype_ranges is not None:
+                genotype = draw_genotype(rng, genotype_ranges, color)
+            else:
+                from sim.domain.genotype import DEFAULT_GENOTYPE
+
+                genotype = Genotype(
+                    energy_capacity=DEFAULT_GENOTYPE.energy_capacity,
+                    metabolic_rate=DEFAULT_GENOTYPE.metabolic_rate,
+                    drag_coefficient=DEFAULT_GENOTYPE.drag_coefficient,
+                    max_speed=DEFAULT_GENOTYPE.max_speed,
+                    acceleration=DEFAULT_GENOTYPE.acceleration,
+                    base_color=color,
+                    dormant_color=(139, 69, 19),
+                )
+            phenotype = create_default_phenotype(genotype)
+            phenotype.velocity = (0.0, 0.0)
+            phenotype.update_color(genotype)
+            beans.append(
+                Bean(
+                    id=index,
+                    x=x,
+                    y=y,
+                    gender=gender,
+                    color=color,
+                    genotype=genotype,
+                    phenotype=phenotype,
+                )
+            )
+        return beans

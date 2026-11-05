@@ -130,10 +130,10 @@ def test_step_moves_beans_only_while_playing():
     )
     fixed_step = 1.0
 
-    _step(session, None, strategy, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
     assert bean.x == 60.0
 
     session.state = GameState.PAUSED
     session.clock.paused = True
-    _step(session, None, strategy, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
     assert bean.x == 60.0

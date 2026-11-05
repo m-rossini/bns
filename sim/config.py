@@ -323,6 +323,12 @@ MOVEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
     "straight_line",
 )
 
+#: Valid energy strategy names (implemented in sim.implementations.energy).
+ENERGY_STRATEGY_NAMES: Tuple[str, ...] = (
+    "fixed",
+    "per_day",
+)
+
 
 @dataclass
 class PoissonDiscConfig:
@@ -597,6 +603,22 @@ class MovementConfig:
 
 
 @dataclass
+class EnergyConfig:
+    """Bean energy system configuration.
+
+    Controls how beans gain and consume energy.
+    """
+
+    strategy_name: str = "fixed"  # "fixed" | "per_day" | "environmental"
+    # Fixed energy gain per tick (world units per second)
+    energy_per_tick: float = 0.5
+    # Lump sum per day (for per_day strategy)
+    energy_per_day: float = 50.0
+    # Environmental strategy: base energy from resources (future)
+    resource_energy_factor: float = 1.0
+
+
+@dataclass
 class EnvironmentConfig:
     """Strategy class names and positional climate gradients.
 
@@ -654,6 +676,7 @@ class SimulationConfig:
     bean_placement: BeanPlacementConfig = field(default_factory=BeanPlacementConfig)
     creation: CreationConfig = field(default_factory=CreationConfig)
     movement: MovementConfig = field(default_factory=MovementConfig)
+    energy: EnergyConfig = field(default_factory=EnergyConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     random: RandomConfig = field(default_factory=RandomConfig)

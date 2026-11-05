@@ -30,6 +30,7 @@ def _step(
     session: GameSession,
     environment: Environment | None,
     movement_strategy,
+    energy_strategy,
     real_dt: float,
     fixed_step: float,
     max_ticks: int = 5,
@@ -46,6 +47,23 @@ def _step(
         if environment is not None:
             environment.advance_tick()
         if (
+            energy_strategy is not None
+            and session.state == GameState.PLAYING
+            and session.world is not None
+        ):
+            # Apply energy gains
+            gains = energy_strategy.calculate_energy_gain(
+                session.beans, environment, session.world, fixed_step
+            )
+            for bean in session.beans:
+                if bean.phenotype is not None and bean.genotype is not None:
+                    gain = gains.get(bean.id, 0.0)
+                    if gain > 0:
+                        from sim.domain.genotype import apply_energy_gain
+                        apply_energy_gain(bean.phenotype, bean.genotype, gain)
+                        bean.update_color_from_phenotype()
+
+        if (
             movement_strategy is not None
             and session.state == GameState.PLAYING
             and session.world is not None
@@ -59,6 +77,7 @@ def run_headless(
     session: GameSession,
     environment: Environment | None,
     movement_strategy,
+    energy_strategy,
     fixed_step: float,
     max_ticks: int = 5,
 ) -> None:
@@ -81,7 +100,7 @@ def run_headless(
 
     for _ in range(max(0, frames)):
         _step(
-            session, environment, movement_strategy, frame_dt, fixed_step,
+            session, environment, movement_strategy, energy_strategy, frame_dt, fixed_step,
             max_ticks=max_ticks,
         )
 
@@ -136,6 +155,7 @@ def main() -> None:
     session = container.session
     environment = container.environment
     movement_strategy = container.movement_strategy
+    energy_strategy = container.energy_strategy
 
     headless = os.environ.get("BEAN_HEADLESS", "0") == "1"
     fixed_step = 1.0 / config.tick_rate
@@ -152,7 +172,7 @@ def main() -> None:
     if headless:
         try:
             run_headless(
-                session, environment, movement_strategy, fixed_step,
+                session, environment, movement_strategy, energy_strategy, fixed_step,
                 max_ticks=max_ticks,
             )
         except Exception:
@@ -198,7 +218,7 @@ def main() -> None:
         real_dt = now - last_time
         last_time = now
         _step(
-            session, environment, movement_strategy, real_dt, fixed_step,
+            session, environment, movement_strategy, energy_strategy, real_dt, fixed_step,
             max_ticks=max_ticks,
         )
 

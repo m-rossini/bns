@@ -6,6 +6,11 @@ and continues; each bean keeps its own velocity so it can bounce independently.
 
 Collisions are detected after the move and logged, but do not change the
 motion yet (bean-bean and bean-barrier events are separate).
+
+Energy integration:
+- Beans consume energy: metabolic_rate + drag_coefficient * speed² per tick
+- Bouncing off edges costs extra energy (collision penalty)
+- Beans with energy <= 0 become dormant (brown, no movement)
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from typing import Dict, List, Sequence, Tuple
 
 from sim.config import MovementConfig
 from sim.domain.beans import Bean
+from sim.domain.genotype import apply_energy_cost
 from sim.interfaces.movement import IMovementStrategy
 from sim.interfaces.world import IWorld
 from sim.observability import get_logger, log_event
@@ -27,6 +33,10 @@ from sim.implementations.movement.numba_collisions import (
 from sim.random import random_direction, get_rng
 
 logger = get_logger("movement.straight_line")
+
+
+# Energy cost for bouncing off world edges
+BOUNCE_ENERGY_COST = 10.0
 
 
 def _overlaps_barrier(bean_x: float, bean_y: float, radius: float, barrier) -> bool:
@@ -85,6 +95,10 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     ux, uy = self.unit_direction
                 bean.vx = ux * speed
                 bean.vy = uy * speed
+                # Initialize phenotype velocity if available
+                if bean.phenotype is not None:
+                    bean.phenotype.velocity = (bean.vx, bean.vy)
+                    bean.phenotype.current_speed = speed
 
     def _move(self, beans: Sequence[Bean], world: IWorld, dt: float) -> None:
         radius = self.bean_radius
@@ -94,21 +108,31 @@ class StraightLineMovementStrategy(IMovementStrategy):
         log_bounces = logger.isEnabledFor(logging.DEBUG)
 
         for bean in beans:
-            x = bean.x + bean.vx * dt
-            y = bean.y + bean.vy * dt
+            # Skip dormant beans
+            if bean.phenotype is not None and bean.phenotype.is_dormant:
+                continue
+
+            # Current speed from velocity
+            speed = math.hypot(bean.vx, bean.vy) if bean.vx is not None and bean.vy is not None else 0.0
+
+            x = bean.x + (bean.vx or 0.0) * dt
+            y = bean.y + (bean.vy or 0.0) * dt
             edges: List[str] = []
+            bounced = False
 
             if x < min_x:
                 if bounce:
                     x = min_x + (min_x - x)
-                    bean.vx = -bean.vx
+                    bean.vx = -(bean.vx or 0.0)
+                    bounced = True
                 else:
                     x = min_x
                 edges.append("left")
             elif x > max_x:
                 if bounce:
                     x = max_x - (x - max_x)
-                    bean.vx = -bean.vx
+                    bean.vx = -(bean.vx or 0.0)
+                    bounced = True
                 else:
                     x = max_x
                 edges.append("right")
@@ -116,14 +140,16 @@ class StraightLineMovementStrategy(IMovementStrategy):
             if y < min_y:
                 if bounce:
                     y = min_y + (min_y - y)
-                    bean.vy = -bean.vy
+                    bean.vy = -(bean.vy or 0.0)
+                    bounced = True
                 else:
                     y = min_y
                 edges.append("bottom")
             elif y > max_y:
                 if bounce:
                     y = max_y - (y - max_y)
-                    bean.vy = -bean.vy
+                    bean.vy = -(bean.vy or 0.0)
+                    bounced = True
                 else:
                     y = max_y
                 edges.append("top")
@@ -140,6 +166,41 @@ class StraightLineMovementStrategy(IMovementStrategy):
 
             bean.x = x
             bean.y = y
+
+            # Apply energy costs if bean has genotype/phenotype
+            if bean.genotype is not None and bean.phenotype is not None:
+                # Calculate acceleration (change in speed)
+                old_speed = bean.phenotype.current_speed
+                new_speed = math.hypot(bean.vx or 0.0, bean.vy or 0.0)
+                acceleration = (new_speed - old_speed) / dt if dt > 0 else 0.0
+
+                # Apply metabolic + drag + acceleration cost
+                apply_energy_cost(
+                    bean.phenotype,
+                    bean.genotype,
+                    dt,
+                    speed=new_speed,
+                    acceleration=acceleration,
+                )
+
+                # Extra cost for bouncing
+                if bounced:
+                    bean.phenotype.current_energy = max(
+                        0.0, bean.phenotype.current_energy - BOUNCE_ENERGY_COST
+                    )
+                    if bean.phenotype.current_energy <= 0.0:
+                        bean.phenotype.is_dormant = True
+                        bean.phenotype.current_speed = 0.0
+                        bean.phenotype.velocity = (0.0, 0.0)
+                        bean.vx = 0.0
+                        bean.vy = 0.0
+
+                # Update phenotype
+                bean.phenotype.current_speed = new_speed
+                bean.phenotype.velocity = (bean.vx or 0.0, bean.vy or 0.0)
+                bean.phenotype.age += 1
+                bean.phenotype.update_color(bean.genotype)
+                bean.update_color_from_phenotype()
 
             if edges and log_bounces:
                 log_event(

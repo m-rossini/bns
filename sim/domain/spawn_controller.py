@@ -8,7 +8,7 @@ built strategies together and stores the result on the session.
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from sim.components import GameSession
 from sim.domain.beans import Bean
@@ -17,6 +17,8 @@ from sim.interfaces.creation import IBeanCreationStrategy
 from sim.interfaces.gender import IGenderController
 from sim.interfaces.placement import IPlacementStrategy, ISpawnController
 from sim.observability import get_logger
+
+from sim.config import GenotypeConfig
 
 logger = get_logger("spawn")
 
@@ -39,10 +41,18 @@ class SpawnController(ISpawnController):
         self.gender = gender_controller
         self._beans: List[Bean] = []
 
-    def spawn_beans(self) -> List[Bean]:
+    def spawn_beans(
+        self,
+        genotype_ranges: Optional[GenotypeConfig] = None,
+        genotype_seed: int = 0,
+    ) -> List[Bean]:
         """Create the initial population and store it on the session."""
         beans = self.creation_strategy.create_beans(
-            self.world, self.placement, self.gender
+            self.world,
+            self.placement,
+            self.gender,
+            genotype_ranges=genotype_ranges,
+            genotype_seed=genotype_seed,
         )
         self._beans = beans
         self.session.beans = beans

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from typing import Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sim.config import GenotypeConfig
     from sim.domain.beans import Bean
 
 
@@ -90,6 +92,29 @@ def create_default_phenotype(genotype: Genotype = DEFAULT_GENOTYPE) -> Phenotype
         velocity=(0.0, 0.0),
         age=0,
         is_dormant=False,
+    )
+
+
+def draw_genotype(
+    rng: random.Random,
+    ranges: "GenotypeConfig",
+    base_color: Tuple[int, int, int],
+    dormant_color: Tuple[int, int, int] = (139, 69, 19),
+) -> Genotype:
+    """Draw a random Genotype from ``GenotypeConfig`` ranges.
+
+    Each numeric gene is drawn uniformly from its configured (min, max)
+    range, so the initial population has genetic variety while staying
+    within sane bounds. ``base_color`` comes from the gender controller.
+    """
+    return Genotype(
+        energy_capacity=rng.uniform(*ranges.energy_capacity),
+        metabolic_rate=rng.uniform(*ranges.metabolic_rate),
+        drag_coefficient=rng.uniform(*ranges.drag_coefficient),
+        max_speed=rng.uniform(*ranges.max_speed),
+        acceleration=rng.uniform(*ranges.acceleration),
+        base_color=base_color,
+        dormant_color=dormant_color,
     )
 
 

@@ -29,6 +29,7 @@ logger = get_logger("main")
 def _step(
     session: GameSession,
     environment: Environment | None,
+    movement_strategy,
     real_dt: float,
     fixed_step: float,
 ) -> int:
@@ -36,15 +37,17 @@ def _step(
     ticks_executed = advance_clock(session.clock, real_dt, fixed_step)
 
     # The environment advances once per simulation tick, so environment.tick
-    # always tracks clock.tick.
-    if ticks_executed > 0 and environment is not None:
-        for _ in range(ticks_executed):
+    # always tracks clock.tick. Bean movement runs on the same tick, but only
+    # while the session is actually playing.
+    for _ in range(ticks_executed):
+        if environment is not None:
             environment.advance_tick()
-
-    # Run simulation systems only when PLAYING
-    if session.state == GameState.PLAYING:
-        # Placeholder for bean/movement/collision systems
-        pass
+        if (
+            movement_strategy is not None
+            and session.state == GameState.PLAYING
+            and session.world is not None
+        ):
+            movement_strategy.update(session.beans, session.world, fixed_step)
 
     return ticks_executed
 
@@ -52,6 +55,7 @@ def _step(
 def run_headless(
     session: GameSession,
     environment: Environment | None,
+    movement_strategy,
     fixed_step: float,
 ) -> None:
     """Run a bounded number of deterministic frames without a window."""
@@ -72,7 +76,7 @@ def run_headless(
     session.start_time = time.time()
 
     for _ in range(max(0, frames)):
-        _step(session, environment, frame_dt, fixed_step)
+        _step(session, environment, movement_strategy, frame_dt, fixed_step)
 
     env_tick = environment.tick if environment is not None else 0
     if environment is not None:
@@ -124,6 +128,7 @@ def main() -> None:
 
     session = container.session
     environment = container.environment
+    movement_strategy = container.movement_strategy
 
     headless = os.environ.get("BEAN_HEADLESS", "0") == "1"
     fixed_step = 1.0 / config.tick_rate
@@ -138,7 +143,7 @@ def main() -> None:
 
     if headless:
         try:
-            run_headless(session, environment, fixed_step)
+            run_headless(session, environment, movement_strategy, fixed_step)
         except Exception:
             logger.exception("app.crashed mode=headless")
             raise
@@ -181,7 +186,7 @@ def main() -> None:
         now = time.perf_counter()
         real_dt = now - last_time
         last_time = now
-        _step(session, environment, real_dt, fixed_step)
+        _step(session, environment, movement_strategy, real_dt, fixed_step)
 
         if session.exit_requested:
             log_event(

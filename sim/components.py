@@ -21,6 +21,8 @@ class Bean:
     y: float
     gender: str
     color: Tuple[int, int, int]
+    vx: Optional[float] = None
+    vy: Optional[float] = None
 
     @property
     def position(self) -> Tuple[float, float]:

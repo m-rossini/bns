@@ -36,17 +36,27 @@ bns/
     ├── observability.py       # logging setup + structured business events
     ├── domain/
     │   ├── __init__.py
+    │   ├── beans.py           # Bean entity (mutable x/y/vx/vy) + SpawnResult
     │   ├── calendar.py        # tick -> day / clock / season / year
     │   ├── climate.py         # SolarProfile, ClimateContext
     │   ├── environment.py     # positional readings + gradient composition
     │   ├── gradient.py        # orientation-aware positional gradients
+    │   ├── placement_utils.py # collision-free placement helpers
     │   ├── session.py         # concrete GameSession
+    │   ├── spawn_controller.py # SpawnController (delegates to creation strategy)
     │   ├── visuals.py         # SeasonPalette, SkyPalette, CelestialState, SolarProfile
     │   └── world.py           # bounds, cells, orientation, wrap/clamp, barriers
     ├── implementations/
     │   ├── __init__.py
     │   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
+    │   ├── creation/
+    │   │   ├── __init__.py       # creation strategy registry
+    │   │   ├── density_based.py  # area × density × variance
+    │   │   └── fixed_amount.py   # exact configured population
     │   ├── daynight/__init__.py   # DayNightStrategy
+    │   ├── movement/
+    │   │   ├── __init__.py       # movement strategy registry
+    │   │   └── straight_line.py  # direction + speed, bounce, collision logging
     │   ├── season/__init__.py     # SeasonStrategy (owns sun via solar_profile)
     │   └── weather/__init__.py    # WeatherStrategy (climate-aware)
     ├── input/
@@ -55,8 +65,12 @@ bns/
     ├── interfaces/
     │   ├── __init__.py
     │   ├── barrier.py         # IBarrierStrategy
+    │   ├── creation.py        # IBeanCreationStrategy
     │   ├── environment.py     # ICalendar, ISeasonStrategy, IDayNightStrategy,
     │   │                      # IWeatherStrategy, IEnvironment
+    │   ├── gender.py          # IGenderController
+    │   ├── movement.py        # IMovementStrategy
+    │   ├── placement.py       # IPlacementStrategy, ISpawnController
     │   ├── renderer.py        # IRenderer protocol
     │   └── world.py           # IWorld
     ├── rendering/
@@ -292,6 +306,31 @@ class IEnvironment(ABC):
 `Protocol` is used instead of `ABC` to avoid metaclass conflicts with
 `arcade.Window`.
 
+### 4.4 `sim/interfaces/creation.py`
+
+```python
+class IBeanCreationStrategy(ABC):
+    name                                     # config selector
+    create_beans(world, placement_strategy,
+                 gender_controller) -> list[Bean]
+```
+
+A creation strategy decides *how many* beans exist and drives placement,
+gender assignment and instantiation. It receives the already-built placement
+strategy and gender controller; it never constructs them.
+
+### 4.5 `sim/interfaces/movement.py`
+
+```python
+class IMovementStrategy(ABC):
+    name                                     # config selector
+    update(beans, world, dt)                 # advance every bean in place
+```
+
+`Bean` is mutable on purpose: `update` changes `x`, `y` and the per-bean
+velocity in place. `Bean.id` is stable for the whole simulation, so collision
+events refer to the same bean across ticks.
+
 ---
 
 ## 5. Implementations
@@ -360,6 +399,34 @@ class IEnvironment(ABC):
   deterministic and non-overlapping (best-effort reshuffle).
 - `validate()` rejects unknown kinds, non-positive sizes, out-of-bounds, and
   spans exceeding `max_span_cells`.
+
+### 5.5 Bean creation strategies
+
+- `DensityBasedCreationStrategy` — original behaviour: target population
+  `N = round(area × density tier × (1 + variance))`, then the configured
+  placement strategy, gender controller and `Bean` instantiation.
+- `FixedAmountCreationStrategy` — ignores area and density: creates exactly
+  `FixedAmountCreationConfig.total_beans` beans (never more). It asks the
+  configured placement strategy for more candidates than needed
+  (`placement_overshoot`, default 2) and trims, retrying across
+  `max_batches`; it logs `spawn.shortfall` if collision-free placement still
+  cannot reach the total.
+
+Both strategies receive the placement strategy and gender controller from the
+container; they do not create them.
+
+### 5.6 Movement strategy
+
+- `StraightLineMovementStrategy` — seeds every bean's velocity from the global
+  `MovementConfig.direction` and `MovementConfig.speed` (world units/s), then
+  moves it in a straight line. Each bean keeps its own velocity, so bounces are
+  independent.
+- On a world edge the bean reflects and clamps inside the world; `bean.bounced`
+  is logged.
+- Collisions are detected after the move: `bean.collided_barrier` and
+  `bean.collided_bean` are separate events. No collision response yet.
+- `main._step` calls `update(beans, world, fixed_step)` once per simulation
+  tick, and only while the session is `PLAYING`.
 
 ---
 
@@ -473,8 +540,10 @@ on_update(dt):
     ticks_executed = advance_clock(session.clock, real_dt, fixed_step)
     for _ in range(ticks_executed):
         environment.advance_tick()        # one environment tick per sim tick
-    if session.state == PLAYING:
-        pass                              # bean systems (placeholder)
+        if session.state == PLAYING:
+            movement_strategy.update(     # mutate beans in place
+                session.beans, session.world, fixed_step
+            )
     if session.exit_requested:
         view.close()
         arcade.exit()
@@ -503,6 +572,8 @@ Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
 | `TimeConfig` | `ticks_per_day=1200`, `ticks_per_season=4800`, `start_tick=0`, `initial_time_scale=1.0`, `time_scale_min=0.1`, `time_scale_max=4.0` |
 | `BarrierConfig` | `color=(255,208,64)` yellow, `max_span_cells=3`, `min_span_cells=1`, `count=6`, `seed=4242`, `margin_cells=1` |
 | `BeanPlacementConfig` | `strategy_name`, `density_tier`, `variance`, `seed`, gender ratios, `gender_colors`, strategy params |
+| `CreationConfig` | `strategy_name`, `fixed_amount` (`FixedAmountCreationConfig.total_beans`) |
+| `MovementConfig` | `strategy_name`, `speed` (units/s), `direction` vector, `bounce_on_edges` |
 | `GradientConfig` | `start`, `end`, `orientation` (empty inherits the world) |
 | `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `sun_intensity`, `daylight_fraction`, weather weights |
 | `DayNightConfig` | sun/moon, shading, thresholds, sky colours |
@@ -601,23 +672,28 @@ against it. Six yellow barriers are generated by `DEFAULT_CONFIG`.
 
 ### 9.6 Bean Placement (`sim/domain/spawn_controller.py`, `sim/domain/beans.py`)
 
-Initial unicellular beans are spawned by a :class:`sim.domain.spawn_controller.SpawnController`
-driven by `sim/config.BeanPlacementConfig`. The controller:
+Initial unicellular beans are created by the
+:class:`sim.interfaces.creation.IBeanCreationStrategy` selected in
+`CreationConfig`. `SpawnController` is a thin orchestrator; it passes the
+already-built placement strategy and gender controller to the creation
+strategy. The pipeline is:
 
-1. **Calculates target population ``N``** from world area × density coefficient ×
-   stochastic variance (area-based dynamic population calculus).
+1. **Decide the population size** — `density_based` uses world area × density
+   coefficient × stochastic variance; `fixed_amount` uses
+   `FixedAmountCreationConfig.total_beans` exactly (never more).
 2. **Generates positions** via a configurable :class:`sim.interfaces.placement.IPlacementStrategy`
    (``poisson_disc``, ``symmetrical``, ``colony_cluster``, ``center_to_border``,
    ``border_to_center``, ``linear_gradient``, ``resource_gradient``).
 3. **Assigns gender + color** via an
    :class:`sim.interfaces.gender.IGenderController` whose ratio percentages must
    sum exactly to 100.
-4. **Instantiates** :class:`sim.components.Bean` entities, stored on
+4. **Instantiates** :class:`sim.domain.beans.Bean` entities, stored on
    `GameSession.beans`, each drawn as a small cross in its gender color
    (blue = male, red = female).
 
 Logged events: ``spawn.started``, ``spawn.positions_generated``,
-``gender.assigned``, ``spawn.finished``.
+``gender.assigned``, ``spawn.finished``; the fixed-amount strategy also emits
+``spawn.positions_batch`` and ``spawn.shortfall``.
 
 `BeanPlacementConfig` holds the strategy name, density tier, variance, seed,
 gender ratios and per-gender color mappings. Default: poisson_disc placement,
@@ -631,13 +707,31 @@ bounds (margin = `bean_radius`). The shared helper
 `sim.domain.placement_utils.is_valid_bean_position()` is used by all
 placement strategies to guarantee these invariants.
 
-### 9.7 Logging
+### 9.7 Bean movement
+
+```python
+MovementConfig(
+    strategy_name="straight_line",
+    speed=60.0,                 # world units per second
+    direction=(1.0, 0.0),       # global direction vector
+    bounce_on_edges=True,
+)
+```
+
+`StraightLineMovementStrategy` seeds each bean's `vx`/`vy` from that global
+direction and speed on its first update, then mutates `Bean.x`/`Bean.y` in
+place every tick. Edges reflect the movement and log `bean.bounced`. Collision
+detection runs after the move and emits `bean.collided_barrier` and
+`bean.collided_bean`; no collision response is applied yet. Movement only runs
+while the session is `PLAYING`.
+
+### 9.8 Logging
 
 `LoggingConfig(level="INFO", business=True, readings=True,
 readings_interval=60)`. `BEAN_LOG_LEVEL` overrides `level` at runtime; the
 Makefile exposes it as `LOG_LEVEL`. See §12.
 
-### 9.8 Testing
+### 9.9 Testing
 
 Tests live in `sim/tests/` and are run with pytest. Coverage is measured with
 `coverage` and reported via `pytest-cov`.
@@ -664,7 +758,12 @@ Coverage target: **100% line coverage** on `sim/domain/`,
 3. `self.environment` from the calendar, world, resolved strategies and
    `EnvironmentConfig` / `WeatherConfig` / `LoggingConfig`
 4. `self.session` from the world and environment
-5. `self.debug` from `config.debug`
+5. `self.placement_strategy` and `self.gender_controller`
+6. `self.creation_strategy` from `config.creation` (receives the placement
+   strategy at spawn time)
+7. `self.spawn_controller` and the beans
+8. `self.movement_strategy` from `config.movement`
+9. `self.debug` from `config.debug`
 
 Strategy names are resolved case-insensitively. `None` disables that strategy
 (static mode). Accepted values: `DayNightStrategy` / `daynight`,
@@ -694,7 +793,8 @@ Events: `app.start`, `app.window_created`, `app.window_closing`, `app.stop`,
 `environment.day_changed`, `environment.season_changed`,
 `environment.weather_changed`, `environment.reading` (DEBUG),
 `weather.field_rebuilt`, `weather.front` (DEBUG), `season.palette` (DEBUG),
-`ui.cell_inspected`.
+`ui.cell_inspected`, `bean.bounced`, `bean.collided_barrier`,
+`bean.collided_bean`, `spawn.positions_batch`, `spawn.shortfall`.
 
 Reading samples are emitted only at `DEBUG` and at most once per
 `readings_interval` ticks.
@@ -812,12 +912,15 @@ Environment variables:
 - Barrier strategy (`IBarrierStrategy` + `BarrierStrategy`): configurable
   colour (default yellow), span capped at 3 cells per direction, validated on
   `World.add_barrier`. `DEFAULT_CONFIG` creates 6 yellow barriers.
-- Bean placement & gender: `SpawnController` + `IPlacementStrategy` +
-  `IGenderController`; `BeanPlacementConfig` drives strategy selection,
-  density tier, variance and gender ratios/colors. `DEFAULT_CONFIG` spawns
-  ~1300 beans (poisson_disc, average density, 50/50 male/female), drawn as
-  small crosses in gender color. All positions are collision-free (no bean-bean,
-  bean-barrier, or bean-border overlap) via `placement_utils.is_valid_bean_position()`.
+- Bean creation & gender: `IBeanCreationStrategy` with
+  `DensityBasedCreationStrategy` (original area × density × variance) and
+  `FixedAmountCreationStrategy` (exact configured total), plus
+  `IPlacementStrategy` + `IGenderController`. `DEFAULT_CONFIG` uses the
+  density-based strategy and spawns ~1150 collision-free beans.
+- Bean movement: `IMovementStrategy` + `StraightLineMovementStrategy`; global
+  direction + speed, in-place updates, independent edge bounces, and separate
+  barrier/bean collision logging. Movement runs only while `PLAYING` and the
+  view reads the live bean positions, so it is reflected on screen.
 - Automated tests in `sim/tests/` with pytest + coverage: placement strategies,
   gender controller, spawn controller, config validation.
 - Positional temperature, humidity, pressure and light with configurable
@@ -838,6 +941,7 @@ Environment variables:
 
 ### Not implemented
 
-- Bean movement, collision, eating, reproduction — the systems hook in
-  `main.py` is a placeholder. Initial bean placement IS implemented.
-- Automated tests and lint/typecheck configuration.
+- Collision *response*, eating, reproduction and lifecycle — collisions are
+  detected and logged only; beans currently pass through each other and through
+  barriers. Initial creation and movement ARE implemented.
+- Lint/typecheck configuration.

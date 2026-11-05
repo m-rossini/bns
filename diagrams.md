@@ -184,13 +184,35 @@ classDiagram
     }
 
     class SpawnController {
-        +config: SimulationConfig
         +world: World
         +session: GameSession
+        +creation_strategy: IBeanCreationStrategy
         +placement: IPlacementStrategy
         +gender: IGenderController
         +spawn_beans() list[Bean]
         +beans: list[Bean]
+    }
+
+    class DensityBasedCreationStrategy {
+        +name: str
+        +create_beans(world, placement, gender) list[Bean]
+        -_target_population(area) int
+    }
+
+    class FixedAmountCreationStrategy {
+        +name: str
+        +total_beans: int
+        +create_beans(world, placement, gender) list[Bean]
+    }
+
+    class StraightLineMovementStrategy {
+        +name: str
+        +bean_radius: float
+        +update(beans, world, dt)
+        -_seed_velocities(beans)
+        -_move(beans, world, dt)
+        -_log_barrier_collisions(beans, world)
+        -_log_bean_collisions(beans)
     }
 
     class PoissonDiscStrategy {
@@ -307,6 +329,12 @@ classDiagram
         +calendar: Calendar
         +environment: Environment
         +session: GameSession
+        +placement_strategy: IPlacementStrategy
+        +gender_controller: IGenderController
+        +creation_strategy: IBeanCreationStrategy
+        +spawn_controller: ISpawnController
+        +beans: list~Bean~
+        +movement_strategy: IMovementStrategy
     }
 
     class ICalendar {
@@ -325,6 +353,12 @@ classDiagram
         <<interface>>
     }
     class IPlacementStrategy {
+        <<interface>>
+    }
+    class IBeanCreationStrategy {
+        <<interface>>
+    }
+    class IMovementStrategy {
         <<interface>>
     }
     class IGenderController {
@@ -359,6 +393,9 @@ classDiagram
     LinearGradientStrategy ..|> IPlacementStrategy
     ResourceGradientStrategy ..|> IPlacementStrategy
     GenderController ..|> IGenderController
+    DensityBasedCreationStrategy ..|> IBeanCreationStrategy
+    FixedAmountCreationStrategy ..|> IBeanCreationStrategy
+    StraightLineMovementStrategy ..|> IMovementStrategy
     Environment ..|> IEnvironment
 
     Environment --> ICalendar
@@ -371,9 +408,13 @@ classDiagram
     WeatherStrategy --> IWorld
 
     BarrierStrategy --> IWorld
+    SpawnController --> IBeanCreationStrategy
     SpawnController --> IPlacementStrategy
     SpawnController --> IGenderController
     SpawnController --> GameSession
+    DensityBasedCreationStrategy --> IPlacementStrategy
+    FixedAmountCreationStrategy --> IPlacementStrategy
+    StraightLineMovementStrategy --> IWorld
     Container --> BarrierStrategy
     Container --> World
     Container --> Calendar
@@ -439,22 +480,29 @@ sequenceDiagram
     autonumber
     participant C as Container
     participant SC as SpawnController
+    participant CS as IBeanCreationStrategy
     participant PS as IPlacementStrategy
     participant GC as IGenderController
     participant W as World
     participant Sess as GameSession
     participant Log as bean.spawn
 
-    C->>SC: SpawnController(config, world, session, PS, GC)
-    SC->>SC: target N = Round(area × rho × (1 + variance))
-    SC->>PS: generate_positions(N, width, height)
-    PS-->>SC: positions [(x, y), ...]
-    SC->>GC: assign_attributes(positions)
-    GC-->>SC: [(pos, gender, color), ...]
-    loop for each bean
-        SC->>SC: Bean(id, x, y, gender, color)
-        SC->>Sess: session.beans.append(bean)
+    C->>SC: SpawnController(world, session, CS, PS, GC)
+    SC->>CS: create_beans(world, PS, GC)
+    alt density_based
+        CS->>CS: target N = Round(area × rho × (1 + variance))
+    else fixed_amount
+        CS->>CS: target N = total_beans
     end
+    CS->>PS: generate_positions(N, width, height)
+    PS-->>CS: positions [(x, y), ...]
+    CS->>GC: assign_attributes(positions)
+    GC-->>CS: [(pos, gender, color), ...]
+    loop for each bean
+        CS->>CS: Bean(id, x, y, gender, color, vx=None, vy=None)
+    end
+    CS-->>SC: beans
+    SC->>Sess: session.beans = beans
     SC->>Log: event=spawn.finished beans=...
     Log-->>C: container.built ... beans=%s
 ```
@@ -475,6 +523,7 @@ sequenceDiagram
     participant Env as Environment
     participant Cal as Calendar
     participant W as WeatherStrategy
+    participant MS as MovementStrategy
     participant Log as bean.* loggers
 
     A->>S: read state
@@ -488,6 +537,12 @@ sequenceDiagram
         Env->>Env: solar = season_strategy.solar_profile(calendar)
         Env->>W: update(calendar.tick, climate_context())
         W->>W: rebuild field when tick // change_interval changed
+
+        opt session.state == PLAYING
+            A->>MS: update(session.beans, session.world, fixed_step)
+            MS->>MS: move each bean in place, bounce on edges
+            MS->>Log: bean.bounced / bean.collided_barrier / bean.collided_bean
+        end
 
         opt day boundary
             Env->>Log: event=environment.day_changed
@@ -719,6 +774,8 @@ classDiagram
         +time: TimeConfig
         +barriers: BarrierConfig
         +bean_placement: BeanPlacementConfig
+        +creation: CreationConfig
+        +movement: MovementConfig
         +seasons: list~SeasonConfig~
         +daynight: DayNightConfig
         +weather: WeatherConfig
@@ -752,6 +809,24 @@ classDiagram
         +gender_colors: dict
         +base_spacing_scale: float
         +max_retry_limit: int
+    }
+
+    class CreationConfig {
+        +strategy_name: str
+        +fixed_amount: FixedAmountCreationConfig
+    }
+
+    class FixedAmountCreationConfig {
+        +total_beans: int
+        +max_batches: int
+        +placement_overshoot: int
+    }
+
+    class MovementConfig {
+        +strategy_name: str
+        +speed: float
+        +direction: tuple
+        +bounce_on_edges: bool
     }
 
     class TimeConfig {
@@ -843,6 +918,9 @@ classDiagram
     SimulationConfig *-- TimeConfig
     SimulationConfig *-- BarrierConfig
     SimulationConfig *-- BeanPlacementConfig
+    SimulationConfig *-- CreationConfig
+    SimulationConfig *-- MovementConfig
+    CreationConfig *-- FixedAmountCreationConfig
     SimulationConfig *-- "1..*" SeasonConfig
     SimulationConfig *-- DayNightConfig
     SimulationConfig *-- WeatherConfig

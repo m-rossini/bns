@@ -92,23 +92,35 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
   below freezing, storms need warmth and moisture, etc.).
 - **Rendering** — a full-height world on the right and a stack of information
   boxes on the left. The grid is drawn from the configured cell size.
-- **Bean placement** — initial unicellular beans are spawned by a
-  :class:`sim.domain.spawn_controller.SpawnController` driven by
-  `sim/config.BeanPlacementConfig`. The controller:
+- **Bean creation & placement** — initial unicellular beans are produced by a
+  :class:`sim.interfaces.creation.IBeanCreationStrategy`, orchestrated by a
+  thin :class:`sim.domain.spawn_controller.SpawnController`. Two creation
+  implementations:
 
-  * Calculates target population from world area × density tier × variance
-    (area-based dynamic population calculus).
-  * Generates positions via a configurable :class:`IPlacementStrategy`
-    (poisson_disc, symmetrical, colony_cluster, center_to_border,
-    border_to_center, linear_gradient, resource_gradient).
-  * Assigns gender identity + visual color via an
-    :class:`IGenderController` whose ratio percentages must sum to exactly 100.
-  * Instantiates :class:`sim.components.Bean` entities, stored on
-    `GameSession.beans`, each drawn as a small cross in its gender color
-    (blue = male, red = female).
+  * `DensityBasedCreationStrategy` — the original behaviour: world area ×
+    density tier × variance.
+  * `FixedAmountCreationStrategy` — exactly a configured `total_beans`, never
+    more.
+
+  The creation strategy receives an already-configured placement strategy and
+  gender controller; it never constructs them. Placement uses a configurable
+  :class:`IPlacementStrategy` (poisson_disc, symmetrical, colony_cluster,
+  center_to_border, border_to_center, linear_gradient, resource_gradient).
+  Gender identity + visual color come from an :class:`IGenderController` whose
+  ratio percentages must sum to exactly 100. Beans are stored on
+  `GameSession.beans` and drawn as small crosses in their gender color
+  (blue = male, red = female).
 
   Logged events: `spawn.started`, `spawn.positions_generated`,
-  `gender.assigned`, `spawn.finished`.
+  `spawn.positions_batch`, `spawn.shortfall`, `gender.assigned`,
+  `spawn.finished`.
+
+- **Bean movement** — `StraightLineMovementStrategy` gives every bean the
+  configured global direction and speed (world units/s), updates `Bean.x/y` in
+  place and reflects on the world edges. Each bean keeps its own velocity after
+  the first update, so bounces are independent. Collisions with barriers and
+  with other beans are detected and logged as separate events but do not
+  change the motion yet. Movement runs only while the session is `PLAYING`.
 
 
 ---
@@ -123,28 +135,37 @@ sim/
 ├── observability.py          # logging setup + structured business events
 ├── main.py                   # entry point, fixed-step loop, headless mode
 ├── domain/
+│   ├── beans.py              # Bean entity (mutable x/y/vx/vy) + SpawnResult
 │   ├── calendar.py           # tick -> day / clock / season / year
 │   ├── climate.py            # SolarProfile, ClimateContext
 │   ├── environment.py        # positional readings + gradient composition
 │   ├── gradient.py           # orientation-aware positional gradients
+│   ├── placement_utils.py    # collision-free placement helpers
 │   ├── session.py            # concrete GameSession
+│   ├── spawn_controller.py   # SpawnController (delegates to creation strategy)
 │   ├── visuals.py            # SeasonPalette, SkyPalette, CelestialState, SolarProfile
 │   └── world.py              # bounds, cells, orientation, wrap/clamp, barriers
-│   ├── beans.py              # Bean entity + SpawnResult
-│   ├── placement_utils.py    # collision-free placement helpers
-│   └── spawn_controller.py   # SpawnController (placement → gender → beans)
 ├── interfaces/
 │   ├── barrier.py            # IBarrierStrategy
+│   ├── creation.py           # IBeanCreationStrategy
 │   ├── environment.py        # ICalendar, ISeasonStrategy, IDayNightStrategy,
 │   │                         # IWeatherStrategy, IEnvironment
 │   ├── gender.py             # IGenderController
+│   ├── movement.py           # IMovementStrategy
 │   ├── placement.py          # IPlacementStrategy, ISpawnController
 │   ├── renderer.py           # IRenderer protocol
 │   └── world.py              # IWorld
 ├── implementations/
 │   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
+│   ├── creation/
+│   │   ├── __init__.py       # creation registry
+│   │   ├── density_based.py  # area × density × variance
+│   │   └── fixed_amount.py   # exact configured population
 │   ├── daynight/__init__.py  # DayNightStrategy
 │   ├── gender.py             # GenderController (ratio-balanced, shuffled)
+│   ├── movement/
+│   │   ├── __init__.py       # movement registry
+│   │   └── straight_line.py  # direction + speed, bounce, collision logging
 │   ├── placement/
 │   │   ├── __init__.py       # strategy registry
 │   │   ├── border_to_center.py
@@ -210,6 +231,9 @@ the only object `main()` reads.
 | `WorldConfig` | size, cell size, orientation, wrap |
 | `TimeConfig` | ticks per day / season, start tick, initial/min/max playback scale |
 | `BarrierConfig` | barrier colour (default yellow), max span cells, count, seed |
+| `BeanPlacementConfig` | placement strategy, density tier, variance, seed, gender ratios, colours |
+| `CreationConfig` | bean creation strategy + per-strategy configs (`FixedAmountCreationConfig.total_beans`) |
+| `MovementConfig` | movement strategy, speed (units/s), global direction vector, bounce flag |
 | `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights |
 | `DayNightConfig` | sun/moon speeds, shading, thresholds, sky colours |
 | `WeatherConfig` | field interval, seed, front count/radius/drift, condition effects |
@@ -421,6 +445,11 @@ BEAN_LOG_LEVEL=WARNING python -m sim.main
 | `season.palette` | DEBUG | season, progress, ground colour, sun intensity, daylight fraction |
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
 | `barrier.generated` | wiring | count, max_span_cells, color |
+| `bean.bounced` | bean hits a world edge | bean_id, edge, x, y |
+| `bean.collided_barrier` | bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
+| `bean.collided_bean` | two beans overlap (logging only) | bean_id, other_id, x, y |
+| `spawn.positions_batch` | fixed-amount creation batch | batch, requested, produced, total |
+| `spawn.shortfall` | fixed amount could not reach the total | requested, produced |
 | `session.time_scale` | slider | scale |
 
 Example (`LOG_LEVEL=DEBUG`):
@@ -542,11 +571,14 @@ Expected headless invariants:
 
 ## Known limitations
 
-- Beans ARE implemented: `DEFAULT_CONFIG` spawns ~1300 beans via the spawn
-  controller (poisson_disc placement, average density, 50/50 male/female).
-  Beans are drawn as small crosses in their gender color. Bean movement,
-  collision and lifecycle systems are not yet implemented; the systems hook in
-  `main.py` is a placeholder.
+- Beans ARE implemented: `DEFAULT_CONFIG` spawns ~1150 beans via the
+  density-based creation strategy (poisson_disc placement, average density,
+  gender ratios from config). Beans are drawn as small crosses in their gender
+  color and move every tick while `PLAYING`; the view reads their live `x`/`y`,
+  so movement is reflected on screen.
+- Collision *response* is not implemented yet: bean–barrier and bean–bean
+  overlaps are detected and logged, but beans pass through each other and
+  through barriers. Eat/reproduce/lifecycle systems are still pending.
 - Weather fronts are rebuilt from a seed every interval; `front_drift_cells`
   can move them between rebuilds but they do not animate continuously within an
   interval.

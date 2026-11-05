@@ -298,6 +298,17 @@ PLACEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
     "resource_gradient",
 )
 
+#: Valid bean creation strategy names (implemented in sim.implementations.creation).
+CREATION_STRATEGY_NAMES: Tuple[str, ...] = (
+    "density_based",
+    "fixed_amount",
+)
+
+#: Valid movement strategy names (implemented in sim.implementations.movement).
+MOVEMENT_STRATEGY_NAMES: Tuple[str, ...] = (
+    "straight_line",
+)
+
 
 @dataclass
 class PoissonDiscConfig:
@@ -478,6 +489,97 @@ class BeanPlacementConfig:
 
 
 @dataclass
+class FixedAmountCreationConfig:
+    """Create exactly ``total_beans`` beans, regardless of world area.
+
+    The creation strategy still delegates *where* the beans go to the
+    configured placement strategy; this config only controls *how many*.
+    """
+
+    total_beans: int = 1000
+    #: How many placement batches to try before accepting a shortfall.
+    max_batches: int = 20
+    #: Placement strategies derive spacing from the requested count; asking
+    #: for this multiple and trimming keeps the population exact.
+    placement_overshoot: int = 2
+
+    def __post_init__(self) -> None:
+        if self.total_beans < 0:
+            raise ValueError(
+                "FixedAmountCreationConfig.total_beans cannot be negative"
+            )
+        if self.max_batches < 1:
+            raise ValueError(
+                "FixedAmountCreationConfig.max_batches must be >= 1"
+            )
+        if self.placement_overshoot < 1:
+            raise ValueError(
+                "FixedAmountCreationConfig.placement_overshoot must be >= 1"
+            )
+
+
+@dataclass
+class CreationConfig:
+    """Selects how the initial bean population is created.
+
+    ``strategy_name`` chooses a :class:`sim.interfaces.creation.IBeanCreationStrategy`.
+    The active strategy receives an already-built placement strategy and gender
+    controller; it never instantiates them itself.
+    """
+
+    strategy_name: str = "density_based"
+    fixed_amount: FixedAmountCreationConfig = field(
+        default_factory=FixedAmountCreationConfig
+    )
+
+    def __post_init__(self) -> None:
+        if self.strategy_name not in CREATION_STRATEGY_NAMES:
+            raise ValueError(
+                f"CreationConfig.strategy_name must be one of "
+                f"{CREATION_STRATEGY_NAMES}, got {self.strategy_name!r}"
+            )
+
+    def strategy_config(self, strategy_name: Optional[str] = None):
+        """Return the config object for the given creation strategy name."""
+        name = strategy_name or self.strategy_name
+        configs = {"fixed_amount": self.fixed_amount}
+        if name not in configs:
+            raise ValueError(
+                f"Creation strategy {name!r} has no dedicated config object. "
+                f"Use one of: {sorted(configs)}"
+            )
+        return configs[name]
+
+
+@dataclass
+class MovementConfig:
+    """Bean movement rules.
+
+    ``direction`` is a global direction vector; ``speed`` is in world units per
+    second. Each bean keeps its own velocity after the first update so it can
+    bounce on the edges independently. Collisions are detected and logged but
+    do not change the motion yet.
+    """
+
+    strategy_name: str = "straight_line"
+    speed: float = 60.0
+    direction: Tuple[float, float] = (1.0, 0.0)
+    bounce_on_edges: bool = True
+
+    def __post_init__(self) -> None:
+        if self.strategy_name not in MOVEMENT_STRATEGY_NAMES:
+            raise ValueError(
+                f"MovementConfig.strategy_name must be one of "
+                f"{MOVEMENT_STRATEGY_NAMES}, got {self.strategy_name!r}"
+            )
+        if self.speed < 0.0:
+            raise ValueError("MovementConfig.speed cannot be negative")
+        dx, dy = self.direction
+        if dx == 0.0 and dy == 0.0:
+            raise ValueError("MovementConfig.direction cannot be the zero vector")
+
+
+@dataclass
 class EnvironmentConfig:
     """Strategy class names and positional climate gradients.
 
@@ -533,6 +635,8 @@ class SimulationConfig:
     weather: WeatherConfig = field(default_factory=WeatherConfig)
     barriers: BarrierConfig = field(default_factory=BarrierConfig)
     bean_placement: BeanPlacementConfig = field(default_factory=BeanPlacementConfig)
+    creation: CreationConfig = field(default_factory=CreationConfig)
+    movement: MovementConfig = field(default_factory=MovementConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     debug: bool = False
@@ -684,6 +788,16 @@ DEFAULT_CONFIG = SimulationConfig(
             noise_frequency=0.01,
             threshold=0.05,
         ),
+    ),
+    creation=CreationConfig(
+        strategy_name="density_based",
+        fixed_amount=FixedAmountCreationConfig(total_beans=1300),
+    ),
+    movement=MovementConfig(
+        strategy_name="straight_line",
+        speed=60.0,
+        direction=(1.0, 0.0),
+        bounce_on_edges=True,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

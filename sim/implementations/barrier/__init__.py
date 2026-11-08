@@ -1,13 +1,14 @@
-"""Barrier strategy: configurable colour, span limits and placement.
+"""Barrier strategy: configurable colour, density, size and placement.
 
 Barriers are axis-aligned rectangles snapped to the cell grid. Each one spans
-at most ``BarrierConfig.max_span_cells`` cells in either direction, so 3x3,
-3x1, 1x2 and 2x2 are valid while 4x1 is rejected. The fill colour is part of
-the strategy, so every barrier reads the same unless a different strategy is
-wired in.
+between ``min_span_cells`` and ``max_span_cells`` cells per axis. The generator
+keeps placing obstacles until their total area reaches ``density`` (a share of
+the grid), so populated worlds naturally get a few larger barriers instead of a
+fixed number of tiny specks.
 
-Placement is deterministic: the same seed always yields the same barriers,
-which keeps runs reproducible and the screenshots stable.
+Placement is non-deterministic by default: ``seed=None`` uses fresh entropy.
+Set an integer seed for reproducible layouts; snapshots store the generated
+barriers so a resumed run always keeps its exact obstacle map.
 """
 
 import math
@@ -90,35 +91,53 @@ class BarrierStrategy(IBarrierStrategy):
         cols, rows = world.cols, world.rows
         margin = min(config.margin_cells, max(0, min(cols, rows) // 4))
 
+        max_cols = max(1, cols - 2 * margin)
+        max_rows = max(1, rows - 2 * margin)
+        low = min(config.min_span_cells, max_cols, max_rows)
+        high_cols = min(config.max_span_cells, max_cols)
+        high_rows = min(config.max_span_cells, max_rows)
+        high_cols = max(low, high_cols)
+        high_rows = max(low, high_rows)
+
+        total_cells = max(1, cols * rows)
+        target_cells = max(0, round(total_cells * config.density))
+        if target_cells == 0:
+            logger.info(
+                "barrier.generated count=0 density=%.4f target_cells=0 color=%s",
+                config.density,
+                self.color,
+            )
+            return []
+
         barriers: List[Barrier] = []
         placed: List[Tuple[int, int, int, int]] = []
-        for index in range(config.count):
-            span_cols = rng.randint(
-                min(config.min_span_cells, config.max_span_cells),
-                config.max_span_cells,
-            )
-            span_rows = rng.randint(
-                min(config.min_span_cells, config.max_span_cells),
-                config.max_span_cells,
-            )
-            span_cols = min(span_cols, max(1, cols - 2 * margin))
-            span_rows = min(span_rows, max(1, rows - 2 * margin))
+        covered_cells = 0
+        attempts = 0
+        max_attempts = max(50, target_cells * 30)
+
+        while covered_cells < target_cells and attempts < max_attempts:
+            attempts += 1
+            span_cols = rng.randint(low, high_cols)
+            span_rows = rng.randint(low, high_rows)
 
             max_col = max(margin, cols - margin - span_cols)
             max_row = max(margin, rows - margin - span_rows)
             col = rng.randint(min(margin, max_col), max_col)
             row = rng.randint(min(margin, max_row), max_row)
 
-            # Try a few deterministic reshuffles before accepting an overlap.
+            # Try a few reshuffles before giving up on this candidate.
             for _ in range(24):
                 if not _overlaps(placed, col, row, span_cols, span_rows):
                     break
                 col = rng.randint(min(margin, max_col), max_col)
                 row = rng.randint(min(margin, max_row), max_row)
+            else:
+                continue
 
             placed.append((col, row, span_cols, span_rows))
+            covered_cells += span_cols * span_rows
             barrier = Barrier(
-                id=index + 1,
+                id=len(barriers) + 1,
                 kind="rect",
                 x=col * cell,
                 y=row * cell,
@@ -130,8 +149,14 @@ class BarrierStrategy(IBarrierStrategy):
             barriers.append(barrier)
 
         logger.info(
-            "barrier.generated count=%s max_span_cells=%s color=%s",
+            "barrier.generated count=%s density=%.4f target_cells=%s "
+            "covered_cells=%s attempts=%s min_span=%s max_span=%s color=%s",
             len(barriers),
+            config.density,
+            target_cells,
+            covered_cells,
+            attempts,
+            low,
             config.max_span_cells,
             self.color,
         )

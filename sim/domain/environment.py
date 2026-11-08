@@ -234,7 +234,9 @@ class Environment(IEnvironment):
         """Season weights before the climate adjustments, for the HUD/debug."""
         if self._season_strategy is None:
             return {}
-        return self._season_strategy.weather_weights(self._calendar.season)
+        return self._season_strategy.weather_weights(
+            self._calendar.season, self._calendar.year
+        )
 
     def climate_context(self) -> ClimateContext:
         """Snapshot handed to the weather strategy on every tick."""
@@ -429,3 +431,43 @@ class Environment(IEnvironment):
         self._palette_cache = _STATIC_PALETTE
         self._solar_cache = _STATIC_SOLAR
         self._event_log.event("environment.reset", tick=self._calendar.tick)
+
+    # ------------------------------------------------------------------
+    # Snapshot support
+    # ------------------------------------------------------------------
+    def snapshot_state(self) -> dict:
+        """Serializable copy of the dynamic environment state.
+
+        Derived caches (palette/solar) are intentionally omitted; they are
+        recomputed from the calendar and strategies on the next access.
+        """
+        return {
+            "calendar_tick": self._calendar.tick,
+            "weather": (
+                self._weather_strategy.snapshot_state()
+                if self._weather_strategy is not None
+                else None
+            ),
+            "season": (
+                self._season_strategy.snapshot_state()
+                if self._season_strategy is not None
+                else None
+            ),
+        }
+
+    def restore_state(self, state: dict) -> None:
+        """Restore state produced by :meth:`snapshot_state`."""
+        self._calendar.tick = int(state.get("calendar_tick", self._calendar.tick))
+        weather = state.get("weather")
+        if weather is not None and self._weather_strategy is not None:
+            self._weather_strategy.restore_state(weather)
+        season = state.get("season")
+        if season is not None and self._season_strategy is not None:
+            self._season_strategy.restore_state(season)
+        self._last_day = self._calendar.day
+        self._last_season = self._calendar.season
+        self._last_weather = self.weather
+        self._last_tick = self._calendar.tick
+        self._palette_tick = None
+        self._palette_cache = _STATIC_PALETTE
+        self._solar_cache = _STATIC_SOLAR

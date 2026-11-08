@@ -167,3 +167,38 @@ class WeatherStrategy(IWeatherStrategy):
         self._base = "clear"
         self._fronts = []
         self._interval = None
+
+    # ------------------------------------------------------------------
+    # Snapshot support
+    # ------------------------------------------------------------------
+    def snapshot_state(self) -> dict:
+        """Serializable copy of the current weather field."""
+        return {
+            "base": self._base,
+            "coverage": self._coverage,
+            "interval": self._interval,
+            "fronts": [
+                {
+                    "col": front.col,
+                    "row": front.row,
+                    "radius": front.radius,
+                    "kind": front.kind,
+                }
+                for front in self._fronts
+            ],
+        }
+
+    def restore_state(self, state: dict) -> None:
+        """Restore a field produced by :meth:`snapshot_state`."""
+        self._base = state.get("base", "clear")
+        self._coverage = float(state.get("coverage", self._coverage))
+        self._interval = state.get("interval")
+        self._fronts = [
+            _Front(
+                float(front["col"]),
+                float(front["row"]),
+                float(front["radius"]),
+                front["kind"],
+            )
+            for front in state.get("fronts", [])
+        ]

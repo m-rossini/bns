@@ -98,7 +98,9 @@ def test_config_rows_render_readable_values():
 
     barriers = dict(_config_rows(BarrierConfig()))
     assert barriers["color"] == "(255, 208, 64)"   # yellow
-    assert barriers["max_span_cells"] == "3"
+    assert barriers["density"] == "0.01"
+    assert barriers["min_span_cells"] == "3"
+    assert barriers["max_span_cells"] == "8"
 
 
 def test_clip_never_exceeds_its_budget():

@@ -13,9 +13,8 @@
   snapshot only.
 - Never call `arcade.draw_text`; use cached `arcade.Text` objects.
 - All tunables live in `sim/config.py`. Do not hardcode constants elsewhere.
-- Verify with `make test` (local, headless) and `make test-container`
-  (in-container, headless) before opening a pull request. See
-  [`~/.claude/skills/container-test/SKILL.md`].
+- Verify with `make test` (pytest + coverage, runs in the container) before
+  opening a pull request. See [`~/.claude/skills/container-test/SKILL.md`].
 - Never commit the `.venv`, caches, or ad-hoc screenshot scripts.
 
 ## Documentation

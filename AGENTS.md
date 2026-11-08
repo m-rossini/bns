@@ -5,6 +5,7 @@ Start here, then follow the link for the level of detail you need.
 | File | Purpose |
 |------|---------|
 | [`README.md`](./README.md) | Current technical reference: architecture, configuration, logging, rendering, verification. **Start here.** |
+| [`docs/configuration.md`](./docs/configuration.md) | Every configuration domain, formula, correlation and interface/implementation map. |
 | [`diagrams.md`](./diagrams.md) | Mermaid class, sequence, flow and state diagrams of the current code. |
 | [`specs/spec.md`](./specs/spec.md) | Game specification, kept aligned with the implementation. |
 | [`specs/bean_placement_strategy_spec.md`](./specs/bean_placement_strategy_spec.md) | Bean initial placement & gender system specification. |
@@ -17,11 +18,12 @@ Start here, then follow the link for the level of detail you need.
 
 1. `README.md` — what the project is and how to run it.
 2. `diagrams.md` — how the pieces talk to each other.
-3. `specs/spec.md` — defaults, interfaces and detailed behaviour.
+3. `docs/configuration.md` — every config domain, formula and interface map.
+4. `specs/spec.md` — defaults, interfaces and detailed behaviour.
 
 ## Ground rules
 
 See [`CLAUDE.md`](./CLAUDE.md). In short: never commit to `main` directly, use
 the git workflow in `~/.claude/skills/git/SKILL.md`, verify tests in the
-container via `~/.claude/skills/container-test/SKILL.md` (`make test-container`),
+container via `~/.claude/skills/container-test/SKILL.md` (`make test`, `make test-cov`),
 and keep documentation aligned with the code.

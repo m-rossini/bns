@@ -238,6 +238,8 @@ class Container:
             genotype_seed=cc.genotype_seed,
         )
         self.session.beans = beans
+        self.session.corpses = []
+        self.session.next_corpse_id = 1
         # Track initial gender counts for census
         initial_female = sum(1 for b in beans if b.gender == "female")
         initial_male = sum(1 for b in beans if b.gender == "male")
@@ -287,6 +289,7 @@ class Container:
             season = SeasonStrategy(
                 seasons=config.seasons,
                 ticks_per_season=config.time.ticks_per_season,
+                seed=ec.season_seed,
             )
 
         daynight: Optional[IDayNightStrategy] = None

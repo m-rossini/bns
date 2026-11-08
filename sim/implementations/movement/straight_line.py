@@ -200,10 +200,9 @@ class StraightLineMovementStrategy(IMovementStrategy):
                         bean.vx = 0.0
                         bean.vy = 0.0
 
-                # Update phenotype
+                # Update phenotype (aging runs centrally in the tick loop)
                 bean.phenotype.current_speed = new_speed
                 bean.phenotype.velocity = (bean.vx or 0.0, bean.vy or 0.0)
-                bean.phenotype.age += 1
                 bean.phenotype.update_color(bean.genotype)
                 bean.update_color_from_phenotype()
 

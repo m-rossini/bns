@@ -6,7 +6,7 @@ Rendering uses [Arcade](https://api.arcade.academy/); the domain layer has no
 OpenGL dependency and runs headless.
 
 The current implementation is the reference for this document. The original
-project brief lives in [`spec.md`](./spec.md); architecture diagrams live in
+project brief lives in [`specs/spec.md`](./specs/spec.md); architecture diagrams live in
 [`diagrams.md`](./diagrams.md).
 
 ---
@@ -71,6 +71,11 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
   seasons (spring/summer) and brown shades mark dry or dormant seasons
   (autumn/winter). The meaning is shown in the Environment box legend and is
   owned by the season strategy's config (`SeasonConfig.ground_meaning`).
+  Year 1 uses the configured baselines; from year 2 on every season occurrence
+  is re-rolled inside configurable `*_variation` ranges (seeded by
+  `EnvironmentConfig.season_seed`), so repeated cycles never repeat exactly.
+  Temperature, sun exposure, humidity and pressure all flow through the varied
+  season into the climate context — the hook future food availability will read.
 - **Day/night** — sun altitude, dawn/dusk/night phases, moon phase, sky palette,
   and smooth local shading of the light curve.
 - **Weather** — a per-cell field made of a patchy background condition plus
@@ -78,10 +83,12 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
 - **Environment** — composes the three strategies into positional readings:
   temperature (°C), light (0..1), humidity (0..1) and atmospheric pressure (hPa).
 - **Barriers** — static, cell-aligned rectangular obstacles owned by a barrier
-  strategy (`IBarrierStrategy` + `BarrierStrategy`). Each barrier has a
-  configurable colour (default yellow) and may span at most 3 grid cells in
-  either direction (3×3, 3×1, 1×2, …). The container generates a deterministic
-  set at startup and `World.add_barrier` validates spans and bounds.
+  strategy (`IBarrierStrategy` + `BarrierStrategy`). Their colour, target
+  density (share of the grid covered), size range and optional seed are
+  configurable. By default the layout is fresh on every run (`seed=None`) and
+  obstacles are larger (`3..8` cells per axis) so they are easy to see;
+  `density=0.01` targets about 1% of the grid, which is typically 3–4
+  barriers. `World.add_barrier` validates spans and bounds.
 - **Season-owned sun** — `SeasonStrategy.solar_profile()` publishes how much sun
   the world gets (`sun_intensity`, `daylight_fraction`), blending into the next
   season over the final quarter of the season. Day/night and weather derive
@@ -156,7 +163,7 @@ sim/
 │   ├── renderer.py           # IRenderer protocol
 │   └── world.py              # IWorld
 ├── implementations/
-│   ├── barrier/__init__.py   # BarrierStrategy (colour, span limits, placement)
+│   ├── barrier/__init__.py   # BarrierStrategy (colour, density, spans, placement)
 │   ├── creation/
 │   │   ├── __init__.py       # creation registry
 │   │   ├── density_based.py  # area × density × variance
@@ -230,15 +237,20 @@ the only object `main()` reads.
 |-----------|------|
 | `WorldConfig` | size, cell size, orientation, wrap |
 | `TimeConfig` | ticks per day / season, start tick, initial/min/max playback scale |
-| `BarrierConfig` | barrier colour (default yellow), max span cells, count, seed |
+| `BarrierConfig` | barrier colour, density (grid share), min/max span cells, optional seed, margin |
 | `BeanPlacementConfig` | placement strategy, density tier, variance, seed, gender ratios, colours |
 | `CreationConfig` | bean creation strategy + per-strategy configs (`FixedAmountCreationConfig.total_beans`) |
+| `GenotypeConfig` | per-gene ranges (energy, speed, digestion) + lifespan tiers/cap/senescence |
+| `CorpseConfig` | corpse energy, decay, feeding, rotten/poison rules |
+| `EnergyConfig` | passive energy strategy (`fixed` / `per_day`) and rates |
 | `MovementConfig` | movement strategy, speed (units/s), global direction vector, bounce flag |
-| `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights |
+| `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights, year-to-year variation ranges |
 | `DayNightConfig` | sun/moon speeds, shading, thresholds, sky colours |
 | `WeatherConfig` | field interval, seed, front count/radius/drift, condition effects |
-| `EnvironmentConfig` | strategy class names + climate gradients + microclimate scale |
-| `LoggingConfig` | level, format, business/readings switches |
+| `EnvironmentConfig` | strategy class names + climate gradients + microclimate scale + season seed |
+| `LoggingConfig` | level, format, business/readings switches, rotating file output |
+| `PersistenceConfig` | snapshot save/load paths, autosave, schema version |
+| `RandomConfig` | global RNG seed (`None` = entropy) |
 | `SimulationConfig` | composes all of the above + `tick_rate` |
 
 ### Season count and names
@@ -396,6 +408,70 @@ Severity order: `clear < cloudy < rain = snow < storm`.
 
 ---
 
+## Lifespan, senescence and old age
+
+Every bean inherits a lifespan gene at creation (`Genotype.max_age_ticks`). The
+species ceiling is `GenotypeConfig.max_age_ticks` (default `3120` ticks, about
+2.6 in-game days). A bean draws one fraction from `lifespan_tiers` (`0.70`,
+`0.75`, ..., `1.00`), adds `lifespan_jitter` (±`0.02`), clamps to
+`lifespan_fraction_floor` (`0.50`) and 1.0, then multiplies the species cap.
+The discrete tiers keep visible 70/75/80/85/90/95/100% cohorts instead of a
+smooth range.
+
+Aging is central: `main._advance_life()` increments `phenotype.age` exactly once
+per tick, independent of the movement strategy. A bean dies when its energy
+reaches zero **or** when `age >= genotype.max_age_ticks`; old age wins if both
+are true. Both paths produce the same `Corpse`.
+
+Condition starts at `1.0` and declines linearly after
+`senescence_start_fraction` (default `0.70`) of the bean's own lifespan:
+
+```
+start = senescence_start_fraction * max_age_ticks
+condition = 1 - (age - start) / (max_age_ticks - start)   # 1 -> 0
+efficiency = genotype.digestion_efficiency * condition
+```
+
+Old beans therefore digest corpses less efficiently. Deaths are tallied in
+`session.deaths_old_age` / `deaths_starvation`, logged with `cause` and `age` on
+`bean.died`, and shown on the end screen.
+
+---
+
+## Death, corpses and feeding
+
+Energy reaches zero → the bean is dead. It is removed from `session.beans`
+and replaced by a `Corpse` at the same position (`sim/domain/corpse.py`).
+There is no dormancy state: a bean never remains on screen with zero energy.
+
+Corpse rules (`CorpseConfig`, all tunable in `sim/config.py`):
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `basal_energy` | `200.0` | flat food energy every fresh corpse holds |
+| `decay_per_tick` | `0.05` | energy lost by every corpse each tick |
+| `collision_loss_fraction` | `0.5` | share of remaining energy lost per feeding contact |
+| `rotten_fraction` | `0.2` | at/below this share of initial energy the corpse is rotten |
+| `poison_gain_fraction` | `0.5` | rotten penalty = this fraction of the would-be gain |
+| `poison_energy_floor` | `1.0` | poisoning can never take a bean below this many energy units |
+
+On a normal contact the corpse loses `energy * collision_loss_fraction` and the
+bean gains `lost * phenotype.efficiency`; the unused share is dissipated.
+`efficiency` is the phenotype value derived from the genotype gene
+`digestion_efficiency` (drawn per bean, range `(0.35, 0.75)`) times the
+phenotype `condition` (which falls with old age; see above).
+
+Once the corpse is at or below `rotten_fraction` of its initial energy, the
+next contact is rotten: no energy is transferred, the bean loses
+`would_be_gain * poison_gain_fraction` (clamped by `poison_energy_floor`), and
+the corpse disappears. Corpses that decay to zero are removed without feeding.
+
+The simulation ends the moment the last living bean dies, even if corpses
+remain: the clock is frozen, and corpse decay and feeding stop immediately
+(`session.extinct`). The end screen reports living beans and remaining corpses.
+
+---
+
 ## Logging and instrumentation
 
 Logging is configured before the container is built. Two streams are emitted:
@@ -423,6 +499,31 @@ BEAN_LOG_LEVEL=WARNING python -m sim.main
 `LoggingConfig` also carries `format`, `date_format`, `business` and
 `readings` / `readings_interval`. Reading samples are only emitted at `DEBUG`.
 
+### Saved log files
+
+Every run also writes its own rotating file, so logs survive after a detached
+container exits. Files are named `bean-<YYYYMMDD-HHMMSS>-<pid>.log`; when one
+grows past `max_bytes` (10 MiB) it rolls to `.1`, `.2`, … keeping
+`backup_count` (5) archives.
+
+| Setting | Env override | Default |
+|---------|--------------|---------|
+| directory | `BEAN_LOG_DIR` | `logs/` |
+| exact file | `BEAN_LOG_FILE` | — |
+| rotation size | `LoggingConfig.max_bytes` | `10485760` |
+| backups kept | `LoggingConfig.backup_count` | `5` |
+| enable/disable | `LoggingConfig.file_enabled` | `True` |
+
+Container targets bind-mount the host `logs/` directory (`LOG_DIR`, default
+`$(CURDIR)/logs`) into `/app/logs`, so the files are owned by you on the host.
+
+```bash
+make logs                # follow the container's stdout
+make logs-files          # list saved log files, newest first
+make logs-latest         # follow the newest saved file (works after exit)
+LOG_DIR=/tmp/bean-logs make run-container
+```
+
 ### Event catalogue
 
 | Event | When | Notable fields |
@@ -444,12 +545,17 @@ BEAN_LOG_LEVEL=WARNING python -m sim.main
 | `weather.front` | DEBUG | index, kind, position, radius |
 | `season.palette` | DEBUG | season, progress, ground colour, sun intensity, daylight fraction |
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
-| `barrier.generated` | wiring | count, max_span_cells, color |
+| `barrier.generated` | wiring | count, density, target/covered cells, min/max span, color |
 | `bean.bounced` | DEBUG, bean hits a world edge | bean_id, edge, x, y |
 | `bean.collided_barrier` | DEBUG, bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
 | `bean.collided_bean` | DEBUG, two beans overlap (logging only) | bean_id, other_id, x, y |
 | `spawn.positions_batch` | fixed-amount creation batch | batch, requested, produced, total |
 | `spawn.shortfall` | fixed amount could not reach the total | requested, produced |
+| `bean.died` | a bean reaches zero energy and becomes a corpse | bean_id, corpse_id, energy, ticks |
+| `corpse.decayed` | corpses that ran out of energy this tick | count, remaining |
+| `corpse.consumed` | DEBUG, a bean feeds on a corpse | bean_id, corpse_id, taken, gained, efficiency, remaining |
+| `corpse.rotted` | DEBUG, a bean eats a rotten corpse | bean_id, corpse_id, penalty, energy |
+| `session.extinct` | the last living bean died | ticks, corpses, initial_female, initial_male |
 | `session.time_scale` | slider | scale |
 
 Example (`LOG_LEVEL=DEBUG`):
@@ -459,6 +565,36 @@ Example (`LOG_LEVEL=DEBUG`):
 10:36:43 DEBUG   bean.weather | weather.front index=1 kind=storm col=17.62 row=3.77 radius=5.93
 10:36:43 DEBUG   bean.environment | event=environment.reading clock=01:12 day=1 gradient_position=0.5 humidity=0.494 light=0.023 phase=night pressure=1017.3 season=Spring temperature=8.2 tick=60 weather=cloudy
 ```
+
+---
+
+## Snapshots (save/load)
+
+Every run can write a versioned JSON snapshot of the complete simulation state
+and later resume from it (`sim/persistence.py`, `PersistenceConfig`).
+
+```bash
+# Write the initial tick-0 snapshot to an exact path
+make run-headless BEAN_SAVE=/tmp/game.json
+
+# Resume a snapshot (bean creation is skipped)
+make run-headless BEAN_LOAD=/tmp/game.json
+```
+
+With no variables, `autosave_initial=True` writes one file per game under
+`PersistenceConfig.directory` (`saves/`, git-ignored). `BEAN_SAVE=off` disables
+the initial snapshot. `save_on_exit=True` writes a separate `*-final.json`
+snapshot when the process exits.
+
+A snapshot contains the full encoded config, the global RNG state, session and
+clock state, death counters, world barriers, environment/calendar/weather
+state, every bean (genotype, phenotype, velocity) and every corpse. Loading
+rebuilds the `Container` from the saved config, then restores the state, so the
+same file replays deterministically on the same code version.
+
+`make saves` lists saved snapshots. In containers, `SAVE_DIR` (default
+`./saves`) is mounted at `/app/saves` and `BEAN_SAVE` / `BEAN_LOAD` are passed
+through.
 
 ---
 
@@ -539,7 +675,8 @@ status.
 
 ```bash
 python3 -m compileall sim        # syntax
-make test                        # compile + bounded headless locally
+make test                        # pytest in the container (fast)
+make test-cov                    # pytest in the container + full coverage report
 make verify LOG_LEVEL=DEBUG      # compile + headless in the container
 make run                         # windowed smoke test
 ```
@@ -560,25 +697,26 @@ Expected headless invariants:
 | File | Purpose |
 |------|---------|
 | [`README.md`](./README.md) | Current technical reference and usage (this file) |
+| [`docs/configuration.md`](./docs/configuration.md) | Every config domain, formula, correlation and interface/implementation map |
 | [`diagrams.md`](./diagrams.md) | Mermaid class, sequence, flow and state diagrams |
-| [`spec.md`](./spec.md) | Original project specification, kept aligned with the code |
+| [`specs/spec.md`](./specs/spec.md) | Original project specification, kept aligned with the code |
 | [`AGENTS.md`](./AGENTS.md) | Documentation index for agents |
 | [`CLAUDE.md`](./CLAUDE.md) | Behaviour and ground rules |
-| [`skills/git.md`](./skills/git.md) | Local git workflow used by agents |
+| `~/.claude/skills/git/SKILL.md` | Local git workflow used by agents |
 | [`TODO.md`](./TODO.md) | Task board for the current change set |
 
 ---
 
 ## Known limitations
 
-- Beans ARE implemented: `DEFAULT_CONFIG` spawns ~1150 beans via the
+- Beans ARE implemented: `DEFAULT_CONFIG` spawns ~1200 beans via the
   density-based creation strategy (poisson_disc placement, average density,
   gender ratios from config). Beans are drawn as small crosses in their gender
   color and move every tick while `PLAYING`; the view reads their live `x`/`y`,
   so movement is reflected on screen.
-- Collision *response* is not implemented yet: bean–barrier and bean–bean
-  overlaps are detected and logged, but beans pass through each other and
-  through barriers. Eat/reproduce/lifecycle systems are still pending.
+- Bean–barrier collisions reflect and push the bean out; bean–bean collisions
+  are detected and logged but have no physical response yet. Reproduction is
+  not implemented; lifespan, death, corpses and feeding are.
 - Weather fronts are rebuilt from a seed every interval; `front_drift_cells`
   can move them between rebuilds but they do not animate continuously within an
   interval.

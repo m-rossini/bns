@@ -102,7 +102,12 @@ class ISeasonStrategy(ABC):
         """Return the name of the current season from the strategy perspective."""
 
     @abstractmethod
-    def weather_weights(self, season: str) -> dict:
+    def weather_weights(self, season: str, year: int = 1) -> dict:
+        """Weather weights for one occurrence of a season.
+
+        ``year`` is 1-based (matching ``ICalendar.year``); year 1 is the
+        configured baseline and later years may be varied by the strategy.
+        """
         ...
 
 

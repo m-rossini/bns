@@ -24,11 +24,34 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 DEFAULT_FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
 DEFAULT_DATE_FORMAT = "%H:%M:%S"
 ROOT_LOGGER = "bean"
+
+#: Path of the file handler installed by the most recent ``configure_logging``.
+_active_log_file: str | None = None
+
+
+def active_log_file() -> str | None:
+    """Return the path written by the current run's file handler, if any."""
+    return _active_log_file
+
+
+def _resolve_log_file(logging_cfg: Any | None) -> str:
+    """Build the per-run log path from env overrides or config."""
+    override = os.environ.get("BEAN_LOG_FILE", "").strip()
+    if override:
+        return override
+    directory = os.environ.get("BEAN_LOG_DIR", "").strip() or str(
+        getattr(logging_cfg, "directory", "logs")
+    )
+    prefix = str(getattr(logging_cfg, "filename_prefix", "bean"))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return os.path.join(directory, f"{prefix}-{stamp}-{os.getpid()}.log")
 
 
 def resolve_level(config: Any | None = None) -> str:
@@ -44,26 +67,50 @@ def configure_logging(config: Any | None = None) -> str:
     """Install the root handler once and return the effective level name.
 
     ``force=True`` makes repeated calls deterministic (useful in tests and
-    when a container entrypoint configures logging twice).
+    when a container entrypoint configures logging twice). Every run also gets
+    its own rotating log file under ``BEAN_LOG_DIR`` (default ``logs/``).
     """
+    global _active_log_file
+
     logging_cfg = getattr(config, "logging", None)
     fmt = getattr(logging_cfg, "format", DEFAULT_FORMAT)
     datefmt = getattr(logging_cfg, "date_format", DEFAULT_DATE_FORMAT)
     level_name = resolve_level(config)
     level = getattr(logging, level_name, logging.INFO)
+    formatter = logging.Formatter(fmt, datefmt=datefmt)
 
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(fmt, datefmt=datefmt))
+    handler.setFormatter(formatter)
     root = logging.getLogger(ROOT_LOGGER)
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level)
     root.propagate = False
 
+    _active_log_file = None
+    if getattr(logging_cfg, "file_enabled", True):
+        try:
+            path = _resolve_log_file(logging_cfg)
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                path,
+                maxBytes=int(getattr(logging_cfg, "max_bytes", 10 * 1024 * 1024)),
+                backupCount=int(getattr(logging_cfg, "backup_count", 5)),
+                encoding="utf-8",
+            )
+            file_handler.setFormatter(formatter)
+            root.addHandler(file_handler)
+            _active_log_file = path
+        except OSError as exc:  # read-only mounts, bad paths, etc.
+            root.warning("logging.file_disabled path_error=%s", exc)
+
     logging.getLogger(ROOT_LOGGER).debug(
-        "logging.configured level=%s source=%s",
+        "logging.configured level=%s source=%s file=%s",
         level_name,
         "env" if os.environ.get("BEAN_LOG_LEVEL") else "config",
+        _active_log_file,
     )
     return level_name
 

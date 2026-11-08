@@ -7,9 +7,13 @@ never overlap again, regardless of sidebar width.
 
 from sim.rendering.arcade_view import (
     _CONTROLS_BOX_H,
+    _END_HINT_GAP,
+    _END_LINE_H,
+    _END_PANEL_H,
     _KEY_COUNT,
     _KEY_ROW_H,
     controls_geometry,
+    end_screen_hint_offset,
 )
 
 MARGIN = 12.0
@@ -146,3 +150,34 @@ def test_closing_config_window_restores_the_active_window(monkeypatch):
     assert claimed == [view], "main window was not made active again"
     assert view._config_window is None
     assert view.session.state == av.GameState.PLAYING
+
+
+# ---------------------------------------------------------------------------
+# End-screen restart hint
+# ---------------------------------------------------------------------------
+
+# Current stats list on the GAME OVER screen (13 rows + 1 blank spacer).
+_END_STAT_ROWS = 14
+
+
+def _last_stat_offset(panel_h=_END_PANEL_H, rows=_END_STAT_ROWS):
+    first = panel_h - 164.0
+    return first - ((rows - 1) * _END_LINE_H + 12.0) + _END_LINE_H
+
+
+def test_restart_hint_sits_below_the_last_stat_row():
+    """The SPACE hint must clear the Starved line with a real gap."""
+    hint = end_screen_hint_offset(_END_PANEL_H, _END_STAT_ROWS)
+    last = _last_stat_offset()
+
+    assert hint < last  # below, not mixed into the stats
+    assert last - hint >= _END_LINE_H + 20  # line step plus breathing room
+    assert hint >= 20  # still inside the panel, not clipped at the bottom
+
+
+def test_growing_stat_lists_push_the_hint_down():
+    """Adding stat rows moves the hint; it never stays pinned over content."""
+    current = end_screen_hint_offset(_END_PANEL_H, _END_STAT_ROWS)
+    longer = end_screen_hint_offset(_END_PANEL_H, _END_STAT_ROWS + 2)
+
+    assert longer == current - 2 * _END_LINE_H

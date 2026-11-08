@@ -53,6 +53,28 @@ _TRACK = (38, 44, 56, 230)
 _SUN = (255, 205, 110)
 _MOON = (225, 230, 248)
 
+# End-screen panel geometry. Stats start this far below the panel top and
+# step down one line each; the restart hint is always placed relative to the
+# last stat row so growing stat lists can never collide with it.
+_END_PANEL_H = 496.0
+_END_STATS_TOP_MARGIN = 164.0
+_END_LINE_H = 20.0
+_END_HINT_GAP = 50.0
+
+
+def end_screen_hint_offset(panel_h: float, stat_rows: int,
+                           blank_rows: int = 1) -> float:
+    """Offset of the restart hint from the panel bottom.
+
+    ``stat_rows`` counts every entry in the stats list (including blanks,
+    which step down 0.6 of a line). The hint lands below the last drawn row
+    with room for the line step plus a fixed gap.
+    """
+    first_row = panel_h - _END_STATS_TOP_MARGIN
+    drop = ((stat_rows - blank_rows) * _END_LINE_H
+            + blank_rows * _END_LINE_H * 0.6)
+    last_row = first_row - drop + _END_LINE_H
+    return last_row - _END_HINT_GAP
 _WEATHER_LABEL = {
     "clear": (255, 226, 140),
     "cloudy": (200, 205, 215),
@@ -470,7 +492,7 @@ class ArcadeView(arcade.Window):
         self._draw_backdrop(session)
         sw, sh = self._viewport_size()
         panel_w = min(620, sw - 60)
-        panel_h = 460
+        panel_h = _END_PANEL_H
         left = (sw - panel_w) / 2
         bottom = (sh - panel_h) / 2
         self._panel(left, bottom, panel_w, panel_h)
@@ -526,8 +548,8 @@ class ArcadeView(arcade.Window):
             (f"  Starved: {getattr(session, 'deaths_starvation', 0):>3}", _TEXT),
         ]
 
-        y = bottom + panel_h - 164
-        line_h = 20
+        y = bottom + panel_h - _END_STATS_TOP_MARGIN
+        line_h = _END_LINE_H
         for text, color in stats:
             if text == "":
                 y -= line_h * 0.6
@@ -538,8 +560,11 @@ class ArcadeView(arcade.Window):
             )
             y -= line_h
 
+        # Hint follows the last stat row so longer stat lists can never
+        # collide with it.
         self._text.draw(
-            "SPACE to restart   ·   Esc to quit", cx, bottom + 60, _MUTED,
+            "SPACE to restart   ·   Esc to quit",
+            cx, bottom + end_screen_hint_offset(panel_h, len(stats)), _MUTED,
             font_size=13, anchor_x="center", anchor_y="center",
         )
 

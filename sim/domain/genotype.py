@@ -30,6 +30,8 @@ class Genotype:
 
     # Feeding: genotype baseline, modulated by the phenotype's condition.
     digestion_efficiency: float = 0.6
+    #: Appetite: energy units the bean can take from one food contact.
+    digestion_capacity: float = 80.0
 
     # Lifespan: an absolute tick cap inherited from the species ceiling.
     # ``senescence_start_fraction`` is the share of that cap after which
@@ -56,6 +58,9 @@ class Phenotype:
     # Feeding state
     condition: float = 1.0        # Age/lifestyle multiplier (1.0 = healthy)
     efficiency: float = 0.6       # Effective digestion efficiency (0..1)
+    digestion_capacity: float = 80.0  # Appetite: max food energy per contact
+    energy_eaten_total: float = 0.0   # Lifetime food energy taken (pre-digestion)
+    energy_absorbed_total: float = 0.0  # Lifetime food energy converted
 
     # Visual state
     color: Tuple[int, int, int] = field(init=False)
@@ -118,6 +123,7 @@ def create_default_phenotype(genotype: Genotype = DEFAULT_GENOTYPE) -> Phenotype
         age=0,
         is_dormant=False,
         condition=1.0,
+        digestion_capacity=genotype.digestion_capacity,
     )
     phenotype.refresh_efficiency(genotype)
     return phenotype
@@ -156,6 +162,7 @@ def draw_genotype(
         base_color=base_color,
         dormant_color=dormant_color,
         digestion_efficiency=rng.uniform(*ranges.digestion_efficiency),
+        digestion_capacity=rng.uniform(*ranges.digestion_capacity),
         max_age_ticks=max(1, round(ranges.max_age_ticks * lifespan_fraction)),
         senescence_start_fraction=ranges.senescence_start_fraction,
     )

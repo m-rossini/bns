@@ -48,6 +48,7 @@ must not require editing the tick loop.
 | `movement` | `MovementConfig` | How beans move and bounce. |
 | `energy` | `EnergyConfig` | Passive energy gain strategy and rates. |
 | `corpse` | `CorpseConfig` | Dead-bean food, decay, feeding and poisoning. |
+| `food` | `FoodConfig` | Renewable morsels, seasonal top-up, appetite. |
 | `environment` | `EnvironmentConfig` | Strategy names, climate gradients, microclimate. |
 | `logging` | `LoggingConfig` | Console/file logging and event sampling. |
 | `persistence` | `PersistenceConfig` | Snapshot save/load and reproducibility. |
@@ -400,6 +401,7 @@ Each bean then receives a genotype drawn from `GenotypeConfig`:
 | `max_speed` | `(40, 80)` | Speed ceiling (world units/s). |
 | `acceleration` | `(15, 45)` | Speed-change capability. |
 | `digestion_efficiency` | `(0.35, 0.75)` | Fraction of corpse energy converted. |
+| `digestion_capacity` | `(40.0, 120.0)` | Max food energy taken per contact (appetite). |
 | `max_age_ticks` | species cap `3120` | Hard species ceiling. |
 | `lifespan_fraction_floor` | `0.50` | Lower clamp for the inherited fraction. |
 | `lifespan_tiers` | `0.70..1.00` by `0.05` | Discrete lifespan cohorts. |
@@ -417,7 +419,11 @@ genotype.max_age_ticks = max(1, round(species_cap * fraction))
 ## 10. Lifespan, senescence and death
 
 `Phenotype` carries mutable state: `current_energy`, `current_speed`,
-`velocity`, `age`, `is_dormant`, `condition`, `efficiency`, `color`.
+`velocity`, `age`, `is_dormant`, `condition`, `efficiency`,
+`digestion_capacity` (copied from the gene at creation),
+`energy_eaten_total`, `energy_absorbed_total`, `color`. The two lifetime
+counters accumulate food taken vs food converted and are the substrate future
+evolution will select on.
 
 Every simulation tick, `main._advance_life()`:
 
@@ -511,7 +517,52 @@ bean.current_energy = max(poison_energy_floor, current_energy - would_gain * poi
 corpse removed
 ```
 
-## 13. Logging
+## 13. Renewable food
+
+`FoodConfig`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `strategy_name` | `"random"` | `None` disables food; `"random"` = `RandomFoodSpawnStrategy`. |
+| `seed` | `None` | `None` = fresh morsels every run; int = reproducible. |
+| `initial_total_energy` | `20000.0` | Food energy seeded at tick 0. |
+| `target_total_energy` | `20000.0` | Level the top-up steers towards. |
+| `top_up_interval_ticks` | `300` | Ticks between top-ups (10 s at 30 Hz). |
+| `min_morsel_energy`, `max_morsel_energy` | `20.0`, `200.0` | Per-morsel energy draw range. |
+| `food_radius` | `4.0` | Morsel radius (energy density varies, size does not). |
+| `color` | `(200,80,220)` | Magenta-purple base; view brightens with remaining energy. |
+| `margin_cells` | `1` | Keep morsels away from the border. |
+| `max_items` | `600` | Cap on live morsels (perf guard). |
+
+Seeding sums to `initial_total_energy`; every `top_up_interval_ticks` the
+strategy spawns the deficit to `target_total_energy × abundance`:
+
+```
+abundance = clamp(sun_intensity * (0.4 + daylight_fraction), 0.15, 1.6)
+effective_target = target_total_energy * abundance
+deficit = max(0, effective_target - current_total_energy)
+```
+
+`abundance` comes from the already-varied seasonal sun profile, so spring
+grows ~0.85×, summer ~1.15×, autumn ~0.7× and winter ~0.4× — the level breathes
+around the target instead of drifting, and future food systems can reuse the
+same seasonal hook. Morsels land anywhere (uniform random); snapshots store
+them, so a resumed run keeps its exact morsels.
+
+Eating (`feed_beans_on_food`, runs in the lifecycle next to corpse feeding):
+
+```
+intake   = min(food.energy, phenotype.digestion_capacity, capacity_room)
+absorbed = intake * phenotype.efficiency
+food.energy -= intake   # remainder stays for later visits
+phenotype.energy_eaten_total += intake
+phenotype.energy_absorbed_total += absorbed
+```
+
+Depleted morsels are removed. Old beans with low `condition` absorb less, just
+like with corpses.
+
+## 14. Logging
 
 `LoggingConfig`
 
@@ -531,7 +582,7 @@ corpse removed
 Runtime overrides: `BEAN_LOG_LEVEL` (or Makefile `LOG_LEVEL`), `BEAN_LOG_DIR`,
 and `BEAN_LOG_FILE`. The active file is `logs/bean-<timestamp>-<pid>.log`.
 
-## 14. Persistence and reproducibility
+## 15. Persistence and reproducibility
 
 `PersistenceConfig`
 
@@ -554,7 +605,8 @@ Runtime variables:
 
 A snapshot contains: the full encoded config, global RNG state, session state
 and clock, death counters, world barriers, environment/calendar/weather state,
-every bean (genotype + phenotype + velocity), and every corpse. Loading rebuilds
+every bean (genotype + phenotype + velocity), every corpse, and every food
+morsel. Loading rebuilds
 the `Container` from the saved config and then overwrites its state, so the
 same file reproduces the same run given the same code. Movement uses the global
 RNG; the snapshot restores its state.
@@ -562,7 +614,7 @@ RNG; the snapshot restores its state.
 The Makefile mounts `SAVE_DIR` (default `./saves`) into the container and passes
 `BEAN_SAVE`/`BEAN_LOAD` through. `make saves` lists snapshots.
 
-## 15. Interfaces and their implementations
+## 16. Interfaces and their implementations
 
 Every interface below lives in `sim/interfaces/`; each concrete implementation
 follows it. `None` for a season/daynight/weather strategy means static fallback
@@ -625,6 +677,14 @@ Selected by `CreationConfig.strategy_name`.
 
 Selected by `EnergyConfig.strategy_name`.
 
+### `IFoodSpawnStrategy` (`sim/interfaces/food.py`)
+
+- `implementations/food/random_food.py:RandomFoodSpawnStrategy` — single
+  implementation: uniform anywhere-placement, ranged morsel energies,
+  interval top-up toward `target × abundance`.
+
+Selected by `FoodConfig.strategy_name` (`None` disables food).
+
 ### `ISeasonStrategy` (`sim/interfaces/environment.py`)
 
 - `implementations/season/__init__.py:SeasonStrategy` — single implementation:
@@ -667,7 +727,7 @@ Selected by `EnergyConfig.strategy_name`.
   `config_from_snapshot`, `restore_snapshot`, snapshot path helpers.
   Configured by `PersistenceConfig`.
 
-## 16. Tick order
+## 17. Tick order
 
 While the session is `PLAYING`, each fixed tick executes in this order:
 
@@ -676,14 +736,15 @@ While the session is `PLAYING`, each fixed tick executes in this order:
 3. Energy strategy applies passive gains.
 4. Movement strategy moves beans, applies movement costs and bounces.
 5. `_advance_life()` ages beans, creates corpses, applies senescence, decays
-   and feeds corpses, and detects extinction.
+   and feeds corpses, feeds beans on food morsels, tops food up toward the
+   seasonal target, and detects extinction.
 6. If extinction happened, state becomes `END` and the remaining ticks in the
    frame are skipped.
 
 Once `END`, `_step` returns `0` immediately: the clock, environment, corpses and
 beans are all frozen.
 
-## 17. Correlation cheat sheet
+## 18. Correlation cheat sheet
 
 * **Season → solar → day/night light → temperature.** `sun_intensity` and
   `daylight_fraction` set the light curve; temperature uses `2*light - 1`.
@@ -693,7 +754,7 @@ beans are all frozen.
   multiplied on top of the seasonal/weather baseline.
 * **Density/creation → population; genotype → individual capability.**
   Placement decides positions; genotype ranges decide speed, metabolism,
-  capacity, digestion and lifespan.
+  capacity, digestion, appetite and lifespan.
 * **Movement → energy cost; energy → dormancy/death.** Faster or heavier beans
   pay more; zero energy makes a corpse.
 * **Age → condition → efficiency → feeding.** Old beans digest less.
@@ -704,7 +765,7 @@ beans are all frozen.
 * **Policy speed vs move speed.** `MovementConfig.speed` is a physical
   velocity preset; `TimeConfig.time_scale` is playback perception only.
 
-## 18. Common configuration recipes
+## 19. Common configuration recipes
 
 **One permanent cold season**
 

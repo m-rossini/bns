@@ -128,6 +128,11 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
   the first update, so bounces are independent. Collisions with barriers and
   with other beans are detected and logged as separate events but do not
   change the motion yet. Movement runs only while the session is `PLAYING`.
+- **Food** — renewable magenta morsels (`IFoodSpawnStrategy` +
+  `RandomFoodSpawnStrategy`): tick-0 seeding plus interval top-ups toward a
+  seasonal target, so total food energy breathes around the configured level.
+  Beans nibble on contact up to their appetite gene and bank eaten/absorbed
+  lifetime counters.
 
 
 ---
@@ -242,6 +247,7 @@ the only object `main()` reads.
 | `CreationConfig` | bean creation strategy + per-strategy configs (`FixedAmountCreationConfig.total_beans`) |
 | `GenotypeConfig` | per-gene ranges (energy, speed, digestion) + lifespan tiers/cap/senescence |
 | `CorpseConfig` | corpse energy, decay, feeding, rotten/poison rules |
+| `FoodConfig` | renewable morsels, seasonal top-up, appetite, colour |
 | `EnergyConfig` | passive energy strategy (`fixed` / `per_day`) and rates |
 | `MovementConfig` | movement strategy, speed (units/s), global direction vector, bounce flag |
 | `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights, year-to-year variation ranges |
@@ -442,7 +448,8 @@ Old beans therefore digest corpses less efficiently. Deaths are tallied in
 
 Energy reaches zero → the bean is dead. It is removed from `session.beans`
 and replaced by a `Corpse` at the same position (`sim/domain/corpse.py`).
-There is no dormancy state: a bean never remains on screen with zero energy.
+Zero energy first marks the phenotype dormant; `_advance_life()` then converts
+the dead into corpses.
 
 Corpse rules (`CorpseConfig`, all tunable in `sim/config.py`):
 
@@ -465,6 +472,22 @@ Once the corpse is at or below `rotten_fraction` of its initial energy, the
 next contact is rotten: no energy is transferred, the bean loses
 `would_be_gain * poison_gain_fraction` (clamped by `poison_energy_floor`), and
 the corpse disappears. Corpses that decay to zero are removed without feeding.
+
+### Renewable food
+
+Morsels (`sim/domain/food.py`) are the renewable food source, spawned by an
+`IFoodSpawnStrategy` (`RandomFoodSpawnStrategy`): tick-0 seeding sums to
+`initial_total_energy`, then every `top_up_interval_ticks` the deficit to
+`target_total_energy × abundance` is spawned, so the level breathes around the
+target. `abundance` comes from the seasonal sun profile (bright long days grow
+more, dim short days less). Morsels land anywhere with per-morsel energies in
+`[min_morsel_energy, max_morsel_energy]`; their colour is magenta-purple
+(`(200,80,220)`, no palette conflicts), brightened by remaining energy.
+
+On contact a bean nibbles at most `phenotype.digestion_capacity` (appetite
+gene, range `(40, 120)`), absorbs `intake × phenotype.efficiency`, and banks
+both `energy_eaten_total` and `energy_absorbed_total` for future evolution.
+The remainder stays on the morsel; depleted morsels are removed.
 
 The simulation ends the moment the last living bean dies, even if corpses
 remain: the clock is frozen, and corpse decay and feeding stop immediately
@@ -546,6 +569,8 @@ LOG_DIR=/tmp/bean-logs make run-container
 | `season.palette` | DEBUG | season, progress, ground colour, sun intensity, daylight fraction |
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
 | `barrier.generated` | wiring | count, density, target/covered cells, min/max span, color |
+| `food.seeded` | wiring | count, total energy, target |
+| `food.topped_up` | top-up tick | count, energy, tick, abundance |
 | `bean.bounced` | DEBUG, bean hits a world edge | bean_id, edge, x, y |
 | `bean.collided_barrier` | DEBUG, bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
 | `bean.collided_bean` | DEBUG, two beans overlap (logging only) | bean_id, other_id, x, y |
@@ -620,6 +645,7 @@ through.
   screen units that honour `cell_size`, ready for beans to be drawn per cell.
 - **Barriers** — drawn as filled cell-aligned rectangles in the barrier
   strategy's colour (default yellow), with a dark outline.
+- **Food** — drawn as magenta points that dim as their energy is eaten.
 - **Controls box** — three reserved bands from `controls_geometry()`: config
   button (top), key bindings (middle), playback-speed slider (bottom). The
   sidebar reserves the same height when stacking the boxes above, so no

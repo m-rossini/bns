@@ -135,6 +135,7 @@ class KeyboardInput:
         session.start_time = 0.0
         session.pause_time = 0.0
         session.corpses.clear()
+        session.foods.clear()
         session.next_corpse_id = 1
         session.deaths_old_age = 0
         session.deaths_starvation = 0

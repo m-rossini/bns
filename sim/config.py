@@ -347,6 +347,11 @@ ENERGY_STRATEGY_NAMES: Tuple[str, ...] = (
     "per_day",
 )
 
+#: Valid food spawn strategy names (implemented in sim.implementations.food).
+FOOD_STRATEGY_NAMES: Tuple[str, ...] = (
+    "random",
+)
+
 
 @dataclass
 class PoissonDiscConfig:
@@ -575,6 +580,10 @@ class GenotypeConfig:
     #: Fraction of a corpse's food energy the bean can convert to its own
     #: energy. The phenotype carries the effective value (genotype × condition).
     digestion_efficiency: Tuple[float, float] = (0.35, 0.75)
+    #: Energy units a bean can take from one food contact (appetite). The
+    #: phenotype carries the effective value; absorbed energy is further
+    #: scaled by digestion efficiency.
+    digestion_capacity: Tuple[float, float] = (40.0, 120.0)
 
     # Lifespan: a hard species ceiling plus a per-bean inherited fraction of
     # it. Every bean draws one tier and then a small jitter, so lifespans form
@@ -734,6 +743,57 @@ class CorpseConfig:
 
 
 @dataclass
+class FoodConfig:
+    """Renewable food morsels: spawn amounts, energy values and looks.
+
+    ``initial_total_energy`` seeds the world at tick 0; every
+    ``top_up_interval_ticks`` the strategy spawns the deficit to
+    ``target_total_energy × abundance`` (abundance is the seasonal multiplier,
+    ``1.0`` = neutral), so the level breathes around the target instead of
+    drifting. Each morsel's energy is drawn uniformly from
+    ``[min_morsel_energy, max_morsel_energy]``, so rich and poor morsels
+    coexist. Morsels land anywhere (uniform random); ``color`` defaults to a
+    magenta-purple with no palette conflicts and the view brightens it with
+    the morsel's remaining energy.
+    """
+
+    strategy_name: Optional[str] = "random"
+    seed: Optional[int] = None       # None = fresh morsels every run
+    initial_total_energy: float = 20000.0
+    target_total_energy: float = 20000.0
+    top_up_interval_ticks: int = 300
+    min_morsel_energy: float = 20.0
+    max_morsel_energy: float = 200.0
+    food_radius: float = 4.0
+    color: Color = (200, 80, 220)     # magenta-purple
+    margin_cells: int = 1
+    max_items: int = 600
+
+    def __post_init__(self) -> None:
+        if self.strategy_name not in FOOD_STRATEGY_NAMES and self.strategy_name is not None:
+            raise ValueError(
+                f"Unknown food strategy {self.strategy_name!r}. "
+                "Use None or one of: " + ", ".join(sorted(FOOD_STRATEGY_NAMES))
+            )
+        if self.initial_total_energy < 0.0:
+            raise ValueError("FoodConfig.initial_total_energy cannot be negative")
+        if self.target_total_energy < 0.0:
+            raise ValueError("FoodConfig.target_total_energy cannot be negative")
+        if self.top_up_interval_ticks < 1:
+            raise ValueError("FoodConfig.top_up_interval_ticks must be >= 1")
+        if self.min_morsel_energy < 0.0:
+            raise ValueError("FoodConfig.min_morsel_energy cannot be negative")
+        if self.min_morsel_energy > self.max_morsel_energy:
+            raise ValueError(
+                "FoodConfig.min_morsel_energy cannot exceed max_morsel_energy"
+            )
+        if self.food_radius <= 0.0:
+            raise ValueError("FoodConfig.food_radius must be positive")
+        if self.max_items < 0:
+            raise ValueError("FoodConfig.max_items cannot be negative")
+
+
+@dataclass
 class EnvironmentConfig:
     """Strategy class names and positional climate gradients.
 
@@ -835,6 +895,7 @@ class SimulationConfig:
     movement: MovementConfig = field(default_factory=MovementConfig)
     energy: EnergyConfig = field(default_factory=EnergyConfig)
     corpse: CorpseConfig = field(default_factory=CorpseConfig)
+    food: FoodConfig = field(default_factory=FoodConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     persistence: PersistenceConfig = field(default_factory=PersistenceConfig)
@@ -1008,6 +1069,19 @@ DEFAULT_CONFIG = SimulationConfig(
         rotten_fraction=0.2,
         poison_gain_fraction=0.5,
         poison_energy_floor=1.0,
+    ),
+    food=FoodConfig(
+        strategy_name="random",
+        seed=None,                  # fresh morsels every run
+        initial_total_energy=20000.0,
+        target_total_energy=20000.0,
+        top_up_interval_ticks=300,  # 10 s at 30 ticks/s
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        food_radius=4.0,
+        color=(200, 80, 220),       # magenta-purple: no palette conflicts
+        margin_cells=1,
+        max_items=600,
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

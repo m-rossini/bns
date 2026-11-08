@@ -40,6 +40,7 @@ bns/
     │   ├── calendar.py        # tick -> day / clock / season / year
     │   ├── climate.py         # SolarProfile, ClimateContext
     │   ├── environment.py     # positional readings + gradient composition
+    │   ├── food.py            # Food morsels, seasonal abundance, nibble feeding
     │   ├── gradient.py        # orientation-aware positional gradients
     │   ├── placement_utils.py # collision-free placement helpers
     │   ├── session.py         # concrete GameSession
@@ -54,6 +55,9 @@ bns/
     │   │   ├── density_based.py  # area × density × variance
     │   │   └── fixed_amount.py   # exact configured population
     │   ├── daynight/__init__.py   # DayNightStrategy
+    │   ├── food/
+    │   │   ├── __init__.py       # food strategy registry
+    │   │   └── random_food.py    # uniform morsels, seasonal top-up
     │   ├── movement/
     │   │   ├── __init__.py       # movement strategy registry
     │   │   └── straight_line.py  # direction + speed, bounce, collision logging
@@ -68,6 +72,7 @@ bns/
     │   ├── creation.py        # IBeanCreationStrategy
     │   ├── environment.py     # ICalendar, ISeasonStrategy, IDayNightStrategy,
     │   │                      # IWeatherStrategy, IEnvironment
+    │   ├── food.py            # IFoodSpawnStrategy
     │   ├── gender.py          # IGenderController
     │   ├── movement.py        # IMovementStrategy
     │   ├── placement.py       # IPlacementStrategy, ISpawnController
@@ -587,6 +592,7 @@ Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
 | `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `sun_intensity`, `daylight_fraction`, weather weights |
 | `DayNightConfig` | sun/moon, shading, thresholds, sky colours |
 | `WeatherConfig` | interval, seed, front count/radius/drift, coverage, condition offsets |
+| `FoodConfig` | `strategy_name`, `seed`, `initial/target_total_energy`, `top_up_interval_ticks`, morsel range/radius/colour/cap |
 | `EnvironmentConfig` | strategy names, four climate gradients, `microclimate` |
 | `LoggingConfig` | level, format, date format, business/readings switches |
 | `SimulationConfig` | all of the above + `tick_rate=30.0`, `debug=False` |
@@ -777,7 +783,7 @@ CorpseConfig(
 On a normal contact the corpse loses `energy * collision_loss_fraction` and
 the bean gains `lost * phenotype.efficiency`; the remainder is dissipated.
 `phenotype.efficiency = clamp(genotype.digestion_efficiency * condition)`, where
-`condition` declines with old age (see §9.11). The genotype gene
+`condition` declines with old age (see §9.12). The genotype gene
 `digestion_efficiency` is drawn per bean from `(0.35, 0.75)`.
 
 At or below `rotten_fraction` of initial energy the next contact is rotten: no
@@ -787,7 +793,26 @@ decay to zero are removed silently. The session ends the moment the last living
 bean dies, even if corpses remain: the clock is paused, `_step` becomes a no-op
 and no further decay or feeding occurs. It emits `session.extinct`.
 
-### 9.11 Lifespan, senescence and old age
+### 9.11 Renewable food
+
+`FoodConfig` seeds `initial_total_energy` at tick 0 as uniform random morsels
+(`RandomFoodSpawnStrategy`, `seed=None` = fresh every run); every
+`top_up_interval_ticks` the deficit to
+`target_total_energy × clamp(sun_intensity × (0.4 + daylight_fraction))` is
+spawned, so spring/summer grow more and winter less. Morsel energies are drawn
+from `[min_morsel_energy, max_morsel_energy]` (default `20..200`) at fixed
+`food_radius`, capped by `max_items`. Colour defaults to magenta-purple
+`(200, 80, 220)` with no palette conflicts, brightened by remaining energy.
+
+On contact a bean takes
+`intake = min(food.energy, phenotype.digestion_capacity, capacity room)`,
+absorbs `intake × phenotype.efficiency`, and banks `energy_eaten_total` /
+`energy_absorbed_total`. `digestion_capacity` is a ranged gene
+(`GenotypeConfig (40, 120)`); the remainder stays on the morsel and depleted
+morsels are removed. Snapshots store morsels; restart clears them like
+corpses.
+
+### 9.12 Lifespan, senescence and old age
 
 `GenotypeConfig` adds the species ceiling and the inherited lifespan draw:
 
@@ -819,7 +844,7 @@ condition = 1 - (age - start) / (max_age - start)  otherwise
 efficiency = clamp(genotype.digestion_efficiency * condition, 0, 1)
 ```
 
-### 9.12 Snapshots (persistence)
+### 9.13 Snapshots (persistence)
 
 `PersistenceConfig` writes versioned JSON snapshots (`sim/persistence.py`):
 
@@ -890,6 +915,7 @@ Events: `app.start`, `app.window_created`, `app.window_closing`, `app.stop`,
 `environment.day_changed`, `environment.season_changed`,
 `environment.weather_changed`, `environment.reading` (DEBUG),
 `weather.field_rebuilt`, `weather.front` (DEBUG), `season.palette` (DEBUG),
+`food.seeded`, `food.topped_up`,
 `ui.cell_inspected`, `bean.bounced` (DEBUG), `bean.collided_barrier` (DEBUG),
 `bean.collided_bean` (DEBUG), `spawn.positions_batch`, `spawn.shortfall`.
 
@@ -1008,25 +1034,34 @@ Environment variables:
   `daylight_fraction` across the season boundary.
 - Day/night consumes `SolarProfile`; weather receives a `ClimateContext` and
   reshapes season weights by temperature, humidity, pressure and sun.
-- Barrier strategy (`IBarrierStrategy` + `BarrierStrategy`): configurable
-  colour (default yellow), span capped at 3 cells per direction, validated on
-  `World.add_barrier`. `DEFAULT_CONFIG` creates 6 yellow barriers.
+- Barrier strategy (`IBarrierStrategy` + `BarrierStrategy`): density-based
+  coverage (default 1% of cells), spans 3..8 cells per direction, fresh layout
+  every run (`seed=None`), validated on `World.add_barrier`. A default run
+  creates 3–4 large yellow barriers.
+- Food spawn strategy (`IFoodSpawnStrategy` + `RandomFoodSpawnStrategy`):
+  magenta morsels with ranged energies, seasonal top-up toward a target level,
+  nibble feeding capped by the appetite gene with eaten/absorbed counters.
 - Bean creation & gender: `IBeanCreationStrategy` with
   `DensityBasedCreationStrategy` (original area × density × variance) and
   `FixedAmountCreationStrategy` (exact configured total), plus
   `IPlacementStrategy` + `IGenderController`. `DEFAULT_CONFIG` uses the
-  density-based strategy and spawns ~1150 collision-free beans.
+  density-based strategy and spawns ~1200 collision-free beans.
 - Bean movement: `IMovementStrategy` + `StraightLineMovementStrategy`; global
   direction + speed, in-place updates, independent edge bounces, and separate
   barrier/bean collision logging. Movement runs only while `PLAYING` and the
   view reads the live bean positions, so it is reflected on screen.
-- Automated tests in `sim/tests/` with pytest + coverage: placement strategies,
-  gender controller, spawn controller, config validation.
+- Year-to-year season variation: year 1 is the configured baseline, later
+  cycles re-roll inside `*_variation` ranges via `(season_seed, year, index)`.
+- Lifespan genes with discrete cohorts, senescence, old-age vs starvation
+  death tallies; versioned JSON snapshots (`BEAN_SAVE`/`BEAN_LOAD`).
+- Automated tests in `sim/tests/` with pytest + coverage (TOTAL 80%, every
+  module >=75% except display-bound `arcade_view`): placement, gender, spawn,
+  movement, energy, seasons, food, persistence, layout, input, lifecycle.
 - Positional temperature, humidity, pressure and light with configurable
   gradients (N/S, W/E, centre-out, out-centre, diagonals).
 - Rendering: start/playing/paused/end screens, animated sky, seasons, per-cell
   weather, HUD sidebar, cell-aligned grid honouring `cell_size`, pinned
-  inspector, barrier drawing, playback-speed slider.
+  inspector, barrier and food drawing, playback-speed slider.
 - `WorldLayout`: single source of truth for draw + hit-test; pointer/click
   align exactly with the selected cell and orange marker.
 - Default 1:1 window sizing; integer-snapped cell rectangles.

@@ -20,6 +20,7 @@ from sim.config import DEFAULT_CONFIG, SimulationConfig
 from sim.container import Container
 from sim.domain.corpse import corpse_from_bean, decay_corpses, feed_beans
 from sim.domain.environment import Environment
+from sim.domain.food import feed_beans_on_food, seasonal_abundance
 from sim.domain.genotype import apply_senescence
 from sim.input.keyboard import KeyboardInput
 from sim.observability import (
@@ -42,7 +43,11 @@ from sim.time.game_clock import advance_clock, initial_time_scale, set_time_scal
 logger = get_logger("main")
 
 
-def _advance_life(session: GameSession, config: SimulationConfig) -> bool:
+def _advance_life(
+    session: GameSession,
+    config: SimulationConfig,
+    food_strategy=None,
+) -> bool:
     """Age beans, turn the dead into corpses, then decay and feed.
 
     Aging happens exactly once per simulation tick here, independent of the
@@ -114,6 +119,28 @@ def _advance_life(session: GameSession, config: SimulationConfig) -> bool:
             radius=config.bean_placement.bean_radius,
         )
         session.corpses = [c for c in session.corpses if c.energy > 0.0]
+
+    if session.beans and session.foods:
+        feed_beans_on_food(
+            session.beans,
+            session.foods,
+            bean_radius=config.bean_placement.bean_radius,
+        )
+        session.foods = [f for f in session.foods if f.energy > 0.0]
+
+    if food_strategy is not None and session.beans and session.world is not None:
+        abundance = 1.0
+        environment = session.environment
+        if environment is not None:
+            solar = environment.solar
+            abundance = seasonal_abundance(
+                solar.sun_intensity, solar.daylight_fraction
+            )
+        session.foods.extend(
+            food_strategy.top_up(
+                session.foods, session.world, session.clock.tick, abundance
+            )
+        )
     return False
 
 
@@ -126,6 +153,7 @@ def _step(
     fixed_step: float,
     config: SimulationConfig = DEFAULT_CONFIG,
     max_ticks: int = 5,
+    food_strategy=None,
 ) -> int:
     """Advance the pause-aware clock and every system that depends on it."""
     # Once the session has ended, nothing may move: not the clock, not the
@@ -170,7 +198,7 @@ def _step(
 
         # Lifecycle: deaths -> corpses, decay, feeding.
         if session.state == GameState.PLAYING:
-            if _advance_life(session, config):
+            if _advance_life(session, config, food_strategy):
                 # No living beans left: freeze time and stop this frame's
                 # remaining ticks. Corpses stay where they are, untouched.
                 session.state = GameState.END
@@ -197,6 +225,7 @@ def run_headless(
     fixed_step: float,
     config: SimulationConfig,
     max_ticks: int = 5,
+    food_strategy=None,
 ) -> None:
     """Run a bounded number of deterministic frames without a window."""
     frames = int(os.environ.get("BEAN_HEADLESS_FRAMES", "600"))
@@ -218,7 +247,7 @@ def run_headless(
     for _ in range(max(0, frames)):
         _step(
             session, environment, movement_strategy, energy_strategy, frame_dt, fixed_step,
-            config, max_ticks=max_ticks,
+            config, max_ticks=max_ticks, food_strategy=food_strategy,
         )
         # Stop early if simulation ended (population extinct)
         if session.state == GameState.END:
@@ -324,6 +353,7 @@ def main() -> None:
             run_headless(
                 session, environment, movement_strategy, energy_strategy, fixed_step,
                 config, max_ticks=max_ticks,
+                food_strategy=container.food_strategy,
             )
         except Exception:
             logger.exception("app.crashed mode=headless")

@@ -1,11 +1,12 @@
-"""Interfaces for bean placement and gender assignment.
+"""Interfaces for bean placement and spawn orchestration.
 
-The system decouples **position generation** (placement strategies) from
-**gender & visual attribute assignment** (gender controller). A central
+The system decouples **position generation** (placement strategies, this
+module) from **gender & visual attribute assignment** (gender controller,
+:class:`sim.interfaces.gender.IGenderController`). A central
 :class:`ISpawnController` orchestrates both.
 
-All placement strategies and gender controllers conform to uniform interfaces
-registered in configuration; a single setting selects the active algorithm.
+All placement strategies conform to a uniform interface registered in
+configuration; a single setting selects the active algorithm.
 """
 
 from __future__ import annotations
@@ -55,21 +56,6 @@ class IPlacementStrategy(ABC):
         border, and any already-placed beans (``existing`` plus beans placed
         earlier in this same call).
         """
-
-
-class IGenderController(ABC):
-    """Assign gender identity + visual color to each bean position."""
-
-    @property
-    @abstractmethod
-    def gender_names(self) -> Tuple[str, ...]:
-        """Ordered list of gender identities (must match config keys)."""
-
-    @abstractmethod
-    def assign_attributes(
-        self, positions: List[Position]
-    ) -> List[Tuple[Position, str, Tuple[int, int, int]]]:
-        """Return ``(position, gender, color)`` triples for each position."""
 
 
 class ISpawnController(ABC):

@@ -157,6 +157,19 @@ class SeasonConfig:
     daylight_fraction: float = 0.5
     weather_weights: Dict[str, float] = field(default_factory=dict)
 
+    #: Year-to-year variation applied from the second cycle onwards. The first
+    #: year uses the values above as the baseline; each later occurrence of the
+    #: same season samples within these half-ranges. Set all to 0 for a fixed
+    #: cycle, or give an integer ``EnvironmentConfig.season_seed`` for
+    #: reproducible variation.
+    temperature_variation: float = 3.0       # +/- deg C on the seasonal mean
+    temperature_swing_variation: float = 1.0 # +/- deg C on the day/night swing
+    humidity_variation: float = 0.10         # +/- 0..1 baseline
+    pressure_variation: float = 5.0          # +/- hPa
+    sun_intensity_variation: float = 0.10    # +/- solar peak
+    daylight_variation: float = 0.05         # +/- day-length share
+    weather_weight_variation: float = 0.25   # +/- fraction per weather weight
+
 
 @dataclass
 class DayNightConfig:
@@ -235,20 +248,27 @@ class WeatherConfig:
 class BarrierConfig:
     """Static obstacles and the rules that shape them.
 
-    ``color`` is the fill used by every barrier; ``max_span_cells`` caps how
-    many grid cells a barrier may cover in either direction (3 = at most
-    3x3), which keeps obstacles small and cell-aligned. ``count`` barriers are
-    generated deterministically from ``seed`` and distributed over the world.
+    ``color`` is the fill used by every barrier. ``density`` is the target
+    share of the grid covered by barriers (``0.01`` = 1% of all cells); the
+    generator keeps adding obstacles until that share is reached, so both the
+    count and total area scale with the world instead of using a fixed count.
+    ``min_span_cells``/``max_span_cells`` bound each obstacle: keeping the
+    minimum above 1 avoids tiny, hard-to-see specks.
+
+    ``seed=None`` makes the layout fresh on every run; set an integer for
+    reproducible layouts (snapshots also store the generated barriers).
     """
 
     color: Color = (255, 208, 64)      # yellow
-    max_span_cells: int = 3            # <= 3 cells wide and <= 3 cells tall
-    min_span_cells: int = 1
-    count: int = 6
-    seed: int = 4242
-    margin_cells: int = 1              # keep barriers away from the border
+    density: float = 0.01              # target share of grid cells covered
+    min_span_cells: int = 3            # <= 3 cells is too small to read
+    max_span_cells: int = 8
+    seed: Optional[int] = None         # None = non-deterministic layout
+    margin_cells: int = 2              # keep barriers away from the border
 
     def __post_init__(self) -> None:
+        if not 0.0 <= self.density <= 1.0:
+            raise ValueError("BarrierConfig.density must be in [0, 1]")
         if self.max_span_cells < 1:
             raise ValueError("BarrierConfig.max_span_cells must be >= 1")
         if self.min_span_cells < 1:
@@ -257,8 +277,6 @@ class BarrierConfig:
             raise ValueError(
                 "BarrierConfig.min_span_cells cannot exceed max_span_cells"
             )
-        if self.count < 0:
-            raise ValueError("BarrierConfig.count cannot be negative")
         if self.margin_cells < 0:
             raise ValueError("BarrierConfig.margin_cells cannot be negative")
 
@@ -554,6 +572,43 @@ class GenotypeConfig:
     drag_coefficient: Tuple[float, float] = (0.005, 0.02)
     max_speed: Tuple[float, float] = (40.0, 80.0)
     acceleration: Tuple[float, float] = (15.0, 45.0)
+    #: Fraction of a corpse's food energy the bean can convert to its own
+    #: energy. The phenotype carries the effective value (genotype × condition).
+    digestion_efficiency: Tuple[float, float] = (0.35, 0.75)
+
+    # Lifespan: a hard species ceiling plus a per-bean inherited fraction of
+    # it. Every bean draws one tier and then a small jitter, so lifespans form
+    # visible 70/75/80/85/90/95/100% cohorts instead of a smooth range.
+    max_age_ticks: int = 3120          # species hard ceiling (~2.6 days at 30 Hz)
+    lifespan_fraction_floor: float = 0.50
+    lifespan_tiers: Tuple[float, ...] = (
+        0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00,
+    )
+    lifespan_jitter: float = 0.02
+    #: Share of the individual's own lifespan after which condition (and thus
+    #: digestion efficiency) starts declining linearly towards zero.
+    senescence_start_fraction: float = 0.70
+
+    def __post_init__(self) -> None:
+        if self.max_age_ticks < 1:
+            raise ValueError("GenotypeConfig.max_age_ticks must be >= 1")
+        if not 0.0 < self.lifespan_fraction_floor <= 1.0:
+            raise ValueError(
+                "GenotypeConfig.lifespan_fraction_floor must be in (0, 1]"
+            )
+        if not self.lifespan_tiers:
+            raise ValueError("GenotypeConfig.lifespan_tiers cannot be empty")
+        for fraction in self.lifespan_tiers:
+            if not 0.0 < fraction <= 1.0:
+                raise ValueError(
+                    "GenotypeConfig.lifespan_tiers values must be in (0, 1]"
+                )
+        if self.lifespan_jitter < 0.0:
+            raise ValueError("GenotypeConfig.lifespan_jitter cannot be negative")
+        if not 0.0 <= self.senescence_start_fraction < 1.0:
+            raise ValueError(
+                "GenotypeConfig.senescence_start_fraction must be in [0, 1)"
+            )
 
 
 @dataclass
@@ -641,6 +696,44 @@ class EnergyConfig:
 
 
 @dataclass
+class CorpseConfig:
+    """Dead-bean corpses: food energy, decay, and feeding rules.
+
+    A bean that reaches zero energy is removed from the session and replaced
+    by a :class:`sim.domain.corpse.Corpse`. Corpses hold a flat
+    ``basal_energy`` and lose ``decay_per_tick`` every tick. When a living bean
+    touches a corpse, the corpse loses ``collision_loss_fraction`` of its
+    remaining energy and the bean converts that share into its own energy at
+    its phenotype ``efficiency``. Once a corpse drops to ``rotten_fraction`` of
+    its initial energy, the next collision is rotten: the bean gains nothing,
+    loses ``poison_gain_fraction`` of the energy it would have gained, and the
+    corpse disappears. Poisoning is clamped by ``poison_energy_floor`` so it
+    can never kill.
+    """
+
+    basal_energy: float = 200.0
+    decay_per_tick: float = 0.05
+    collision_loss_fraction: float = 0.5
+    rotten_fraction: float = 0.2
+    poison_gain_fraction: float = 0.5
+    poison_energy_floor: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.basal_energy < 0.0:
+            raise ValueError("CorpseConfig.basal_energy cannot be negative")
+        if self.decay_per_tick < 0.0:
+            raise ValueError("CorpseConfig.decay_per_tick cannot be negative")
+        if not 0.0 < self.collision_loss_fraction <= 1.0:
+            raise ValueError("CorpseConfig.collision_loss_fraction must be in (0, 1]")
+        if not 0.0 <= self.rotten_fraction <= 1.0:
+            raise ValueError("CorpseConfig.rotten_fraction must be in [0, 1]")
+        if not 0.0 <= self.poison_gain_fraction <= 1.0:
+            raise ValueError("CorpseConfig.poison_gain_fraction must be in [0, 1]")
+        if self.poison_energy_floor < 0.0:
+            raise ValueError("CorpseConfig.poison_energy_floor cannot be negative")
+
+
+@dataclass
 class EnvironmentConfig:
     """Strategy class names and positional climate gradients.
 
@@ -651,6 +744,10 @@ class EnvironmentConfig:
     weather_strategy: Optional[str] = None
     season_strategy: Optional[str] = None
     daynight_strategy: Optional[str] = None
+    #: Seed for year-to-year season variation. ``None`` = fresh variation each
+    #: run; an int makes the sequence reproducible. Snapshots persist the
+    #: resolved seed.
+    season_seed: Optional[int] = None
 
     # Gradients are added to the season baseline. The orientation falls back
     # to `WorldConfig.orientation` when left empty.
@@ -686,6 +783,44 @@ class LoggingConfig:
     readings: bool = True       # emit per-cell reading samples at DEBUG
     readings_interval: int = 60  # ticks between DEBUG reading samples
 
+    # File logging: every run writes its own timestamped file, and the file
+    # rolls over once it grows past ``max_bytes`` (keeping ``backup_count``).
+    # ``BEAN_LOG_DIR`` and ``BEAN_LOG_FILE`` override these at runtime.
+    file_enabled: bool = True
+    directory: str = "logs"
+    filename_prefix: str = "bean"
+    max_bytes: int = 10 * 1024 * 1024
+    backup_count: int = 5
+
+
+@dataclass
+class PersistenceConfig:
+    """Snapshot save/load for reproducible runs.
+
+    A snapshot captures the full simulation state (config, RNG, beans,
+    corpses, world barriers, clock and environment) as versioned JSON. Saving
+    the initial state right after spawn means a game can be replayed exactly by
+    loading the same file again.
+
+    Runtime overrides: ``BEAN_SAVE`` (write this exact path) and ``BEAN_LOAD``
+    (read this path, skipping bean creation). With neither, one file per game
+    is written under ``directory`` when ``autosave_initial`` is true.
+    """
+
+    enabled: bool = True
+    directory: str = "saves"
+    filename_prefix: str = "bean"
+    autosave_initial: bool = True
+    save_on_exit: bool = False
+    #: Explicit paths; environment variables take precedence at runtime.
+    save_path: Optional[str] = None
+    load_path: Optional[str] = None
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if self.schema_version < 1:
+            raise ValueError("PersistenceConfig.schema_version must be >= 1")
+
 
 @dataclass
 class SimulationConfig:
@@ -699,8 +834,10 @@ class SimulationConfig:
     creation: CreationConfig = field(default_factory=CreationConfig)
     movement: MovementConfig = field(default_factory=MovementConfig)
     energy: EnergyConfig = field(default_factory=EnergyConfig)
+    corpse: CorpseConfig = field(default_factory=CorpseConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    persistence: PersistenceConfig = field(default_factory=PersistenceConfig)
     random: RandomConfig = field(default_factory=RandomConfig)
     debug: bool = False
     tick_rate: float = 30.0  # simulation ticks per second
@@ -813,11 +950,11 @@ DEFAULT_CONFIG = SimulationConfig(
     ),
     barriers=BarrierConfig(
         color=(255, 208, 64),      # yellow default
-        max_span_cells=3,          # 3x3, 3x1, 1x2, ...
-        min_span_cells=1,
-        count=6,
-        seed=4242,
-        margin_cells=1,
+        density=0.01,              # ~1% of cells covered
+        min_span_cells=3,          # avoid tiny, hard-to-see specks
+        max_span_cells=8,
+        seed=None,                 # fresh layout every run
+        margin_cells=2,
     ),
     bean_placement=BeanPlacementConfig(
         strategy_name="poisson_disc",
@@ -864,6 +1001,14 @@ DEFAULT_CONFIG = SimulationConfig(
         direction=(1.0, 0.0),
         bounce_on_edges=True,
     ),
+    corpse=CorpseConfig(
+        basal_energy=200.0,
+        decay_per_tick=0.05,
+        collision_loss_fraction=0.5,
+        rotten_fraction=0.2,
+        poison_gain_fraction=0.5,
+        poison_energy_floor=1.0,
+    ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",
         season_strategy="SeasonStrategy",
@@ -875,6 +1020,14 @@ DEFAULT_CONFIG = SimulationConfig(
         microclimate=1.0,
     ),
     logging=LoggingConfig(level="INFO"),
+    persistence=PersistenceConfig(
+        enabled=True,
+        directory="saves",
+        filename_prefix="bean",
+        autosave_initial=True,
+        save_on_exit=False,
+        schema_version=1,
+    ),
     debug=False,
     tick_rate=30.0,
 )

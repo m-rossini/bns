@@ -5,7 +5,10 @@ Plain dataclasses with no behavior. Systems and domain objects hold logic.
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from sim.domain.corpse import Corpse
 
 
 @dataclass(slots=True)
@@ -91,3 +94,9 @@ class GameSession:
     end_reason: Optional[str] = None
     exit_requested: bool = False  # set by input; the app loop closes the window
     beans: List[Bean] = field(default_factory=list)   # spawned beans
+    #: Remains of dead beans; food that decays and can be eaten.
+    corpses: List["Corpse"] = field(default_factory=list)
+    next_corpse_id: int = 1
+    #: Death tallies by cause, shown on the end screen and saved in snapshots.
+    deaths_old_age: int = 0
+    deaths_starvation: int = 0

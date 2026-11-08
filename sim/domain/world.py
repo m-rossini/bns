@@ -148,6 +148,10 @@ class World(IWorld):
                 return True
         return False
 
+    def replace_barriers(self, barriers: List[Barrier]) -> None:
+        """Replace every barrier (used when restoring a saved snapshot)."""
+        self._barriers = list(barriers)
+
     # ------------------------------------------------------------------
     # Bounds
     # ------------------------------------------------------------------

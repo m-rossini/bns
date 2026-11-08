@@ -28,6 +28,15 @@ class Genotype:
     base_color: Tuple[int, int, int]  # Color when healthy
     dormant_color: Tuple[int, int, int] = (139, 69, 19)  # Brown when energy=0
 
+    # Feeding: genotype baseline, modulated by the phenotype's condition.
+    digestion_efficiency: float = 0.6
+
+    # Lifespan: an absolute tick cap inherited from the species ceiling.
+    # ``senescence_start_fraction`` is the share of that cap after which
+    # condition starts declining.
+    max_age_ticks: int = 3120
+    senescence_start_fraction: float = 0.70
+
 
 @dataclass(slots=True)
 class Phenotype:
@@ -43,6 +52,10 @@ class Phenotype:
     # Life state
     age: int = 0                  # Ticks alive
     is_dormant: bool = False      # True when energy <= 0
+
+    # Feeding state
+    condition: float = 1.0        # Age/lifestyle multiplier (1.0 = healthy)
+    efficiency: float = 0.6       # Effective digestion efficiency (0..1)
 
     # Visual state
     color: Tuple[int, int, int] = field(init=False)
@@ -60,6 +73,16 @@ class Phenotype:
             self.color = genotype.dormant_color
         else:
             self.color = genotype.base_color
+
+    def refresh_efficiency(self, genotype: Genotype) -> None:
+        """Recompute the effective digestion efficiency from gene × condition.
+
+        ``condition`` drops as a bean ages (see :func:`apply_senescence`), so
+        old beans convert less of each corpse into energy.
+        """
+        self.efficiency = max(
+            0.0, min(1.0, genotype.digestion_efficiency * self.condition)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,18 +104,23 @@ DEFAULT_GENOTYPE = Genotype(
     acceleration=30.0,            # Max speed change per second
     base_color=(0, 0, 255),       # Blue default
     dormant_color=(139, 69, 19),  # Brown
+    max_age_ticks=3120,
+    senescence_start_fraction=0.70,
 )
 
 
 def create_default_phenotype(genotype: Genotype = DEFAULT_GENOTYPE) -> Phenotype:
     """Create a phenotype with default starting values."""
-    return Phenotype(
+    phenotype = Phenotype(
         current_energy=genotype.energy_capacity,
         current_speed=0.0,
         velocity=(0.0, 0.0),
         age=0,
         is_dormant=False,
+        condition=1.0,
     )
+    phenotype.refresh_efficiency(genotype)
+    return phenotype
 
 
 def draw_genotype(
@@ -106,7 +134,19 @@ def draw_genotype(
     Each numeric gene is drawn uniformly from its configured (min, max)
     range, so the initial population has genetic variety while staying
     within sane bounds. ``base_color`` comes from the gender controller.
+
+    Lifespan is a two-stage draw: pick one of ``lifespan_tiers`` (so lifespans
+    cluster at 70/75/.../100% of the species ceiling), then add a small
+    ``lifespan_jitter`` and clamp to ``lifespan_fraction_floor`` and 1.0.
     """
+    lifespan_fraction = rng.choice(ranges.lifespan_tiers)
+    lifespan_fraction += rng.uniform(
+        -ranges.lifespan_jitter, ranges.lifespan_jitter
+    )
+    lifespan_fraction = max(
+        ranges.lifespan_fraction_floor, min(1.0, lifespan_fraction)
+    )
+
     return Genotype(
         energy_capacity=rng.uniform(*ranges.energy_capacity),
         metabolic_rate=rng.uniform(*ranges.metabolic_rate),
@@ -115,7 +155,31 @@ def draw_genotype(
         acceleration=rng.uniform(*ranges.acceleration),
         base_color=base_color,
         dormant_color=dormant_color,
+        digestion_efficiency=rng.uniform(*ranges.digestion_efficiency),
+        max_age_ticks=max(1, round(ranges.max_age_ticks * lifespan_fraction)),
+        senescence_start_fraction=ranges.senescence_start_fraction,
     )
+
+
+def apply_senescence(phenotype: Phenotype, genotype: Genotype) -> None:
+    """Update ``condition`` from age and refresh digestion efficiency.
+
+    Condition stays at 1.0 until ``senescence_start_fraction`` of the bean's
+    own lifespan, then falls linearly to 0.0 at ``max_age_ticks``. A bean at
+    its cap is removed by the caller; this only shapes the run-up.
+    """
+    max_age = genotype.max_age_ticks
+    if max_age <= 0:
+        condition = 1.0
+    else:
+        start = genotype.senescence_start_fraction * max_age
+        if phenotype.age < start:
+            condition = 1.0
+        else:
+            span = max(1e-9, max_age - start)
+            condition = 1.0 - (phenotype.age - start) / span
+    phenotype.condition = max(0.0, min(1.0, condition))
+    phenotype.refresh_efficiency(genotype)
 
 
 def apply_energy_cost(

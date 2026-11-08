@@ -134,5 +134,9 @@ class KeyboardInput:
         session.exit_requested = False
         session.start_time = 0.0
         session.pause_time = 0.0
+        session.corpses.clear()
+        session.next_corpse_id = 1
+        session.deaths_old_age = 0
+        session.deaths_starvation = 0
         if session.environment is not None:
             session.environment.reset()

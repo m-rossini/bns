@@ -469,7 +469,7 @@ class ArcadeView(arcade.Window):
         self._draw_backdrop(session)
         sw, sh = self._viewport_size()
         panel_w = min(620, sw - 60)
-        panel_h = 420
+        panel_h = 460
         left = (sw - panel_w) / 2
         bottom = (sh - panel_h) / 2
         self._panel(left, bottom, panel_w, panel_h)
@@ -495,22 +495,13 @@ class ArcadeView(arcade.Window):
         tick = session.clock.tick
 
         beans = getattr(session, "beans", None) or []
+        corpses = getattr(session, "corpses", None) or []
         initial_female = getattr(session, "initial_female", 0)
         initial_male = getattr(session, "initial_male", 0)
-        alive_female = alive_male = 0
-        dead_female = dead_male = 0
-        for bean in beans:
-            is_dormant = bean.phenotype is not None and bean.phenotype.is_dormant
-            if bean.gender == "female":
-                if is_dormant:
-                    dead_female += 1
-                else:
-                    alive_female += 1
-            else:
-                if is_dormant:
-                    dead_male += 1
-                else:
-                    alive_male += 1
+        alive_female = sum(1 for b in beans if b.gender == "female")
+        alive_male = len(beans) - alive_female
+        dead_female = max(0, initial_female - alive_female)
+        dead_male = max(0, initial_male - alive_male)
         total_initial = initial_female + initial_male
         total_alive = alive_female + alive_male
         total_dead = dead_female + dead_male
@@ -524,7 +515,10 @@ class ArcadeView(arcade.Window):
             ("BEANS", _ACCENT),
             (f"  Initial: {total_initial:>3}  (F:{initial_female:>2} M:{initial_male:>2})", _TEXT),
             (f"  Alive:   {total_alive:>3}  (F:{alive_female:>2} M:{alive_male:>2})", _TEXT),
-            (f"  Dormant: {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
+            (f"  Dead:    {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
+            (f"  Corpses: {len(corpses):>3}", _TEXT),
+            (f"  Old age: {getattr(session, 'deaths_old_age', 0):>3}", _TEXT),
+            (f"  Starved: {getattr(session, 'deaths_starvation', 0):>3}", _TEXT),
         ]
 
         y = bottom + panel_h - 164
@@ -662,6 +656,7 @@ class ArcadeView(arcade.Window):
             self._draw_precipitation(session)
 
         self._draw_barriers(session)
+        self._draw_corpses(session)
         self._draw_beans(session)
         self._draw_grid(session)
         self._draw_selection(session)
@@ -875,6 +870,28 @@ class ArcadeView(arcade.Window):
             arcade.draw_lbwh_rectangle_filled(sx, sy, bw, bh, color)
             arcade.draw_lbwh_rectangle_outline(sx, sy, bw, bh, (0, 0, 0, 110), 1)
 
+    def _draw_corpses(self, session: GameSession) -> None:
+        """Draw dead beans as brown points that fade as their energy decays."""
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
+        corpses = getattr(session, "corpses", None) or []
+        if not corpses:
+            return
+
+        base = (139, 69, 19)
+        points_by_color: Dict[Tuple[int, int, int], List[Tuple[float, float]]] = {}
+        for corpse in corpses:
+            sx, sy = layout.world_to_screen(corpse.x, corpse.y)
+            factor = 0.35 + 0.65 * corpse.energy_ratio
+            color = tuple(int(channel * factor) for channel in base)
+            points_by_color.setdefault(color, []).append((sx, sy))
+
+        point_size = max(2.0, layout.cell_step * 0.18)
+        for color, points in points_by_color.items():
+            arcade.draw_points(points, color, point_size)
+
     def _draw_beans(self, session: GameSession) -> None:
         """Draw beans as colored points using batched `draw_points` (one draw call per color).
 
@@ -900,7 +917,6 @@ class ArcadeView(arcade.Window):
         point_size = max(2.0, layout.cell_step * 0.15)
         for color, points in points_by_color.items():
             arcade.draw_points(points, color, point_size)
-
     def _draw_grid(self, session: GameSession) -> None:
         """Draw one line per cell boundary, derived from `world.cell_size`."""
         self._ensure_layout()
@@ -1319,7 +1335,8 @@ class ArcadeView(arcade.Window):
                             width: float) -> None:
         """Bean census: initial, alive, and dead counts by gender."""
         beans = getattr(session, "beans", None) or []
-        if not beans:
+        corpses = getattr(session, "corpses", None) or []
+        if not beans and not corpses:
             self._text.draw(
                 "no beans", left, top, _DIM, font_size=11,
             )
@@ -1330,20 +1347,10 @@ class ArcadeView(arcade.Window):
         initial_male = getattr(session, "initial_male", 0)
 
         # Current alive/dead counts
-        alive_female = alive_male = 0
-        dead_female = dead_male = 0
-        for bean in beans:
-            is_dormant = bean.phenotype is not None and bean.phenotype.is_dormant
-            if bean.gender == "female":
-                if is_dormant:
-                    dead_female += 1
-                else:
-                    alive_female += 1
-            else:  # male
-                if is_dormant:
-                    dead_male += 1
-                else:
-                    alive_male += 1
+        alive_female = sum(1 for b in beans if b.gender == "female")
+        alive_male = len(beans) - alive_female
+        dead_female = max(0, initial_female - alive_female)
+        dead_male = max(0, initial_male - alive_male)
 
         y = top
 
@@ -1381,11 +1388,18 @@ class ArcadeView(arcade.Window):
         self._text.draw(f"{total_alive:>3}", left + 160, y, _ACCENT, font_size=11, bold=True)
         self._text.draw(f"{total_dead:>3}", left + 240, y, _ACCENT, font_size=11, bold=True)
 
+        if corpses:
+            y -= 17
+            self._text.draw(
+                f"Corpses remaining: {len(corpses)}",
+                left + 16, y, _MUTED, font_size=11,
+            )
+
         # End simulation message if no alive beans
         if total_alive == 0 and total_initial > 0:
             y -= 20
             self._text.draw(
-                "All beans dormant. Simulation ended.",
+                "Population extinct. Simulation ended.",
                 left, y, _ACCENT, font_size=11, bold=True,
             )
             y -= 15

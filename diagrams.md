@@ -145,7 +145,7 @@ classDiagram
         +palette(calendar) SeasonPalette
         +solar_profile(calendar) SolarProfile
         +get_season_name(calendar) str
-        +weather_weights(season) dict
+        +weather_weights(season, year) dict
     }
 
     class DayNightStrategy {
@@ -396,6 +396,9 @@ classDiagram
     DensityBasedCreationStrategy ..|> IBeanCreationStrategy
     FixedAmountCreationStrategy ..|> IBeanCreationStrategy
     StraightLineMovementStrategy ..|> IMovementStrategy
+    FixedEnergyStrategy ..|> IEnergyStrategy
+    PerDayEnergyStrategy ..|> IEnergyStrategy
+    SpawnController ..|> ISpawnController
     Environment ..|> IEnvironment
 
     Environment --> ICalendar
@@ -793,10 +796,10 @@ classDiagram
 
     class BarrierConfig {
         +color: Color
-        +max_span_cells: int
+        +density: float
         +min_span_cells: int
-        +count: int
-        +seed: int
+        +max_span_cells: int
+        +seed: int | None
         +margin_cells: int
     }
 
@@ -851,6 +854,13 @@ classDiagram
         +daylight_fraction: float
         +ground_meaning: str
         +weather_weights: dict
+        +temperature_variation: float
+        +temperature_swing_variation: float
+        +humidity_variation: float
+        +pressure_variation: float
+        +sun_intensity_variation: float
+        +daylight_variation: float
+        +weather_weight_variation: float
     }
 
     class DayNightConfig {

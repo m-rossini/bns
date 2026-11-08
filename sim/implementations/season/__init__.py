@@ -22,7 +22,9 @@ base colour so every season is a physical colour, not a hardcoded one:
 That produces a smooth seasonal change without touching the view.
 """
 
-from typing import Dict, List, Sequence, Tuple
+import random
+from dataclasses import replace
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from sim.config import SeasonConfig
 from sim.domain.visuals import SeasonPalette, SolarProfile
@@ -86,7 +88,12 @@ def gradient_color(start: Color, end: Color, progress: float) -> Color:
 
 
 class SeasonStrategy(ISeasonStrategy):
-    def __init__(self, seasons: Sequence[SeasonConfig], ticks_per_season: int):
+    def __init__(
+        self,
+        seasons: Sequence[SeasonConfig],
+        ticks_per_season: int,
+        seed: Optional[int] = None,
+    ):
         if not seasons:
             raise ValueError("at least one season is required")
         if ticks_per_season <= 0:
@@ -95,6 +102,12 @@ class SeasonStrategy(ISeasonStrategy):
         self._seasons: List[SeasonConfig] = list(seasons)
         self._by_name: Dict[str, SeasonConfig] = {s.name: s for s in self._seasons}
         self._ticks_per_season = ticks_per_season
+        self._seed = (
+            int(seed)
+            if seed is not None
+            else random.SystemRandom().randrange(1, 2**63)
+        )
+        self._variation_cache: Dict[Tuple[int, int], SeasonConfig] = {}
 
     @property
     def ticks_per_season(self) -> int:
@@ -104,26 +117,123 @@ class SeasonStrategy(ISeasonStrategy):
     def season_names(self) -> Tuple[str, ...]:
         return tuple(s.name for s in self._seasons)
 
+    def _index(self, season: str) -> Optional[int]:
+        for index, definition in enumerate(self._seasons):
+            if definition.name == season:
+                return index
+        return None
+
     def _definition(self, season: str) -> SeasonConfig:
         return self._by_name.get(season, _FALLBACK)
 
-    def _next_definition(self, season: str) -> SeasonConfig:
-        for index, definition in enumerate(self._seasons):
-            if definition.name == season:
-                return self._seasons[(index + 1) % len(self._seasons)]
-        return _FALLBACK
+    def _varied(self, index: int, year: int) -> SeasonConfig:
+        """Return the season definition for one concrete year.
+
+        Year 1 is the configured baseline. Later years sample a bounded
+        variation from a stable per-occurrence RNG, so the same year and seed
+        always produce the same season and successive cycles do not repeat.
+        """
+        base = self._seasons[index]
+        if year <= 1:
+            return base
+
+        key = (year, index)
+        cached = self._variation_cache.get(key)
+        if cached is not None:
+            return cached
+
+        rng = random.Random(f"{self._seed}:{year}:{index}")
+        weights = {
+            name: max(
+                0.0,
+                weight
+                * (1.0 + rng.uniform(
+                    -base.weather_weight_variation,
+                    base.weather_weight_variation,
+                )),
+            )
+            for name, weight in base.weather_weights.items()
+        }
+        varied = replace(
+            base,
+            base_temperature=(
+                base.base_temperature
+                + rng.uniform(-base.temperature_variation, base.temperature_variation)
+            ),
+            temperature_swing=max(
+                0.0,
+                base.temperature_swing
+                + rng.uniform(
+                    -base.temperature_swing_variation,
+                    base.temperature_swing_variation,
+                ),
+            ),
+            humidity=_clamp(
+                base.humidity
+                + rng.uniform(-base.humidity_variation, base.humidity_variation),
+                0.0,
+                1.0,
+            ),
+            pressure_hpa=(
+                base.pressure_hpa
+                + rng.uniform(-base.pressure_variation, base.pressure_variation)
+            ),
+            sun_intensity=max(
+                0.0,
+                base.sun_intensity
+                + rng.uniform(
+                    -base.sun_intensity_variation,
+                    base.sun_intensity_variation,
+                ),
+            ),
+            daylight_fraction=_clamp(
+                base.daylight_fraction
+                + rng.uniform(-base.daylight_variation, base.daylight_variation),
+                0.05,
+                0.95,
+            ),
+            weather_weights=weights,
+        )
+        self._variation_cache[key] = varied
+        return varied
+
+    def _current(self, calendar: ICalendar) -> SeasonConfig:
+        index = self._index(calendar.season)
+        if index is None:
+            return _FALLBACK
+        return self._varied(index, calendar.year)
+
+    def _following(self, calendar: ICalendar) -> SeasonConfig:
+        index = self._index(calendar.season)
+        if index is None:
+            return _FALLBACK
+        next_index = (index + 1) % len(self._seasons)
+        next_year = calendar.year + (1 if next_index == 0 else 0)
+        return self._varied(next_index, next_year)
 
     def get_season_name(self, calendar: ICalendar) -> str:
         """Return the current season name from the strategy perspective."""
         return self._definition(calendar.season).name
 
-    def weather_weights(self, season: str) -> Dict[str, float]:
-        return dict(self._definition(season).weather_weights)
+    def weather_weights(self, season: str, year: int = 1) -> Dict[str, float]:
+        index = self._index(season)
+        if index is None:
+            return dict(_FALLBACK.weather_weights)
+        return dict(self._varied(index, year).weather_weights)
+
+    def snapshot_state(self) -> dict:
+        """Persist the resolved variation seed for exact resume."""
+        return {"seed": self._seed}
+
+    def restore_state(self, state: dict) -> None:
+        seed = state.get("seed")
+        if seed is not None:
+            self._seed = int(seed)
+        self._variation_cache.clear()
 
     def palette(self, calendar: ICalendar) -> SeasonPalette:
-        season = calendar.season
-        definition = self._definition(season)
-        next_definition = self._next_definition(season)
+        definition = self._current(calendar)
+        next_definition = self._following(calendar)
         progress = calendar.season_progress
 
         if definition.ground_gradient is not None:
@@ -163,8 +273,8 @@ class SeasonStrategy(ISeasonStrategy):
 
     def solar_profile(self, calendar: ICalendar) -> SolarProfile:
         """Sun the world gets now, easing into the next season's profile."""
-        current = self._definition(calendar.season)
-        following = self._next_definition(calendar.season)
+        current = self._current(calendar)
+        following = self._following(calendar)
         weight = transition_weight(calendar.season_progress)
 
         intensity = current.sun_intensity + (

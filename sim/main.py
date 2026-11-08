@@ -16,14 +16,105 @@ import os
 import time
 
 from sim.components import GameSession, GameState
-from sim.config import DEFAULT_CONFIG
+from sim.config import DEFAULT_CONFIG, SimulationConfig
 from sim.container import Container
+from sim.domain.corpse import corpse_from_bean, decay_corpses, feed_beans
 from sim.domain.environment import Environment
+from sim.domain.genotype import apply_senescence
 from sim.input.keyboard import KeyboardInput
-from sim.observability import configure_logging, get_logger, log_event
+from sim.observability import (
+    active_log_file,
+    configure_logging,
+    get_logger,
+    log_event,
+)
+from sim.persistence import (
+    config_from_snapshot,
+    default_final_save_path,
+    load_snapshot,
+    resolve_load_path,
+    resolve_save_path,
+    restore_snapshot,
+    save_snapshot,
+)
 from sim.time.game_clock import advance_clock, initial_time_scale, set_time_scale
 
 logger = get_logger("main")
+
+
+def _advance_life(session: GameSession, config: SimulationConfig) -> bool:
+    """Age beans, turn the dead into corpses, then decay and feed.
+
+    Aging happens exactly once per simulation tick here, independent of the
+    movement strategy. A bean dies when its energy runs out *or* when it
+    reaches its inherited ``genotype.max_age_ticks``; both paths produce a
+    corpse. Survivors have their senescence ``condition`` refreshed.
+
+    Returns ``True`` when the last living bean died. In that case corpse decay
+    and feeding are skipped: extinction stops *everything* immediately, even
+    though corpses may still remain.
+    """
+    corpse_cfg = config.corpse
+
+    for bean in session.beans:
+        if bean.phenotype is not None:
+            bean.phenotype.age += 1
+
+    survivors = []
+    for bean in session.beans:
+        phenotype = bean.phenotype
+        genotype = bean.genotype
+        if phenotype is None:
+            survivors.append(bean)
+            continue
+
+        old_age = (
+            genotype is not None
+            and genotype.max_age_ticks > 0
+            and phenotype.age >= genotype.max_age_ticks
+        )
+        starving = phenotype.current_energy <= 0.0
+        if not old_age and not starving:
+            if genotype is not None:
+                apply_senescence(phenotype, genotype)
+            survivors.append(bean)
+            continue
+
+        cause = "old_age" if old_age else "starvation"
+        if old_age:
+            session.deaths_old_age += 1
+        else:
+            session.deaths_starvation += 1
+        corpse = corpse_from_bean(bean, session.next_corpse_id, corpse_cfg)
+        session.next_corpse_id += 1
+        session.corpses.append(corpse)
+        log_event(
+            logger,
+            "bean.died",
+            bean_id=bean.id,
+            corpse_id=corpse.id,
+            energy=round(corpse.initial_energy, 3),
+            cause=cause,
+            age=phenotype.age,
+            ticks=session.clock.tick,
+        )
+
+    session.beans = survivors
+
+    if not survivors:
+        return True
+
+    session.corpses = decay_corpses(session.corpses, corpse_cfg)
+
+    if session.corpses:
+        feed_beans(
+            session.beans,
+            session.corpses,
+            corpse_cfg,
+            radius=config.bean_placement.bean_radius,
+        )
+        session.corpses = [c for c in session.corpses if c.energy > 0.0]
+    return False
 
 
 def _step(
@@ -33,9 +124,16 @@ def _step(
     energy_strategy,
     real_dt: float,
     fixed_step: float,
+    config: SimulationConfig = DEFAULT_CONFIG,
     max_ticks: int = 5,
 ) -> int:
     """Advance the pause-aware clock and every system that depends on it."""
+    # Once the session has ended, nothing may move: not the clock, not the
+    # environment, not corpses. This also protects callers that forget to
+    # check the state.
+    if session.state == GameState.END:
+        return 0
+
     ticks_executed = advance_clock(
         session.clock, real_dt, fixed_step, max_ticks=max_ticks
     )
@@ -70,23 +168,23 @@ def _step(
         ):
             movement_strategy.update(session.beans, session.world, fixed_step)
 
-        # Check if all beans are dormant (energy depleted) - end simulation
+        # Lifecycle: deaths -> corpses, decay, feeding.
         if session.state == GameState.PLAYING:
-            alive_count = sum(
-                1 for bean in session.beans
-                if bean.phenotype is not None and not bean.phenotype.is_dormant
-            )
-            if alive_count == 0 and len(session.beans) > 0:
+            if _advance_life(session, config):
+                # No living beans left: freeze time and stop this frame's
+                # remaining ticks. Corpses stay where they are, untouched.
                 session.state = GameState.END
-                session.end_reason = "all_beans_dormant"
+                session.end_reason = "extinction"
+                session.clock.paused = True
                 log_event(
                     logger,
-                    "session.all_beans_dormant",
+                    "session.extinct",
                     ticks=session.clock.tick,
-                    initial_population=len(session.beans),
+                    corpses=len(session.corpses),
                     initial_female=getattr(session, "initial_female", 0),
                     initial_male=getattr(session, "initial_male", 0),
                 )
+                break
 
     return ticks_executed
 
@@ -97,6 +195,7 @@ def run_headless(
     movement_strategy,
     energy_strategy,
     fixed_step: float,
+    config: SimulationConfig,
     max_ticks: int = 5,
 ) -> None:
     """Run a bounded number of deterministic frames without a window."""
@@ -119,9 +218,9 @@ def run_headless(
     for _ in range(max(0, frames)):
         _step(
             session, environment, movement_strategy, energy_strategy, frame_dt, fixed_step,
-            max_ticks=max_ticks,
+            config, max_ticks=max_ticks,
         )
-        # Stop early if simulation ended (all beans dormant)
+        # Stop early if simulation ended (population extinct)
         if session.state == GameState.END:
             break
 
@@ -150,8 +249,30 @@ def run_headless(
         )
 
 
+def _save_on_exit(container, config: SimulationConfig) -> None:
+    """Write a final snapshot when ``save_on_exit`` is enabled."""
+    if not config.persistence.enabled or not config.persistence.save_on_exit:
+        return
+    try:
+        save_snapshot(default_final_save_path(config), container, config)
+    except Exception:
+        logger.exception("app.crashed persistence.save")
+
+
 def main() -> None:
     config = DEFAULT_CONFIG
+    load_file = resolve_load_path(config)
+    snapshot = None
+    if load_file:
+        try:
+            snapshot = load_snapshot(load_file)
+            config = config_from_snapshot(snapshot)
+        except Exception:
+            configure_logging(config)
+            logger.exception("app.crashed persistence.load path=%s", load_file)
+            logging.shutdown()
+            return
+
     level = configure_logging(config)
 
     log_event(
@@ -164,10 +285,18 @@ def main() -> None:
         cell_size=config.world.cell_size,
         cols=config.world.cols,
         rows=config.world.rows,
+        log_file=active_log_file(),
+        load_file=load_file,
     )
 
     try:
         container = Container(config)
+        if snapshot is not None:
+            restore_snapshot(snapshot, container, config)
+        else:
+            save_file = resolve_save_path(config)
+            if save_file:
+                save_snapshot(save_file, container, config)
     except Exception:
         logger.exception("app.crashed config.invalid")
         logging.shutdown()
@@ -194,12 +323,13 @@ def main() -> None:
         try:
             run_headless(
                 session, environment, movement_strategy, energy_strategy, fixed_step,
-                max_ticks=max_ticks,
+                config, max_ticks=max_ticks,
             )
         except Exception:
             logger.exception("app.crashed mode=headless")
             raise
         finally:
+            _save_on_exit(container, config)
             logging.shutdown()
         return
 
@@ -241,7 +371,7 @@ def main() -> None:
         if session.state != GameState.END:
             _step(
                 session, environment, movement_strategy, energy_strategy, real_dt, fixed_step,
-                max_ticks=max_ticks,
+                config, max_ticks=max_ticks,
             )
 
         if session.exit_requested:
@@ -279,6 +409,7 @@ def main() -> None:
             state=session.state.name,
             reason=session.end_reason,
         )
+        _save_on_exit(container, config)
         logging.shutdown()
 
 

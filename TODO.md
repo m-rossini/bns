@@ -19,7 +19,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 13 | Grid drawing honours `cell_size`; cells render correctly for beans | `feat/render-playback` | [x] |
 | 14 | Playback-speed slider slows ticker without changing sim time; initial value from config | `feat/render-playback` | [x] |
 | 15 | Barrier colour configurable, default yellow | `feat/barrier-climate` | [x] |
-| 16 | Barriers span ≤ 3 grid cells per direction (3×3, 3×1, 1×2, …) | `feat/barrier-climate` | [x] |
+| 16 | Barriers: density-based coverage, 3..8 cells per direction, non-deterministic by default (`seed=None`) | `main` (pending PR) | [x] |
 | 17 | Barrier strategy: interface + implementation; colour and span limits in strategy | `feat/barrier-climate` | [x] |
 | 18 | Weather strategy receives climate inputs (season, environment, world) | `feat/barrier-climate` | [x] |
 | 19 | Season strategy owns sun amount; others derive luminosity/temperature from it | `feat/barrier-climate` | [x] |
@@ -35,12 +35,20 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 29 | Run movement only while `PLAYING`; renderer draws live bean positions | `feat/bean-movement` | [x] |
 | 30 | Movement logs (`bean.bounced`, `bean.collided_*`) move to DEBUG | `fix/run-and-log-levels` | [x] |
 | 31 | `make run` opens the game window instead of running headless in a container | `fix/run-and-log-levels` | [x] |
+| 32 | Lifespan genes, species age cap, senescence and old-age death telemetry | `main` (pending PR) | [x] |
+| 33 | Versioned JSON snapshots (`BEAN_SAVE` / `BEAN_LOAD`) with deterministic restore | `main` (pending PR) | [x] |
+| 34 | Comprehensive configuration + interface/implementation doc | `main` (pending PR) | [x] |
 
 ## Verification log
 
 - `python3 -m compileall sim` — OK on every branch.
 - Headless (`BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=300`) — Spring day/season/weather events emitted; climate context logged.
 - Barriers: 6 yellow barriers generated; 4×1 rejected, 3×3 and 1×2 accepted; out-of-bounds rejected.
+- Barrier density redesign (pending PR): `density=0.01` targets 96 cells on the
+  default grid (usually 3–4 obstacles, spans 3..8, `seed=None`); `test_barriers.py` added.
+- Season variation (pending PR): year 1 is the configured baseline, later years
+  re-roll inside `*_variation` ranges via `(season_seed, year, index)`; the seed
+  is persisted in snapshots; `test_season.py` added.
 - Climate-aware weather: `adjusted_weather_weights()` reshapes by temperature/humidity/pressure/sun; rain→snow below freezing.
 - Season sun: `solar_profile()` blends `sun_intensity`/`daylight_fraction` across the season boundary.
 - Pointer round-trip: screen → world → cell_index returns the exact cell at multiple `cell_size` values; selected cell == hover cell.
@@ -60,11 +68,28 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Config screen renders all 135 config values across three columns without error.
 - `make test-cov` in-container: 82 tests pass, coverage report written to `htmlcov/`.
 - `make test-cov` in-container after bean movement: 101 tests pass (creation + movement suites included).
+- Coverage push (pending PR): 177 tests pass, TOTAL 80%. Every module is >=75%
+  except `rendering/arcade_view.py` (15%): it subclasses `arcade.Window`, so
+  all draw paths need a display and cannot run headless (no xvfb locally).
+  New behavior suites: `test_environment_behavior`, `test_daynight_energy`,
+  `test_input_random`, `test_layout_behavior`, `test_main_behavior`. Also fixed
+  a latent crash found by the new tests: `logger.exception(..., path=...)` on
+  the corrupt-snapshot path in `main()` (plain loggers take no kwargs).
+- Test targets split (pending PR): `make test` = fast container pytest (133 passed),
+  `make test-cov` = full coverage report (`term-missing` + `htmlcov/` + `coverage.xml`,
+  TOTAL 74%). Both bind-mount the repo with `:Z` + `$(USER_ARGS)` — required on
+  SELinux-enforcing hosts, otherwise pytest gets `PermissionError: '/app'`.
 - `make verify LOG_LEVEL=WARNING BEAN_HEADLESS_FRAMES=300`: headless run exits 0 with beans moving.
 - Fixed-amount smoke: totals 50 / 200 / 1300 / 2000 each produced exactly that many beans.
 - Movement smoke: bean x advanced by `speed × dt`; velocity seeded once, bounce flips the component.
 - Movement logs: 0 `bean.bounced` / `collided` lines at `LOG_LEVEL=INFO`, 322 at `DEBUG` in a 60-frame headless run.
 - `make run` now launches the window locally (`app.window_created width=1560 height=824`); headless lives at `make run-container` / `make run-headless`.
+
+- Corpse + extinction: 118 tests passed; extinction tick froze clock, corpses and environment.
+- Lifespan + persistence: 124 tests passed locally (6 new lifespan/persistence tests).
+- Headless full run after lifespan: extinction at `ticks=2790`, corpses=83, ~11 s.
+- Container `make verify BEAN_HEADLESS_FRAMES=200`: OK; initial snapshot written to `/app/saves`.
+- Container snapshot resume: `BEAN_LOAD=saves/bean-...json` restored 1280 beans at tick 0 and ran.
 
 ## Worktrees
 

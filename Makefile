@@ -22,7 +22,26 @@ CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 
 CONTAINER_IMAGE := bean-world:latest
 CONTAINER_NAME := bean-world
 
-.PHONY: all venv install run run-local run-headless build run-container run-container-ui logs status stop clean help check-env verify test
+# Run the container as the invoking host user so it can write the bind-mounted
+# log directory. Rootless Podman needs --userns=keep-id; Docker uses --user.
+ifeq ($(findstring podman,$(notdir $(CONTAINER_RUNTIME))),podman)
+USER_ARGS := --userns=keep-id
+else
+USER_ARGS := --user $$(id -u):$$(id -g)
+endif
+
+# Host directory that receives one rotating log file per run.
+LOG_DIR ?= $(CURDIR)/logs
+
+# Snapshot save/load. Override per run:
+#   make run-local BEAN_LOAD=saves/bean-....json
+#   make run-local BEAN_SAVE=/tmp/game.json
+BEAN_SAVE ?=
+BEAN_LOAD ?=
+export BEAN_SAVE BEAN_LOAD
+SAVE_DIR ?= $(CURDIR)/saves
+
+.PHONY: all venv install run run-local run-headless build run-container run-container-ui logs logs-latest logs-files saves status stop clean help check-env verify test test-pytest test-cov
 
 all: install
 
@@ -92,16 +111,26 @@ verify: build
 		echo "Error: no container runtime (podman/docker) found."; \
 		exit 1; \
 	fi
+	@mkdir -p $(LOG_DIR) $(SAVE_DIR)
 	$(CONTAINER_RUNTIME) run --rm --init \
+		$(USER_ARGS) \
+		--env HOME=/tmp \
+		--env PYTHONDONTWRITEBYTECODE=1 \
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
 		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
+		--env BEAN_LOG_DIR=/app/logs \
+		--env BEAN_SAVE \
+		--env BEAN_LOAD \
+		--volume $(LOG_DIR):/app/logs:Z \
+		--volume $(SAVE_DIR):/app/saves:Z \
 		$(CONTAINER_IMAGE)
 
 # Local compile + bounded headless run (no container).
 
-# Testing (pytest + coverage) — runs inside the container so the
-# environment matches CI exactly. Coverage report is shown after the run.
+# Testing — everything runs inside the container so the environment matches
+# CI exactly. `test` is the fast pass/fail run; `test-cov` adds the full
+# coverage report (terminal + htmlcov/).
 
 test-pytest: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
@@ -109,13 +138,14 @@ test-pytest: build
 		exit 1; \
 	fi
 	$(CONTAINER_RUNTIME) run --rm --init \
+		$(USER_ARGS) \
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=300 \
 		--env BEAN_LOG_LEVEL=INFO \
-		-v $$(pwd):/app:ro \
+		-v $$(pwd):/app:Z \
 		-w /app \
 		$(CONTAINER_IMAGE) \
-		/bin/sh -c "pip install -q pytest pytest-cov coverage 2>/dev/null; python -m pytest sim/tests/ -v"
+		/bin/sh -c "pip install -q pytest pytest-cov coverage 2>/dev/null; python -m pytest sim/tests/ -v -p no:cacheprovider"
 
 test-cov: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
@@ -123,16 +153,18 @@ test-cov: build
 		exit 1; \
 	fi
 	$(CONTAINER_RUNTIME) run --rm --init \
+		$(USER_ARGS) \
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=300 \
 		--env BEAN_LOG_LEVEL=INFO \
 		--env COVERAGE_FILE=/tmp/.coverage \
-		-v $$(pwd):/app \
+		-v $$(pwd):/app:Z \
 		-w /app \
 		$(CONTAINER_IMAGE) \
-		/bin/sh -c "pip install -q pytest pytest-cov coverage 2>/dev/null; python -m pytest sim/tests/ --cov=sim --cov-report=term-missing --cov-report=html"
+		/bin/sh -c "pip install -q pytest pytest-cov coverage 2>/dev/null; python -m pytest sim/tests/ --cov=sim --cov-report=term-missing --cov-report=html --cov-report=xml:coverage.xml"
+	@echo "=== Full coverage report written to ./htmlcov/index.html and ./coverage.xml ==="
 
-test: test-cov
+test: test-pytest
 	@echo "=== All tests passed ==="
 
 # --- Container targets ---
@@ -156,11 +188,20 @@ run-container: build
 		echo "Error: no container runtime (podman/docker) found."; \
 		exit 1; \
 	fi
+	@mkdir -p $(LOG_DIR) $(SAVE_DIR)
 	-$(CONTAINER_RUNTIME) rm -f $(CONTAINER_NAME) >/dev/null 2>&1 || true
 	$(CONTAINER_RUNTIME) run -d --init \
+		$(USER_ARGS) \
+		--env HOME=/tmp \
+		--env PYTHONDONTWRITEBYTECODE=1 \
 		--env BEAN_HEADLESS=1 \
 		--env BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
 		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
+		--env BEAN_LOG_DIR=/app/logs \
+		--env BEAN_SAVE \
+		--env BEAN_LOAD \
+		--volume $(LOG_DIR):/app/logs:Z \
+		--volume $(SAVE_DIR):/app/saves:Z \
 		--name $(CONTAINER_NAME) \
 		$(CONTAINER_IMAGE)
 	@echo "Started $(CONTAINER_NAME) detached. Follow it with: make logs"
@@ -183,15 +224,25 @@ run-container-ui: build
 	auth=$${XAUTHORITY:-$$HOME/.Xauthority}; \
 	auth_args=""; \
 	if [ -f "$$auth" ]; then \
-		auth_args="--volume $$auth:/root/.Xauthority:ro --env XAUTHORITY=/root/.Xauthority"; \
+		auth_args="--volume $$auth:/tmp/.Xauthority:ro --env XAUTHORITY=/tmp/.Xauthority"; \
 	fi; \
+	mkdir -p $(LOG_DIR) $(SAVE_DIR); \
 	$(CONTAINER_RUNTIME) rm -f $(CONTAINER_NAME) >/dev/null 2>&1 || true; \
 	$(CONTAINER_RUNTIME) run -d --init \
+		$(USER_ARGS) \
 		--security-opt label=disable \
+		--env HOME=/tmp \
+		--env XDG_CACHE_HOME=/tmp/.cache \
+		--env PYTHONDONTWRITEBYTECODE=1 \
 		--env DISPLAY=$$DISPLAY \
 		--env BEAN_HEADLESS=0 \
 		--env BEAN_LOG_LEVEL=$(LOG_LEVEL) \
+		--env BEAN_LOG_DIR=/app/logs \
+		--env BEAN_SAVE \
+		--env BEAN_LOAD \
 		--volume /tmp/.X11-unix:/tmp/.X11-unix:ro \
+		--volume $(LOG_DIR):/app/logs:Z \
+		--volume $(SAVE_DIR):/app/saves:Z \
 		$$auth_args \
 		--name $(CONTAINER_NAME) \
 		$(CONTAINER_IMAGE)
@@ -200,6 +251,24 @@ run-container-ui: build
 # Follow the detached container's output (Ctrl-C stops following only).
 logs:
 	@$(CONTAINER_RUNTIME) logs -f $(CONTAINER_NAME)
+
+# Show the saved per-run log files, newest first.
+logs-files:
+	@ls -lht $(LOG_DIR)/*.log 2>/dev/null || echo "No log files in $(LOG_DIR)"
+
+# List saved snapshot files, newest first.
+saves:
+	@ls -lht $(SAVE_DIR)/*.json 2>/dev/null || echo "No snapshots in $(SAVE_DIR)"
+
+# Follow the newest saved log file (works after the container exits).
+logs-latest:
+	@latest=$$(ls -t $(LOG_DIR)/*.log 2>/dev/null | head -1); \
+	if [ -z "$$latest" ]; then \
+		echo "No log files in $(LOG_DIR)"; \
+		exit 1; \
+	fi; \
+	echo "Tailing $$latest"; \
+	tail -F "$$latest"
 
 # Show the detached container's status.
 status:
@@ -243,16 +312,28 @@ help:
 	@echo "  make check-env         Show Python/venv/container runtime status"
 	@echo "  make build             Build container image (Containerfile)"
 	@echo "  make verify            Headless end-to-end run in-container (foreground)"
-	@echo "  make test              Local compile + bounded headless run"
+	@echo "  make test              Run pytest in the container (fast, no coverage)"
+	@echo "  make test-cov          Run pytest in the container with full coverage report"
 	@echo "  make run-container     Start headless container detached (no UI)"
 	@echo "  make run-container-ui  Start UI container detached (needs X11)"
 	@echo "  make logs              Follow the running container's output"
+	@echo "  make logs-files        List saved per-run log files (newest first)"
+	@echo "  make logs-latest       Follow the newest saved log file"
+	@echo "  make saves             List saved snapshots (newest first)"
 	@echo "  make status            Show the container's status"
 	@echo "  make stop              Stop and remove the container"
+	@echo ""
+	@echo "  Logs are saved per run under $(LOG_DIR)/ (rotating, 10 MiB x 5)"
+	@echo "  Override with LOG_DIR=/path make run-container"
 	@echo ""
 	@echo "  BEAN_HEADLESS_FRAMES=200 make run-container   Override frame count"
 	@echo "  make run LOG_LEVEL=DEBUG                        Verbose logging"
 	@echo "  Log levels: DEBUG, INFO (default), WARNING, ERROR"
+	@echo ""
+	@echo "  Snapshots are saved per run under $(SAVE_DIR)/ (JSON)"
+	@echo "  make run-local BEAN_LOAD=saves/bean-....json    Resume a snapshot"
+	@echo "  make run-local BEAN_SAVE=/tmp/game.json         Pin initial snapshot path"
+	@echo "  Override with SAVE_DIR=/path make saves"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make clean   Remove venv, caches, container, image"

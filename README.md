@@ -645,7 +645,9 @@ through.
   screen units that honour `cell_size`, ready for beans to be drawn per cell.
 - **Barriers** — drawn as filled cell-aligned rectangles in the barrier
   strategy's colour (default yellow), with a dark outline.
-- **Food** — drawn as magenta points that dim as their energy is eaten.
+- **Food** — drawn as magenta dots in three size tiers (poor/mid/rich, three
+  draw calls for the whole layer) that never dim below a visible floor; the
+  sidebar census shows morsel count plus total food energy.
 - **Controls box** — three reserved bands from `controls_geometry()`: config
   button (top), key bindings (middle), playback-speed slider (bottom). The
   sidebar reserves the same height when stacking the boxes above, so no

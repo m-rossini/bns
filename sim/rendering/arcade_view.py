@@ -33,6 +33,7 @@ import arcade
 
 from sim.components import GameSession, GameState
 from sim.config import SimulationConfig
+from sim.domain.food import total_energy as _food_total_energy
 from sim.domain.visuals import SeasonPalette, SkyPalette
 from sim.domain.world import World
 from sim.rendering.layout import WorldLayout, build_layout
@@ -496,6 +497,8 @@ class ArcadeView(arcade.Window):
 
         beans = getattr(session, "beans", None) or []
         corpses = getattr(session, "corpses", None) or []
+        foods = getattr(session, "foods", None) or []
+        food_energy = _food_total_energy(foods)
         initial_female = getattr(session, "initial_female", 0)
         initial_male = getattr(session, "initial_male", 0)
         alive_female = sum(1 for b in beans if b.gender == "female")
@@ -517,7 +520,8 @@ class ArcadeView(arcade.Window):
             (f"  Alive:   {total_alive:>3}  (F:{alive_female:>2} M:{alive_male:>2})", _TEXT),
             (f"  Dead:    {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
             (f"  Corpses: {len(corpses):>3}", _TEXT),
-            (f"  Foods:   {len(getattr(session, 'foods', None) or []):>3}", _TEXT),
+            (f"  Foods:   {len(foods):>3}", _TEXT),
+            (f"  Food E:  {food_energy:>6.0f}", _TEXT),
             (f"  Old age: {getattr(session, 'deaths_old_age', 0):>3}", _TEXT),
             (f"  Starved: {getattr(session, 'deaths_starvation', 0):>3}", _TEXT),
         ]
@@ -895,7 +899,13 @@ class ArcadeView(arcade.Window):
             arcade.draw_points(points, color, point_size)
 
     def _draw_foods(self, session: GameSession) -> None:
-        """Draw food morsels as magenta points that dim as energy is eaten."""
+        """Draw food morsels as magenta dots sized by remaining energy.
+
+        Morsels are bucketed into poor/mid/rich tiers so the whole layer
+        costs three draw calls. Size grows with energy and brightness never
+        drops below a clearly-visible floor, so food reads at a glance
+        against any ground colour, day or night.
+        """
         self._ensure_layout()
         layout = self._layout
         if layout is None:
@@ -906,16 +916,25 @@ class ArcadeView(arcade.Window):
 
         food_cfg = getattr(self.sim_config, "food", None)
         base = tuple(food_cfg.color) if food_cfg is not None else (200, 80, 220)
-        points_by_color: Dict[Tuple[int, int, int], List[Tuple[float, float]]] = {}
+        # One shade and one size per tier: exactly three draw calls for the
+        # whole layer, with size and brightness both growing with energy.
+        tier_ratio = {0: 1.0 / 6.0, 1: 1.0 / 2.0, 2: 5.0 / 6.0}
+        tiers: Dict[int, List[Tuple[float, float]]] = {0: [], 1: [], 2: []}
         for food in foods:
+            ratio = food.energy_ratio
+            tier = 0 if ratio < 1.0 / 3.0 else (1 if ratio < 2.0 / 3.0 else 2)
             sx, sy = layout.world_to_screen(food.x, food.y)
-            factor = 0.35 + 0.65 * food.energy_ratio
-            color = tuple(int(channel * factor) for channel in base)
-            points_by_color.setdefault(color, []).append((sx, sy))
+            tiers[tier].append((sx, sy))
 
-        point_size = max(2.0, layout.cell_step * 0.22)
-        for color, points in points_by_color.items():
-            arcade.draw_points(points, color, point_size)
+        step = layout.cell_step
+        for tier in (0, 1, 2):  # poor first so rich morsels draw on top
+            points = tiers[tier]
+            if not points:
+                continue
+            factor = 0.6 + 0.4 * tier_ratio[tier]
+            shade = tuple(int(channel * factor) for channel in base)
+            size = max(3.0, step * (0.3 + 0.25 * tier))
+            arcade.draw_points(points, shade, size)
 
     def _draw_beans(self, session: GameSession) -> None:
         """Draw beans as colored points using batched `draw_points` (one draw call per color).
@@ -1417,6 +1436,14 @@ class ArcadeView(arcade.Window):
             y -= 17
             self._text.draw(
                 f"Corpses remaining: {len(corpses)}",
+                left + 16, y, _MUTED, font_size=11,
+            )
+
+        foods = getattr(session, "foods", None) or []
+        if foods:
+            y -= 17
+            self._text.draw(
+                f"Food remaining: {len(foods)}  (E: {_food_total_energy(foods):.0f})",
                 left + 16, y, _MUTED, font_size=11,
             )
 

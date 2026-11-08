@@ -75,6 +75,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
   `FoodConfig`, magenta morsels anywhere, seasonal top-up toward target,
   nibble feeding capped by the new `digestion_capacity` gene with
   eaten/absorbed phenotype counters; 11 new behavior tests, 188 pass total.
+- Food visibility + counters (pending PR): morsels drawn in poor/mid/rich size
+  tiers (3 draw calls) with a brightness floor; sidebar census and end screen
+  show morsel count plus total food energy.
   New behavior suites: `test_environment_behavior`, `test_daynight_energy`,
   `test_input_random`, `test_layout_behavior`, `test_main_behavior`. Also fixed
   a latent crash found by the new tests: `logger.exception(..., path=...)` on

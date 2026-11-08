@@ -33,6 +33,7 @@ import arcade
 
 from sim.components import GameSession, GameState
 from sim.config import SimulationConfig
+from sim.domain.food import total_energy as _food_total_energy
 from sim.domain.visuals import SeasonPalette, SkyPalette
 from sim.domain.world import World
 from sim.rendering.layout import WorldLayout, build_layout
@@ -52,6 +53,28 @@ _TRACK = (38, 44, 56, 230)
 _SUN = (255, 205, 110)
 _MOON = (225, 230, 248)
 
+# End-screen panel geometry. Stats start this far below the panel top and
+# step down one line each; the restart hint is always placed relative to the
+# last stat row so growing stat lists can never collide with it.
+_END_PANEL_H = 496.0
+_END_STATS_TOP_MARGIN = 164.0
+_END_LINE_H = 20.0
+_END_HINT_GAP = 50.0
+
+
+def end_screen_hint_offset(panel_h: float, stat_rows: int,
+                           blank_rows: int = 1) -> float:
+    """Offset of the restart hint from the panel bottom.
+
+    ``stat_rows`` counts every entry in the stats list (including blanks,
+    which step down 0.6 of a line). The hint lands below the last drawn row
+    with room for the line step plus a fixed gap.
+    """
+    first_row = panel_h - _END_STATS_TOP_MARGIN
+    drop = ((stat_rows - blank_rows) * _END_LINE_H
+            + blank_rows * _END_LINE_H * 0.6)
+    last_row = first_row - drop + _END_LINE_H
+    return last_row - _END_HINT_GAP
 _WEATHER_LABEL = {
     "clear": (255, 226, 140),
     "cloudy": (200, 205, 215),
@@ -469,7 +492,7 @@ class ArcadeView(arcade.Window):
         self._draw_backdrop(session)
         sw, sh = self._viewport_size()
         panel_w = min(620, sw - 60)
-        panel_h = 460
+        panel_h = _END_PANEL_H
         left = (sw - panel_w) / 2
         bottom = (sh - panel_h) / 2
         self._panel(left, bottom, panel_w, panel_h)
@@ -496,6 +519,8 @@ class ArcadeView(arcade.Window):
 
         beans = getattr(session, "beans", None) or []
         corpses = getattr(session, "corpses", None) or []
+        foods = getattr(session, "foods", None) or []
+        food_energy = _food_total_energy(foods)
         initial_female = getattr(session, "initial_female", 0)
         initial_male = getattr(session, "initial_male", 0)
         alive_female = sum(1 for b in beans if b.gender == "female")
@@ -517,13 +542,14 @@ class ArcadeView(arcade.Window):
             (f"  Alive:   {total_alive:>3}  (F:{alive_female:>2} M:{alive_male:>2})", _TEXT),
             (f"  Dead:    {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
             (f"  Corpses: {len(corpses):>3}", _TEXT),
-            (f"  Foods:   {len(getattr(session, 'foods', None) or []):>3}", _TEXT),
+            (f"  Foods:   {len(foods):>3}", _TEXT),
+            (f"  Food E:  {food_energy:>6.0f}", _TEXT),
             (f"  Old age: {getattr(session, 'deaths_old_age', 0):>3}", _TEXT),
             (f"  Starved: {getattr(session, 'deaths_starvation', 0):>3}", _TEXT),
         ]
 
-        y = bottom + panel_h - 164
-        line_h = 20
+        y = bottom + panel_h - _END_STATS_TOP_MARGIN
+        line_h = _END_LINE_H
         for text, color in stats:
             if text == "":
                 y -= line_h * 0.6
@@ -534,8 +560,11 @@ class ArcadeView(arcade.Window):
             )
             y -= line_h
 
+        # Hint follows the last stat row so longer stat lists can never
+        # collide with it.
         self._text.draw(
-            "SPACE to restart   ·   Esc to quit", cx, bottom + 60, _MUTED,
+            "SPACE to restart   ·   Esc to quit",
+            cx, bottom + end_screen_hint_offset(panel_h, len(stats)), _MUTED,
             font_size=13, anchor_x="center", anchor_y="center",
         )
 
@@ -895,7 +924,13 @@ class ArcadeView(arcade.Window):
             arcade.draw_points(points, color, point_size)
 
     def _draw_foods(self, session: GameSession) -> None:
-        """Draw food morsels as magenta points that dim as energy is eaten."""
+        """Draw food morsels as magenta dots sized by remaining energy.
+
+        Morsels are bucketed into poor/mid/rich tiers so the whole layer
+        costs three draw calls. Size grows with energy and brightness never
+        drops below a clearly-visible floor, so food reads at a glance
+        against any ground colour, day or night.
+        """
         self._ensure_layout()
         layout = self._layout
         if layout is None:
@@ -906,16 +941,25 @@ class ArcadeView(arcade.Window):
 
         food_cfg = getattr(self.sim_config, "food", None)
         base = tuple(food_cfg.color) if food_cfg is not None else (200, 80, 220)
-        points_by_color: Dict[Tuple[int, int, int], List[Tuple[float, float]]] = {}
+        # One shade and one size per tier: exactly three draw calls for the
+        # whole layer, with size and brightness both growing with energy.
+        tier_ratio = {0: 1.0 / 6.0, 1: 1.0 / 2.0, 2: 5.0 / 6.0}
+        tiers: Dict[int, List[Tuple[float, float]]] = {0: [], 1: [], 2: []}
         for food in foods:
+            ratio = food.energy_ratio
+            tier = 0 if ratio < 1.0 / 3.0 else (1 if ratio < 2.0 / 3.0 else 2)
             sx, sy = layout.world_to_screen(food.x, food.y)
-            factor = 0.35 + 0.65 * food.energy_ratio
-            color = tuple(int(channel * factor) for channel in base)
-            points_by_color.setdefault(color, []).append((sx, sy))
+            tiers[tier].append((sx, sy))
 
-        point_size = max(2.0, layout.cell_step * 0.22)
-        for color, points in points_by_color.items():
-            arcade.draw_points(points, color, point_size)
+        step = layout.cell_step
+        for tier in (0, 1, 2):  # poor first so rich morsels draw on top
+            points = tiers[tier]
+            if not points:
+                continue
+            factor = 0.6 + 0.4 * tier_ratio[tier]
+            shade = tuple(int(channel * factor) for channel in base)
+            size = max(3.0, step * (0.3 + 0.25 * tier))
+            arcade.draw_points(points, shade, size)
 
     def _draw_beans(self, session: GameSession) -> None:
         """Draw beans as colored points using batched `draw_points` (one draw call per color).
@@ -1417,6 +1461,14 @@ class ArcadeView(arcade.Window):
             y -= 17
             self._text.draw(
                 f"Corpses remaining: {len(corpses)}",
+                left + 16, y, _MUTED, font_size=11,
+            )
+
+        foods = getattr(session, "foods", None) or []
+        if foods:
+            y -= 17
+            self._text.draw(
+                f"Food remaining: {len(foods)}  (E: {_food_total_energy(foods):.0f})",
                 left + 16, y, _MUTED, font_size=11,
             )
 

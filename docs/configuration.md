@@ -547,7 +547,10 @@ deficit = max(0, effective_target - current_total_energy)
 grows ~0.85×, summer ~1.15×, autumn ~0.7× and winter ~0.4× — the level breathes
 around the target instead of drifting, and future food systems can reuse the
 same seasonal hook. Morsels land anywhere (uniform random); snapshots store
-them, so a resumed run keeps its exact morsels.
+them, so a resumed run keeps its exact morsels. The view draws them in
+poor/mid/rich size tiers (three batched draw calls) with brightness floored
+so they read against any ground; the sidebar census shows morsel count and
+total food energy.
 
 Eating (`feed_beans_on_food`, runs in the lifecycle next to corpse feeding):
 

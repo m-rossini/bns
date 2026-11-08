@@ -88,6 +88,16 @@ classDiagram
         +color: tuple
     }
 
+    class Food {
+        +id: int
+        +x: float
+        +y: float
+        +radius: float
+        +energy: float
+        +initial_energy: float
+        +energy_ratio() float
+    }
+
     class Environment {
         +calendar: ICalendar
         +season: str
@@ -215,6 +225,11 @@ classDiagram
         -_log_bean_collisions(beans)
     }
 
+    class RandomFoodSpawnStrategy {
+        +initial_food(world) list[Food]
+        +top_up(foods, world, tick, abundance) list[Food]
+    }
+
     class PoissonDiscStrategy {
         +name: str
         +base_spacing_scale: float
@@ -325,6 +340,7 @@ classDiagram
     class Container {
         +config: SimulationConfig
         +barrier_strategy: BarrierStrategy
+        +food_strategy: IFoodSpawnStrategy
         +world: World
         +calendar: Calendar
         +environment: Environment
@@ -364,6 +380,9 @@ classDiagram
     class IGenderController {
         <<interface>>
     }
+    class IFoodSpawnStrategy {
+        <<interface>>
+    }
     class ISpawnController {
         <<interface>>
     }
@@ -395,6 +414,7 @@ classDiagram
     GenderController ..|> IGenderController
     DensityBasedCreationStrategy ..|> IBeanCreationStrategy
     FixedAmountCreationStrategy ..|> IBeanCreationStrategy
+    RandomFoodSpawnStrategy ..|> IFoodSpawnStrategy
     StraightLineMovementStrategy ..|> IMovementStrategy
     FixedEnergyStrategy ..|> IEnergyStrategy
     PerDayEnergyStrategy ..|> IEnergyStrategy
@@ -419,6 +439,7 @@ classDiagram
     FixedAmountCreationStrategy --> IPlacementStrategy
     StraightLineMovementStrategy --> IWorld
     Container --> BarrierStrategy
+    Container --> RandomFoodSpawnStrategy
     Container --> World
     Container --> Calendar
     Container --> Environment
@@ -782,6 +803,7 @@ classDiagram
         +seasons: list~SeasonConfig~
         +daynight: DayNightConfig
         +weather: WeatherConfig
+        +food: FoodConfig
         +environment: EnvironmentConfig
         +logging: LoggingConfig
     }
@@ -801,6 +823,15 @@ classDiagram
         +max_span_cells: int
         +seed: int | None
         +margin_cells: int
+    }
+
+    class FoodConfig {
+        +strategy_name: str | None
+        +seed: int | None
+        +initial_total_energy: float
+        +target_total_energy: float
+        +top_up_interval_ticks: int
+        +max_items: int
     }
 
     class BeanPlacementConfig {
@@ -934,6 +965,7 @@ classDiagram
     SimulationConfig *-- "1..*" SeasonConfig
     SimulationConfig *-- DayNightConfig
     SimulationConfig *-- WeatherConfig
+    SimulationConfig *-- FoodConfig
     SimulationConfig *-- EnvironmentConfig
     SimulationConfig *-- LoggingConfig
     EnvironmentConfig *-- GradientConfig

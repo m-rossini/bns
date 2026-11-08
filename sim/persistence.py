@@ -2,9 +2,9 @@
 
 A snapshot stores everything needed to recreate a game exactly: the full
 configuration tree, the global RNG state, the session/clock, the world
-barriers, every bean (genotype + phenotype), every corpse, and the dynamic
-environment state. Snapshots are written after the initial spawn (tick 0) and,
-optionally, when the game exits.
+barriers, every bean (genotype + phenotype), every corpse, every food morsel,
+and the dynamic environment state. Snapshots are written after the initial
+spawn (tick 0) and, optionally, when the game exits.
 
 Runtime knobs:
 
@@ -30,6 +30,7 @@ from sim.components import Barrier, GameClock, GameSession, GameState
 from sim.config import SimulationConfig
 from sim.domain.beans import Bean
 from sim.domain.corpse import Corpse
+from sim.domain.food import Food
 from sim.domain.genotype import Genotype, Phenotype
 from sim.observability import get_logger, log_event
 
@@ -129,6 +130,9 @@ def _encode_phenotype(phenotype: Phenotype) -> Dict[str, Any]:
         "is_dormant": phenotype.is_dormant,
         "condition": phenotype.condition,
         "efficiency": phenotype.efficiency,
+        "digestion_capacity": phenotype.digestion_capacity,
+        "energy_eaten_total": phenotype.energy_eaten_total,
+        "energy_absorbed_total": phenotype.energy_absorbed_total,
         "color": list(phenotype.color),
     }
 
@@ -142,6 +146,9 @@ def _decode_phenotype(data: Dict[str, Any]) -> Phenotype:
         is_dormant=bool(data.get("is_dormant", False)),
         condition=float(data.get("condition", 1.0)),
         efficiency=float(data.get("efficiency", 0.6)),
+        digestion_capacity=float(data.get("digestion_capacity", 80.0)),
+        energy_eaten_total=float(data.get("energy_eaten_total", 0.0)),
+        energy_absorbed_total=float(data.get("energy_absorbed_total", 0.0)),
     )
     color = data.get("color")
     if color is not None:
@@ -259,6 +266,7 @@ def save_snapshot(
         "environment": container.environment.snapshot_state(),
         "beans": [_encode_bean(bean) for bean in session.beans],
         "corpses": [_encode_value(corpse) for corpse in session.corpses],
+        "foods": [_encode_value(food) for food in session.foods],
     }
 
     destination = Path(path)
@@ -276,6 +284,7 @@ def save_snapshot(
         tick=session.clock.tick,
         beans=len(session.beans),
         corpses=len(session.corpses),
+        foods=len(session.foods),
     )
     return str(destination)
 
@@ -326,6 +335,9 @@ def restore_snapshot(
     session.corpses = [
         _from_dict(Corpse, item) for item in payload.get("corpses", [])
     ]
+    session.foods = [
+        _from_dict(Food, item) for item in payload.get("foods", [])
+    ]
     container.beans = session.beans
 
     barriers = [
@@ -346,5 +358,6 @@ def restore_snapshot(
         tick=session.clock.tick,
         beans=len(session.beans),
         corpses=len(session.corpses),
+        foods=len(session.foods),
         state=session.state.name,
     )

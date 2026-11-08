@@ -517,6 +517,7 @@ class ArcadeView(arcade.Window):
             (f"  Alive:   {total_alive:>3}  (F:{alive_female:>2} M:{alive_male:>2})", _TEXT),
             (f"  Dead:    {total_dead:>3}  (F:{dead_female:>2} M:{dead_male:>2})", _TEXT),
             (f"  Corpses: {len(corpses):>3}", _TEXT),
+            (f"  Foods:   {len(getattr(session, 'foods', None) or []):>3}", _TEXT),
             (f"  Old age: {getattr(session, 'deaths_old_age', 0):>3}", _TEXT),
             (f"  Starved: {getattr(session, 'deaths_starvation', 0):>3}", _TEXT),
         ]
@@ -657,6 +658,7 @@ class ArcadeView(arcade.Window):
 
         self._draw_barriers(session)
         self._draw_corpses(session)
+        self._draw_foods(session)
         self._draw_beans(session)
         self._draw_grid(session)
         self._draw_selection(session)
@@ -889,6 +891,29 @@ class ArcadeView(arcade.Window):
             points_by_color.setdefault(color, []).append((sx, sy))
 
         point_size = max(2.0, layout.cell_step * 0.18)
+        for color, points in points_by_color.items():
+            arcade.draw_points(points, color, point_size)
+
+    def _draw_foods(self, session: GameSession) -> None:
+        """Draw food morsels as magenta points that dim as energy is eaten."""
+        self._ensure_layout()
+        layout = self._layout
+        if layout is None:
+            return
+        foods = getattr(session, "foods", None) or []
+        if not foods:
+            return
+
+        food_cfg = getattr(self.sim_config, "food", None)
+        base = tuple(food_cfg.color) if food_cfg is not None else (200, 80, 220)
+        points_by_color: Dict[Tuple[int, int, int], List[Tuple[float, float]]] = {}
+        for food in foods:
+            sx, sy = layout.world_to_screen(food.x, food.y)
+            factor = 0.35 + 0.65 * food.energy_ratio
+            color = tuple(int(channel * factor) for channel in base)
+            points_by_color.setdefault(color, []).append((sx, sy))
+
+        point_size = max(2.0, layout.cell_step * 0.22)
         for color, points in points_by_color.items():
             arcade.draw_points(points, color, point_size)
 

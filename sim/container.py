@@ -15,6 +15,7 @@ from sim.config import (
     CREATION_STRATEGY_NAMES,
     DAYNIGHT_STRATEGY_NAMES,
     ENERGY_STRATEGY_NAMES,
+    FOOD_STRATEGY_NAMES,
     MOVEMENT_STRATEGY_NAMES,
     PLACEMENT_STRATEGY_NAMES,
     SEASON_STRATEGY_NAMES,
@@ -23,6 +24,7 @@ from sim.config import (
 )
 from sim.domain.calendar import Calendar
 from sim.domain.environment import Environment
+from sim.domain.food import total_energy
 from sim.domain.session import GameSession as ConcreteGameSession
 from sim.domain.spawn_controller import SpawnController
 from sim.domain.world import World
@@ -33,6 +35,7 @@ from sim.implementations.creation import (
     FixedAmountCreationStrategy,
 )
 from sim.implementations.daynight import DayNightStrategy
+from sim.implementations.food import RandomFoodSpawnStrategy
 from sim.implementations.gender import GenderController
 from sim.implementations.movement import StraightLineMovementStrategy
 from sim.implementations.placement import (
@@ -49,6 +52,7 @@ from sim.implementations.weather import WeatherStrategy
 from sim.interfaces.energy import IEnergyStrategy
 from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.creation import IBeanCreationStrategy
+from sim.interfaces.food import IFoodSpawnStrategy
 from sim.interfaces.gender import IGenderController
 from sim.interfaces.movement import IMovementStrategy
 from sim.interfaces.environment import (
@@ -100,6 +104,10 @@ class Container:
         )
         self.spawn_controller: ISpawnController = self._build_spawn_controller(config)
         self.beans = self._spawn_beans()
+        self.food_strategy: Optional[IFoodSpawnStrategy] = (
+            self._build_food_strategy(config)
+        )
+        self._place_food()
         self.movement_strategy: IMovementStrategy = self._build_movement_strategy(
             config
         )
@@ -107,7 +115,7 @@ class Container:
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
             "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s "
-            "creation=%s movement=%s energy=%s beans=%s",
+            "creation=%s movement=%s energy=%s beans=%s food=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -124,6 +132,7 @@ class Container:
             config.movement.strategy_name,
             config.energy.strategy_name,
             len(self.beans),
+            len(self.session.foods),
         )
 
     # ------------------------------------------------------------------
@@ -144,6 +153,29 @@ class Container:
         """Generate and register the strategy's barriers (validated by it)."""
         for barrier in self.barrier_strategy.create_barriers(self.world):
             self.world.add_barrier(barrier)
+
+    # ------------------------------------------------------------------
+    # Food
+    # ------------------------------------------------------------------
+    def _build_food_strategy(
+        self, config: SimulationConfig
+    ) -> Optional[IFoodSpawnStrategy]:
+        name = config.food.strategy_name
+        if name is None:
+            return None
+        if name == "random":
+            return RandomFoodSpawnStrategy(config.food)
+        raise ValueError(
+            f"Unknown food strategy {name!r}. "
+            f"Use None or one of: {sorted(FOOD_STRATEGY_NAMES)}"
+        )
+
+    def _place_food(self) -> None:
+        """Seed the initial food morsels and store them in the session."""
+        if self.food_strategy is None:
+            self.session.foods = []
+            return
+        self.session.foods = self.food_strategy.initial_food(self.world)
 
     # ------------------------------------------------------------------
     # Bean placement

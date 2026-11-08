@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from sim.domain.corpse import Corpse
+    from sim.domain.food import Food
 
 
 @dataclass(slots=True)
@@ -97,6 +98,8 @@ class GameSession:
     #: Remains of dead beans; food that decays and can be eaten.
     corpses: List["Corpse"] = field(default_factory=list)
     next_corpse_id: int = 1
+    #: Renewable food morsels spawned by the food strategy.
+    foods: List["Food"] = field(default_factory=list)
     #: Death tallies by cause, shown on the end screen and saved in snapshots.
     deaths_old_age: int = 0
     deaths_starvation: int = 0

@@ -367,19 +367,19 @@ def main() -> None:
     # OpenGL/display dependencies.
     import arcade
 
-    from sim.rendering.arcade_view import ArcadeView
+    from sim.rendering.arcade_view import ArcadeView, SIDEBAR_MIN_HEIGHT
 
     # Preferred default window: 1:1 world rendering (1 world unit = 1 screen
-    # pixel at default scale), plus a full-height sidebar. Integer-snapped so
-    # cell rectangles land on whole pixels.
+    # pixel at default scale), plus a full-height sidebar. The height is the
+    # larger of the world plus margins and the sidebar's minimum, so every
+    # always-visible sidebar box (including Food) fits at startup.
+    # Integer-snapped so cell rectangles land on whole pixels.
     _SIDEBAR_WIDTH = 360
     try:
         view = ArcadeView(
             session,
             width=_SIDEBAR_WIDTH + int(config.world.width),
-            # World height plus top/bottom margins so the drawn world is 1:1
-            # (scale 1.0) at startup.
-            height=int(config.world.height) + 2 * 12,
+            height=max(int(config.world.height) + 2 * 12, int(SIDEBAR_MIN_HEIGHT)),
             title="Bean World",
             tick_rate=config.tick_rate,
             sim_config=config,

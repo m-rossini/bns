@@ -17,14 +17,18 @@ LOG_LEVEL ?= INFO
 BEAN_LOG_LEVEL ?= $(LOG_LEVEL)
 export BEAN_LOG_LEVEL
 
-# Detect container runtime: podman has priority, fall back to docker
-CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo "")
+# Detect an available container runtime: podman first, then docker, then
+# nerdctl. Override with `make CONTAINER_RUNTIME=docker` (or any runtime that
+# understands the Docker CLI: podman, docker, nerdctl, ...).
+CONTAINER_RUNTIME ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null || command -v nerdctl 2>/dev/null || echo "")
 CONTAINER_IMAGE := bean-world:latest
 CONTAINER_NAME := bean-world
 
 # Run the container as the invoking host user so it can write the bind-mounted
-# log directory. Rootless Podman needs --userns=keep-id; Docker uses --user.
-ifeq ($(findstring podman,$(notdir $(CONTAINER_RUNTIME))),podman)
+# log directory. Rootless Podman needs --userns=keep-id; Docker/nerdctl use
+# --user.
+CONTAINER_RUNTIME_NAME := $(notdir $(CONTAINER_RUNTIME))
+ifeq ($(findstring podman,$(CONTAINER_RUNTIME_NAME)),podman)
 USER_ARGS := --userns=keep-id
 else
 USER_ARGS := --user $$(id -u):$$(id -g)
@@ -52,7 +56,7 @@ check-env:
 	@if [ -n "$(CONTAINER_RUNTIME)" ]; then \
 		echo "Container runtime: $(CONTAINER_RUNTIME) ($$($(CONTAINER_RUNTIME) --version 2>/dev/null | head -1))"; \
 	else \
-		echo "Container runtime: none found (podman/docker)"; \
+		echo "Container runtime: none found (podman/docker/nerdctl)"; \
 	fi
 
 # --- Local venv targets ---
@@ -108,7 +112,7 @@ run-headless: $(ARCADE_STAMP)
 # container's status. This is the cheapest end-to-end check (no display).
 verify: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	@mkdir -p $(LOG_DIR) $(SAVE_DIR)
@@ -134,7 +138,7 @@ verify: build
 
 test-pytest: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	$(CONTAINER_RUNTIME) run --rm --init \
@@ -149,7 +153,7 @@ test-pytest: build
 
 test-cov: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	$(CONTAINER_RUNTIME) run --rm --init \
@@ -171,7 +175,7 @@ test: test-pytest
 
 build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) -f Containerfile .
@@ -185,7 +189,7 @@ run: run-local
 # shut down with `make stop`, inspect with `make status`.
 run-container: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	@mkdir -p $(LOG_DIR) $(SAVE_DIR)
@@ -210,7 +214,7 @@ run-container: build
 # Requires an X session and access to /tmp/.X11-unix (see `xhost`).
 run-container-ui: build
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then \
-		echo "Error: no container runtime (podman/docker) found."; \
+		echo "Error: no container runtime (podman/docker/nerdctl) found."; \
 		exit 1; \
 	fi
 	@if [ -z "$$DISPLAY" ]; then \

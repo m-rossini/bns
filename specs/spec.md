@@ -57,7 +57,16 @@ bns/
     │   ├── daynight/__init__.py   # DayNightStrategy
     │   ├── food/
     │   │   ├── __init__.py       # food strategy registry
-    │   │   └── random_food.py    # uniform morsels, seasonal top-up
+    │   │   └── random_food.py    # strategy-placed morsels, seasonal top-up
+    │   ├── placement/
+    │   │   ├── __init__.py       # shared placement registry + factory
+    │   │   ├── border_to_center.py
+    │   │   ├── center_to_border.py
+    │   │   ├── colony_cluster.py
+    │   │   ├── linear_gradient.py
+    │   │   ├── poisson_disc.py
+    │   │   ├── resource_gradient.py
+    │   │   └── symmetrical.py
     │   ├── movement/
     │   │   ├── __init__.py       # movement strategy registry
     │   │   └── straight_line.py  # direction + speed, bounce, collision logging
@@ -592,7 +601,7 @@ Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
 | `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `sun_intensity`, `daylight_fraction`, weather weights |
 | `DayNightConfig` | sun/moon, shading, thresholds, sky colours |
 | `WeatherConfig` | interval, seed, front count/radius/drift, coverage, condition offsets |
-| `FoodConfig` | `strategy_name`, `seed`, `initial/target_total_energy`, `top_up_interval_ticks`, morsel range/radius/colour/cap |
+| `FoodConfig` | `strategy_name`, `seed`, `initial/target_total_energy`, `top_up_interval_ticks`, morsel range/radius/colour/cap, `placement` |
 | `EnvironmentConfig` | strategy names, four climate gradients, `microclimate` |
 | `LoggingConfig` | level, format, date format, business/readings switches |
 | `SimulationConfig` | all of the above + `tick_rate=30.0`, `debug=False` |
@@ -795,12 +804,16 @@ and no further decay or feeding occurs. It emits `session.extinct`.
 
 ### 9.11 Renewable food
 
-`FoodConfig` seeds `initial_total_energy` at tick 0 as uniform random morsels
-(`RandomFoodSpawnStrategy`, `seed=None` = fresh every run); every
-`top_up_interval_ticks` the deficit to
+`FoodConfig` seeds `initial_total_energy` at tick 0 as morsels placed by a
+configurable `FoodPlacementConfig` (`RandomFoodSpawnStrategy`, `seed=None` =
+fresh energies every run); every `top_up_interval_ticks` the deficit to
 `target_total_energy × clamp(sun_intensity × (0.4 + daylight_fraction))` is
-spawned, so spring/summer grow more and winter less. Morsel energies are drawn
-from `[min_morsel_energy, max_morsel_energy]` (default `20..200`) at fixed
+spawned, so spring/summer grow more and winter less. The initial morsels use
+the selected placement strategy (the same strategies as beans, default
+`poisson_disc` at half bean spacing), so they never overlap a barrier, the
+world border, or another morsel; top-ups use uniform random collision-free
+positions. Morsel energies are drawn from
+`[min_morsel_energy, max_morsel_energy]` (default `20..200`) at fixed
 `food_radius`, capped by `max_items`. Colour defaults to magenta-purple
 `(200, 80, 220)` with no palette conflicts, brightened by remaining energy.
 
@@ -1039,8 +1052,9 @@ Environment variables:
   every run (`seed=None`), validated on `World.add_barrier`. A default run
   creates 3–4 large yellow barriers.
 - Food spawn strategy (`IFoodSpawnStrategy` + `RandomFoodSpawnStrategy`):
-  magenta morsels with ranged energies, seasonal top-up toward a target level,
-  nibble feeding capped by the appetite gene with eaten/absorbed counters.
+  magenta morsels with ranged energies, strategy-placed initial morsels
+  (`FoodPlacementConfig`), seasonal top-up toward a target level, nibble
+  feeding capped by the appetite gene with eaten/absorbed counters.
 - Bean creation & gender: `IBeanCreationStrategy` with
   `DensityBasedCreationStrategy` (original area × density × variance) and
   `FixedAmountCreationStrategy` (exact configured total), plus

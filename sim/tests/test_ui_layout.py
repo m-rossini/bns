@@ -7,13 +7,24 @@ never overlap again, regardless of sidebar width.
 
 from sim.rendering.arcade_view import (
     _CONTROLS_BOX_H,
+    _DAY_BOX_H,
     _END_HINT_GAP,
     _END_LINE_H,
     _END_PANEL_H,
+    _ENVIRONMENT_BOX_H,
+    _FOOD_BOX_H,
+    _GAP,
+    _INSPECTOR_BOX_H,
     _KEY_COUNT,
     _KEY_ROW_H,
+    _MARGIN,
+    _SEASON_BOX_H,
+    _TIME_BOX_H,
+    SIDEBAR_MIN_HEIGHT,
     controls_geometry,
     end_screen_hint_offset,
+    food_geometry,
+    inspector_geometry,
 )
 
 MARGIN = 12.0
@@ -181,3 +192,50 @@ def test_growing_stat_lists_push_the_hint_down():
     longer = end_screen_hint_offset(_END_PANEL_H, _END_STAT_ROWS + 2)
 
     assert longer == current - 2 * _END_LINE_H
+
+
+# ---------------------------------------------------------------------------
+# Sidebar boxes: Food census and Inspector rows
+# ---------------------------------------------------------------------------
+
+
+def test_sidebar_min_height_fits_every_always_visible_box():
+    """The default window is tall enough for the Food box and Controls."""
+    expected = (
+        2 * _MARGIN
+        + _TIME_BOX_H
+        + _DAY_BOX_H
+        + _SEASON_BOX_H
+        + _ENVIRONMENT_BOX_H
+        + _INSPECTOR_BOX_H
+        + _FOOD_BOX_H
+        + 6 * _GAP
+        + _CONTROLS_BOX_H
+    )
+    assert SIDEBAR_MIN_HEIGHT >= expected
+
+
+def test_inspector_rows_never_overlap():
+    """The large temperature and the small readings line stay separate."""
+    box_top = 800.0
+    cell_y, contents_y, temperature_y, readings_y, condition_y = (
+        inspector_geometry(12.0, 276.0, box_top)
+    )
+
+    # Rows are ordered top to bottom and fit inside the box.
+    assert cell_y > contents_y > temperature_y > readings_y
+    assert readings_y >= box_top - _INSPECTOR_BOX_H
+
+    # The 22px temperature text and the 11px readings line never share a band.
+    assert temperature_y - readings_y >= 22
+    # The condition label aligns with the contents row.
+    assert condition_y == contents_y
+
+
+def test_food_rows_fit_inside_box():
+    """The Food census rows stay inside their box."""
+    box_top = 800.0
+    count_y, energy_y, bar_y, top_up_y = food_geometry(12.0, 276.0, box_top)
+
+    assert count_y > energy_y > bar_y > top_up_y
+    assert top_up_y >= box_top - _FOOD_BOX_H

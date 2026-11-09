@@ -1,5 +1,5 @@
 # Containerfile for Bean World simulation
-# Podman uses this by default; Docker also understands Containerfile.
+# Podman uses this by default; Docker and nerdctl also understand Containerfile.
 FROM python:3.10-slim
 
 # System dependencies required by Arcade / OpenGL.

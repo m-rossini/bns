@@ -22,17 +22,19 @@ Position = Tuple[float, float]
 
 
 class IPlacementStrategy(ABC):
-    """Generate N initial bean positions within world bounds.
+    """Generate N positions within world bounds, collision-free.
 
-    All generated positions are guaranteed **collision-free**: no two beans
-    overlap, no bean overlaps a barrier, and every bean fits inside the world
-    bounds (accounting for its radius). Implementations receive the world and
-    the list of already-placed beans so they can reject colliding candidates
-    and retry.
+    The same strategies position beans and food morsels: the caller passes
+    its own collision radius (bean radius or morsel radius) and the list of
+    already-placed objects. All generated positions are guaranteed
+    **collision-free**: no two positions overlap, none overlaps a barrier,
+    and every position fits inside the world bounds (accounting for the
+    radius). Implementations receive the world and the list of already-placed
+    objects so they can reject colliding candidates and retry.
 
-    Implementations receive the calculated target population ``n`` plus the
-    world bounds and return exactly ``n`` (or as close as achievable)
-    distinct coordinates.
+    Implementations receive the calculated target count ``n`` plus the world
+    bounds and return exactly ``n`` (or as close as achievable) distinct
+    coordinates.
     """
 
     @property
@@ -47,14 +49,15 @@ class IPlacementStrategy(ABC):
         width: float,
         height: float,
         world: Optional[World] = None,
-        existing: Optional[List[Bean]] = None,
+        existing: Optional[List] = None,
         radius: float = 0.0,
     ) -> List[Position]:
         """Return ``n`` (x, y) positions inside the world bounds.
 
         Every returned position is collision-free against barriers, the world
-        border, and any already-placed beans (``existing`` plus beans placed
-        earlier in this same call).
+        border, and any already-placed objects (``existing`` plus positions
+        placed earlier in this same call). ``existing`` entries may be beans,
+        morsels, or plain ``(x, y)`` tuples.
         """
 
 

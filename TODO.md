@@ -38,6 +38,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 | 32 | Lifespan genes, species age cap, senescence and old-age death telemetry | `main` (pending PR) | [x] |
 | 33 | Versioned JSON snapshots (`BEAN_SAVE` / `BEAN_LOAD`) with deterministic restore | `main` (pending PR) | [x] |
 | 34 | Comprehensive configuration + interface/implementation doc | `main` (pending PR) | [x] |
+| 35 | Food placement: no barrier collisions + configurable `FoodPlacementConfig` | `fix/food-placement-ui` | [x] |
+| 36 | Sidebar Food box (count/energy/target/top-up) + Weather/Beans overlap fix | `fix/food-placement-ui` | [x] |
+| 37 | Inspector rows: large temperature and small readings line never overlap | `fix/food-placement-ui` | [x] |
+| 38 | Container runtime detection: podman → docker → nerdctl, override supported | `fix/food-placement-ui` | [x] |
 
 ## Verification log
 
@@ -97,6 +101,19 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Headless full run after lifespan: extinction at `ticks=2790`, corpses=83, ~11 s.
 - Container `make verify BEAN_HEADLESS_FRAMES=200`: OK; initial snapshot written to `/app/saves`.
 - Container snapshot resume: `BEAN_LOAD=saves/bean-...json` restored 1280 beans at tick 0 and ran.
+- Food placement (pending PR): initial morsels use the configured
+  `FoodPlacementConfig` (default `poisson_disc`, half bean spacing); 0 morsels
+  overlap barriers, the border, or each other; top-ups use uniform random
+  collision-free positions. `FoodPlacementConfig` mirrors
+  `BeanPlacementConfig` and is persisted in snapshots.
+- Sidebar: dedicated Food box (morsel count, average energy, energy vs target,
+  top-up interval); Weather field and Beans Census now advance the shared
+  cursor, so they can no longer overlap; default window height is at least
+  `SIDEBAR_MIN_HEIGHT` so the Food box fits at startup.
+- Inspector: large temperature and the RH/pressure/light line use separate
+  baselines (`inspector_geometry`), verified by `test_ui_layout.py`.
+- Container runtime: `make check-env` reports `/usr/bin/podman`; `make test`
+  (199 passed) and `make verify` both run through podman without docker.
 
 ## Worktrees
 

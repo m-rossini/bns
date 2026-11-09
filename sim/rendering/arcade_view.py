@@ -105,6 +105,15 @@ _MARGIN = 12.0
 _GAP = 8.0
 _SIDEBAR_MIN = 300.0
 
+# Heights of the fixed sidebar boxes. They are named constants so the layout
+# code and the minimum-window-height calculation cannot drift apart.
+_TIME_BOX_H = 92.0
+_DAY_BOX_H = 96.0
+_SEASON_BOX_H = 84.0
+_ENVIRONMENT_BOX_H = 128.0
+_INSPECTOR_BOX_H = 128.0
+_FOOD_BOX_H = 100.0
+
 # Height of the bottom-anchored "Controls" box: title, config button, five
 # key rows, then the playback-speed slider in its own band. The sidebar
 # reserves exactly this much so nothing can ever overlap it.
@@ -114,6 +123,21 @@ _CONTROLS_BOX_H = (
     + 5 * 20   # key rows
     + 12       # gap before slider
     + 34       # slider label + track
+)
+
+#: Smallest window height that fits every always-visible sidebar box plus the
+#: bottom-anchored Controls box. ``main`` uses this for the default window.
+SIDEBAR_MIN_HEIGHT = (
+    2 * _MARGIN
+    + _TIME_BOX_H
+    + _DAY_BOX_H
+    + _SEASON_BOX_H
+    + _ENVIRONMENT_BOX_H
+    + _INSPECTOR_BOX_H
+    + _FOOD_BOX_H
+    + 6 * _GAP
+    + _CONTROLS_BOX_H
+    + 4.0  # breathing room so the last box never touches the Controls gap
 )
 
 _KEY_ROW_H = 20.0
@@ -157,6 +181,36 @@ def _config_rows(obj) -> List[Tuple[str, str]]:
         else:
             rows.append((field_info.name, _format_config_value(value)))
     return rows
+
+
+def inspector_geometry(left: float, width: float, box_top: float):
+    """Layout of the Inspector box rows.
+
+    Returns ``(cell_y, contents_y, temperature_y, readings_y, condition_y)``.
+    The large temperature baseline and the small RH/pressure/light baseline
+    are distinct so the two lines can never overlap, and every row stays
+    inside the box (``_INSPECTOR_BOX_H``).
+    """
+    return (
+        box_top - 38.0,    # cell coordinates
+        box_top - 62.0,    # contents (BEAN/BARRIER/EMPTY)
+        box_top - 90.0,    # large temperature
+        box_top - 114.0,   # RH / pressure / light
+        box_top - 62.0,    # condition, right-aligned
+    )
+
+
+def food_geometry(left: float, width: float, box_top: float):
+    """Layout of the Food box rows.
+
+    Returns ``(count_y, energy_y, bar_y, top_up_y)``.
+    """
+    return (
+        box_top - 38.0,    # morsel count / average energy
+        box_top - 58.0,    # energy / target
+        box_top - 72.0,    # energy bar
+        box_top - 88.0,    # top-up interval
+    )
 
 
 def controls_geometry(left: float, width: float, box_bottom: float):
@@ -1083,7 +1137,7 @@ class ArcadeView(arcade.Window):
             return box_top, box_top - height
 
         # ---- Time -----------------------------------------------------
-        h = 92
+        h = _TIME_BOX_H
         slot = take(h)
         if slot is not None:
             top, bottom = slot
@@ -1107,7 +1161,7 @@ class ArcadeView(arcade.Window):
             )
 
         # ---- Day ------------------------------------------------------
-        h = 96
+        h = _DAY_BOX_H
         slot = take(h)
         if slot is not None:
             top, bottom = slot
@@ -1127,7 +1181,7 @@ class ArcadeView(arcade.Window):
             self._draw_sun_track(session, left + 12, top - 84, width - 24, 22)
 
         # ---- Season (independent of the day bar) ----------------------
-        h = 84
+        h = _SEASON_BOX_H
         slot = take(h)
         if slot is not None:
             top, bottom = slot
@@ -1145,7 +1199,7 @@ class ArcadeView(arcade.Window):
             self._bar(left + 12, top - 72, width - 24, 6, progress, (140, 220, 150))
 
         # ---- Environment at the inspected point -----------------------
-        h = 128
+        h = _ENVIRONMENT_BOX_H
         slot = take(h)
         if slot is not None:
             top, bottom = slot
@@ -1188,18 +1242,21 @@ class ArcadeView(arcade.Window):
                 )
 
         # ---- Inspector ------------------------------------------------
-        h = 116
+        h = _INSPECTOR_BOX_H
         slot = take(h)
         if slot is not None:
             top, bottom = slot
             self._box(left, top, width, h, "Inspector")
+            cell_y, contents_y, temperature_y, readings_y, condition_y = (
+                inspector_geometry(left, width, top)
+            )
             if self._selected_cell is not None and env is not None:
                 col, row = self._selected_cell
                 wx, wy = self._cell_center((col, row))
                 condition = env.weather_at(wx, wy)
                 self._text.draw(
                     f"cell ({col}, {row})   ·   x {wx:.0f}  y {wy:.0f}",
-                    left + 12, top - 38, _MUTED, font_size=11,
+                    left + 12, cell_y, _MUTED, font_size=11,
                 )
                 # Cell contents: bean / barrier / empty
                 beans = getattr(session, "beans", None) or []
@@ -1218,29 +1275,31 @@ class ArcadeView(arcade.Window):
                 if bean_at is not None:
                     self._text.draw(
                         f"BEAN   ·   gender={bean_at.gender}   ·   colour={bean_at.color}",
-                        left + 12, top - 70, _ACCENT, font_size=11,
+                        left + 12, contents_y, _ACCENT, font_size=11,
                     )
                 elif barrier_at is not None:
                     self._text.draw(
                         f"BARRIER   ·   kind={barrier_at.kind}   ·   colour={barrier_at.color}",
-                        left + 12, top - 70, _MUTED, font_size=11,
+                        left + 12, contents_y, _MUTED, font_size=11,
                     )
                 else:
                     self._text.draw(
-                        "EMPTY", left + 12, top - 70, _DIM, font_size=11,
+                        "EMPTY", left + 12, contents_y, _DIM, font_size=11,
                     )
+                # The large temperature and the small RH/pressure/light line
+                # live on separate baselines so they can never overlap.
                 self._text.draw(
-                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, top - 92,
-                    _TEXT, font_size=24, bold=True,
+                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, temperature_y,
+                    _TEXT, font_size=22, bold=True,
                 )
                 self._text.draw(
                     f"{env.humidity_at(wx, wy):.0%} RH   ·   "
                     f"{env.pressure_at(wx, wy):.0f} hPa   ·   "
                     f"{env.light_at(wx, wy):.0%} light",
-                    left + 12, top - 92, _TEXT, font_size=11,
+                    left + 12, readings_y, _TEXT, font_size=11,
                 )
                 self._text.draw(
-                    condition, left + width - 12, top - 68,
+                    condition, left + width - 12, condition_y,
                     _WEATHER_LABEL.get(condition, _TEXT), font_size=13,
                     anchor_x="right",
                 )
@@ -1258,6 +1317,14 @@ class ArcadeView(arcade.Window):
                     _MUTED, font_size=11,
                 )
 
+        # ---- Food census ----------------------------------------------
+        h = _FOOD_BOX_H
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Food")
+            self._draw_food_census(session, left + 12, top, width - 24)
+
         # ---- Weather field (fills the remaining stack, capped) ------------
         remaining = cursor - limit
         if remaining >= 80 and env is not None and world is not None:
@@ -1267,15 +1334,16 @@ class ArcadeView(arcade.Window):
             h = min(remaining, 220)
             self._box(left, top, width, h, "Weather field")
             self._draw_weather_census(session, left + 12, top - 34, width - 24, h)
+            cursor = top - h - _GAP
 
         # ---- Beans census -------------------------------------------
-        remaining = cursor - h if 'h' in dir() else cursor - limit
-        remaining = max(0, remaining)
+        remaining = max(0, cursor - limit)
         if remaining >= 80:
             top = cursor
             h = min(remaining, 180)
             self._box(left, top, width, h, "Beans Census")
             self._draw_beans_census(session, left + 12, top - 34, width - 24)
+            cursor = top - h - _GAP
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
         # Vertical order, top to bottom: button, keys, slider. Each block owns
@@ -1400,6 +1468,35 @@ class ArcadeView(arcade.Window):
                 left + 16, y, _DIM, font_size=10,
             )
 
+    def _draw_food_census(self, session: GameSession, left: float, top: float,
+                          width: float) -> None:
+        """Food census: morsel count, energy vs target and top-up cadence."""
+        foods = getattr(session, "foods", None) or []
+        config = getattr(self.sim_config, "food", None)
+        target = getattr(config, "target_total_energy", 0.0) if config else 0.0
+        interval = getattr(config, "top_up_interval_ticks", 0) if config else 0
+        energy = _food_total_energy(foods)
+        count = len(foods)
+        average = energy / count if count else 0.0
+        count_y, energy_y, bar_y, top_up_y = food_geometry(left, width, top)
+
+        self._text.draw(
+            f"Morsels {count}   ·   avg {average:.0f} E",
+            left, count_y, _TEXT, font_size=11,
+        )
+        self._text.draw(
+            f"Energy {energy:.0f} / {target:.0f}",
+            left, energy_y, _TEXT, font_size=11,
+        )
+        self._bar(
+            left, bar_y, width, 6,
+            energy / target if target > 0 else 0.0, _ACCENT,
+        )
+        self._text.draw(
+            f"Top-up every {interval} ticks",
+            left, top_up_y, _MUTED, font_size=10,
+        )
+
     def _draw_beans_census(self, session: GameSession, left: float, top: float,
                             width: float) -> None:
         """Bean census: initial, alive, and dead counts by gender."""
@@ -1461,14 +1558,6 @@ class ArcadeView(arcade.Window):
             y -= 17
             self._text.draw(
                 f"Corpses remaining: {len(corpses)}",
-                left + 16, y, _MUTED, font_size=11,
-            )
-
-        foods = getattr(session, "foods", None) or []
-        if foods:
-            y -= 17
-            self._text.draw(
-                f"Food remaining: {len(foods)}  (E: {_food_total_energy(foods):.0f})",
                 left + 16, y, _MUTED, font_size=11,
             )
 

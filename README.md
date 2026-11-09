@@ -23,7 +23,7 @@ make run                # opens the window
 make run-headless
 BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=2000 python -m sim.main
 
-# Container (podman preferred, docker fallback)
+# Container (podman detected first, then docker/nerdctl)
 make build
 make run-container      # headless, detached
 make logs               # follow it
@@ -131,8 +131,11 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
 - **Food** — renewable magenta morsels (`IFoodSpawnStrategy` +
   `RandomFoodSpawnStrategy`): tick-0 seeding plus interval top-ups toward a
   seasonal target, so total food energy breathes around the configured level.
-  Beans nibble on contact up to their appetite gene and bank eaten/absorbed
-  lifetime counters.
+  The initial morsels are placed by a configurable `FoodPlacementConfig`
+  (the same placement strategies as beans), so they never overlap a barrier,
+  the world border, or another morsel; top-ups use uniform random
+  collision-free positions. Beans nibble on contact up to their appetite gene
+  and bank eaten/absorbed lifetime counters.
 
 
 ---
@@ -174,12 +177,15 @@ sim/
 │   │   ├── density_based.py  # area × density × variance
 │   │   └── fixed_amount.py   # exact configured population
 │   ├── daynight/__init__.py  # DayNightStrategy
+│   ├── food/
+│   │   ├── __init__.py       # food strategy registry
+│   │   └── random_food.py    # strategy-placed morsels, seasonal top-up
 │   ├── gender.py             # GenderController (ratio-balanced, shuffled)
 │   ├── movement/
 │   │   ├── __init__.py       # movement registry
 │   │   └── straight_line.py  # direction + speed, bounce, collision logging
 │   ├── placement/
-│   │   ├── __init__.py       # strategy registry
+│   │   ├── __init__.py       # shared placement registry + factory
 │   │   ├── border_to_center.py
 │   │   ├── center_to_border.py
 │   │   ├── colony_cluster.py
@@ -247,7 +253,7 @@ the only object `main()` reads.
 | `CreationConfig` | bean creation strategy + per-strategy configs (`FixedAmountCreationConfig.total_beans`) |
 | `GenotypeConfig` | per-gene ranges (energy, speed, digestion) + lifespan tiers/cap/senescence |
 | `CorpseConfig` | corpse energy, decay, feeding, rotten/poison rules |
-| `FoodConfig` | renewable morsels, seasonal top-up, appetite, colour |
+| `FoodConfig` | renewable morsels, seasonal top-up, appetite, colour, placement |
 | `EnergyConfig` | passive energy strategy (`fixed` / `per_day`) and rates |
 | `MovementConfig` | movement strategy, speed (units/s), global direction vector, bounce flag |
 | `SeasonConfig` | one season: colours, gradient, climate baseline, sun intensity, daylight fraction, weather weights, year-to-year variation ranges |
@@ -480,7 +486,10 @@ Morsels (`sim/domain/food.py`) are the renewable food source, spawned by an
 `initial_total_energy`, then every `top_up_interval_ticks` the deficit to
 `target_total_energy × abundance` is spawned, so the level breathes around the
 target. `abundance` comes from the seasonal sun profile (bright long days grow
-more, dim short days less). Morsels land anywhere with per-morsel energies in
+more, dim short days less). Initial morsels are placed by the configurable
+`FoodPlacementConfig` (the same strategies as beans, default `poisson_disc`),
+so they never overlap a barrier, the border, or another morsel; top-ups use
+uniform random collision-free positions. Per-morsel energies are drawn from
 `[min_morsel_energy, max_morsel_energy]`; their colour is magenta-purple
 (`(200,80,220)`, no palette conflicts), brightened by remaining energy.
 
@@ -628,8 +637,10 @@ through.
 `ArcadeView` extends `arcade.Window` and implements `IRenderer`.
 
 - **Layout** — a fixed left sidebar (`300..360 px`) holds stacked boxes: Time,
-  Day, Season, Environment, Inspector, Weather field, Controls. The world uses
-  the full height on the right and never sits under a box.
+  Day, Season, Environment, Inspector, Food, Weather field, Beans Census,
+  Controls. The world uses the full height on the right and never sits under a
+  box. The default window height is at least `SIDEBAR_MIN_HEIGHT` so the Food
+  box and Controls always fit.
 - **WorldLayout** — a single layout object (`sim/rendering/layout.py`) owns the
   world → screen projection and the cell grid. Both drawing (grid, cells,
   markers, barriers) and hit-testing (mouse motion/press) use this one layout,
@@ -647,7 +658,8 @@ through.
   strategy's colour (default yellow), with a dark outline.
 - **Food** — drawn as magenta dots in three size tiers (poor/mid/rich, three
   draw calls for the whole layer) that never dim below a visible floor; the
-  sidebar census shows morsel count plus total food energy.
+  sidebar Food box shows morsel count, average energy, total energy vs target
+  and the top-up interval.
 - **Controls box** — three reserved bands from `controls_geometry()`: config
   button (top), key bindings (middle), playback-speed slider (bottom). The
   sidebar reserves the same height when stacking the boxes above, so no
@@ -671,7 +683,9 @@ through.
   scaled displays. Layout is recomputed when the viewport changes.
 
 The default window is sized for 1:1 world rendering (1 world unit = 1 screen
-pixel) plus the sidebar, so the grid is crisp at startup.
+pixel) plus the sidebar, so the grid is crisp at startup. Its height is at
+least `SIDEBAR_MIN_HEIGHT` (from `sim/rendering/arcade_view.py`) so the Food
+box and Controls are always visible.
 
 The weather field box shows the live census (cells and percentage per
 condition); rows are limited to the panel height and overflow is summarised as
@@ -683,6 +697,12 @@ condition); rows are limited to the panel height and overflow is summarised as
 
 `Containerfile` builds a Python 3.10 image with Arcade and the application
 source. Containers default to `BEAN_HEADLESS=1`.
+
+The Makefile detects an available container runtime — `podman` first, then
+`docker`, then `nerdctl` — and picks the matching user-mapping flags
+(`--userns=keep-id` for rootless Podman, `--user` otherwise). Override the
+detection with `make CONTAINER_RUNTIME=docker` (or any Docker-CLI-compatible
+runtime). `make check-env` prints the selected runtime.
 
 ```bash
 make build

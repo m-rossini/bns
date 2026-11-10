@@ -228,6 +228,7 @@ classDiagram
     class RandomFoodSpawnStrategy {
         +initial_food(world) list[Food]
         +top_up(foods, world, tick, abundance) list[Food]
+        -_placement: IPlacementStrategy
     }
 
     class PoissonDiscStrategy {
@@ -437,6 +438,7 @@ classDiagram
     SpawnController --> GameSession
     DensityBasedCreationStrategy --> IPlacementStrategy
     FixedAmountCreationStrategy --> IPlacementStrategy
+    RandomFoodSpawnStrategy --> IPlacementStrategy
     StraightLineMovementStrategy --> IWorld
     Container --> BarrierStrategy
     Container --> RandomFoodSpawnStrategy
@@ -832,6 +834,7 @@ classDiagram
         +target_total_energy: float
         +top_up_interval_ticks: int
         +max_items: int
+        +placement: FoodPlacementConfig
     }
 
     class BeanPlacementConfig {
@@ -843,6 +846,18 @@ classDiagram
         +gender_colors: dict
         +base_spacing_scale: float
         +max_retry_limit: int
+    }
+
+    class FoodPlacementConfig {
+        +strategy_name: str
+        +seed: int
+        +poisson_disc: PoissonDiscConfig
+        +symmetrical: SymmetricalConfig
+        +colony_cluster: ColonyClusterConfig
+        +center_to_border: CenterToBorderConfig
+        +border_to_center: BorderToCenterConfig
+        +linear_gradient: LinearGradientConfig
+        +resource_gradient: ResourceGradientConfig
     }
 
     class CreationConfig {
@@ -966,6 +981,7 @@ classDiagram
     SimulationConfig *-- DayNightConfig
     SimulationConfig *-- WeatherConfig
     SimulationConfig *-- FoodConfig
+    FoodConfig *-- FoodPlacementConfig
     SimulationConfig *-- EnvironmentConfig
     SimulationConfig *-- LoggingConfig
     EnvironmentConfig *-- GradientConfig

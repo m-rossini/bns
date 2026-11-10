@@ -7,7 +7,7 @@ calendar needs the configured season names. Season and day/night are siblings
 that both read the calendar; neither owns the other.
 """
 
-from typing import List, Optional, Type, Union
+from typing import List, Optional, Union
 
 from sim.components import GameSession
 from sim.config import (
@@ -17,14 +17,12 @@ from sim.config import (
     ENERGY_STRATEGY_NAMES,
     FOOD_STRATEGY_NAMES,
     MOVEMENT_STRATEGY_NAMES,
-    PLACEMENT_STRATEGY_NAMES,
     SEASON_STRATEGY_NAMES,
     SimulationConfig,
     WEATHER_STRATEGY_NAMES,
 )
 from sim.domain.calendar import Calendar
 from sim.domain.environment import Environment
-from sim.domain.food import total_energy
 from sim.domain.session import GameSession as ConcreteGameSession
 from sim.domain.spawn_controller import SpawnController
 from sim.domain.world import World
@@ -38,15 +36,7 @@ from sim.implementations.daynight import DayNightStrategy
 from sim.implementations.food import RandomFoodSpawnStrategy
 from sim.implementations.gender import GenderController
 from sim.implementations.movement import StraightLineMovementStrategy
-from sim.implementations.placement import (
-    BorderToCenterStrategy,
-    CenterToBorderStrategy,
-    ColonyClusterStrategy,
-    LinearGradientStrategy,
-    PoissonDiscStrategy,
-    ResourceGradientStrategy,
-    SymmetricalStrategy,
-)
+from sim.implementations.placement import build_placement_strategy
 from sim.implementations.season import SeasonStrategy
 from sim.implementations.weather import WeatherStrategy
 from sim.interfaces.energy import IEnergyStrategy
@@ -65,18 +55,6 @@ from sim.observability import get_logger
 from sim.random import init_random
 
 logger = get_logger("container")
-
-#: Name -> strategy class wiring for placement strategies (DI wiring; the
-#: valid names live in config.PLACEMENT_STRATEGY_NAMES).
-_PLACEMENT_CLASSES = {
-    "poisson_disc": PoissonDiscStrategy,
-    "symmetrical": SymmetricalStrategy,
-    "colony_cluster": ColonyClusterStrategy,
-    "center_to_border": CenterToBorderStrategy,
-    "border_to_center": BorderToCenterStrategy,
-    "linear_gradient": LinearGradientStrategy,
-    "resource_gradient": ResourceGradientStrategy,
-}
 
 Strategy = Union[IWeatherStrategy, ISeasonStrategy, IDayNightStrategy]
 
@@ -104,6 +82,11 @@ class Container:
         )
         self.spawn_controller: ISpawnController = self._build_spawn_controller(config)
         self.beans = self._spawn_beans()
+        self.food_placement_strategy: Optional[IPlacementStrategy] = (
+            build_placement_strategy(config.food.placement)
+            if config.food.strategy_name is not None
+            else None
+        )
         self.food_strategy: Optional[IFoodSpawnStrategy] = (
             self._build_food_strategy(config)
         )
@@ -115,7 +98,7 @@ class Container:
         logger.info(
             "container.built world=%sx%s cells=%sx%s cell_size=%s tick_rate=%s "
             "seasons=%s strategies=%s/%s/%s barriers=%s placement=%s "
-            "creation=%s movement=%s energy=%s beans=%s food=%s",
+            "food_placement=%s creation=%s movement=%s energy=%s beans=%s food=%s",
             self.world.width,
             self.world.height,
             self.world.cols,
@@ -128,6 +111,7 @@ class Container:
             config.environment.weather_strategy,
             len(self.world.barriers),
             config.bean_placement.strategy_name,
+            config.food.placement.strategy_name,
             config.creation.strategy_name,
             config.movement.strategy_name,
             config.energy.strategy_name,
@@ -164,7 +148,10 @@ class Container:
         if name is None:
             return None
         if name == "random":
-            return RandomFoodSpawnStrategy(config.food)
+            return RandomFoodSpawnStrategy(
+                config.food,
+                placement_strategy=self.food_placement_strategy,
+            )
         raise ValueError(
             f"Unknown food strategy {name!r}. "
             f"Use None or one of: {sorted(FOOD_STRATEGY_NAMES)}"
@@ -183,25 +170,7 @@ class Container:
     def _build_placement_strategy(
         self, config: SimulationConfig
     ) -> IPlacementStrategy:
-        bp = config.bean_placement
-        strategy_name = bp.strategy_name
-        configs = {
-            "poisson_disc": bp.poisson_disc,
-            "symmetrical": bp.symmetrical,
-            "colony_cluster": bp.colony_cluster,
-            "center_to_border": bp.center_to_border,
-            "border_to_center": bp.border_to_center,
-            "linear_gradient": bp.linear_gradient,
-            "resource_gradient": bp.resource_gradient,
-        }
-        cls = _PLACEMENT_CLASSES.get(strategy_name)
-        if cls is None:
-            raise ValueError(
-                f"Unknown placement strategy {strategy_name!r}. "
-                f"Use one of: {sorted(PLACEMENT_STRATEGY_NAMES)}"
-            )
-        cfg = configs[strategy_name]
-        return cls(config=cfg, seed=bp.seed)
+        return build_placement_strategy(config.bean_placement)
 
     def _build_gender_controller(
         self, config: SimulationConfig

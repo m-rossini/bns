@@ -17,10 +17,12 @@ from sim.config import (
     EnergyConfig,
     EnvironmentConfig,
     FoodConfig,
+    FoodPlacementConfig,
     GenotypeConfig,
     PoissonDiscConfig,
     SeasonConfig,
     SimulationConfig,
+    SymmetricalConfig,
     WorldConfig,
 )
 from sim.container import Container
@@ -37,6 +39,8 @@ from sim.domain.genotype import (
     draw_genotype,
 )
 from sim.implementations.food import RandomFoodSpawnStrategy
+from sim.implementations.placement import build_placement_strategy
+from sim.implementations.placement.symmetrical import SymmetricalStrategy
 from sim.main import _step
 from sim.persistence import (
     load_snapshot,
@@ -147,6 +151,128 @@ def test_unknown_food_strategy_is_rejected():
         FoodConfig(strategy_name="buffet")
     with pytest.raises(ValueError):
         FoodConfig(min_morsel_energy=300.0, max_morsel_energy=200.0)
+
+
+# ---------------------------------------------------------------------------
+# Placement
+# ---------------------------------------------------------------------------
+
+
+def _assert_clear_of_barriers(foods, world):
+    for food in foods:
+        for barrier in world.barriers:
+            if barrier.kind != "rect":
+                continue
+            cx = min(max(food.x, barrier.x), barrier.x + barrier.width)
+            cy = min(max(food.y, barrier.y), barrier.y + barrier.height)
+            dist_sq = (food.x - cx) ** 2 + (food.y - cy) ** 2
+            assert dist_sq > food.radius ** 2, (
+                f"food {food.id} ({food.x:.1f},{food.y:.1f}) "
+                f"overlaps barrier {barrier.id}"
+            )
+
+
+def _assert_no_morsel_overlap(foods):
+    for index, first in enumerate(foods):
+        for second in foods[index + 1:]:
+            dx = first.x - second.x
+            dy = first.y - second.y
+            min_dist = first.radius + second.radius
+            assert dx * dx + dy * dy >= min_dist * min_dist, (
+                f"foods {first.id} and {second.id} overlap"
+            )
+
+
+def test_initial_food_never_overlaps_barriers_or_itself():
+    """Strategy-placed morsels stay clear of barriers and each other."""
+    config = FoodConfig(
+        initial_total_energy=2000.0,
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        seed=11,
+    )
+    world = Container(_make_config()).world
+
+    foods = RandomFoodSpawnStrategy(config).initial_food(world)
+
+    assert foods
+    _assert_clear_of_barriers(foods, world)
+    _assert_no_morsel_overlap(foods)
+
+
+def test_top_up_never_overlaps_barriers_or_existing_morsels():
+    """Top-up morsels use the same collision rules as the initial seeding."""
+    config = FoodConfig(
+        initial_total_energy=2000.0,
+        target_total_energy=2000.0,
+        top_up_interval_ticks=10,
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        max_items=1000,
+        seed=5,
+    )
+    world = Container(_make_config()).world
+    strategy = RandomFoodSpawnStrategy(config)
+    foods = strategy.initial_food(world)
+    del foods[: len(foods) // 2]
+
+    added = strategy.top_up(foods, world, tick=10, abundance=1.0)
+
+    assert added
+    _assert_clear_of_barriers(added, world)
+    _assert_no_morsel_overlap(foods + added)
+
+
+def test_food_placement_config_rejects_unknown_strategy():
+    with pytest.raises(ValueError):
+        FoodPlacementConfig(strategy_name="buffet")
+
+
+def test_food_placement_strategy_is_configurable():
+    """The container factory builds the strategy named by the config."""
+    config = FoodPlacementConfig(
+        strategy_name="symmetrical",
+        seed=7,
+        symmetrical=SymmetricalConfig(symmetry_axes=4),
+    )
+    strategy = build_placement_strategy(config)
+    assert isinstance(strategy, SymmetricalStrategy)
+    assert strategy.name == "symmetrical"
+    assert strategy.seed == 7
+
+
+def test_food_placement_seed_is_deterministic():
+    kwargs = dict(
+        initial_total_energy=500.0,
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        seed=3,
+        placement=FoodPlacementConfig(strategy_name="poisson_disc", seed=42),
+    )
+    world = Container(_make_config()).world
+
+    first = RandomFoodSpawnStrategy(FoodConfig(**kwargs)).initial_food(world)
+    second = RandomFoodSpawnStrategy(FoodConfig(**kwargs)).initial_food(world)
+
+    assert [(f.x, f.y) for f in first] == [(f.x, f.y) for f in second]
+
+
+def test_container_uses_configured_food_placement():
+    config = _make_config(
+        food=FoodConfig(
+            initial_total_energy=500.0,
+            min_morsel_energy=20.0,
+            max_morsel_energy=200.0,
+            seed=3,
+            placement=FoodPlacementConfig(strategy_name="symmetrical", seed=7),
+        )
+    )
+    container = Container(config)
+
+    assert container.food_strategy is not None
+    assert container.food_placement_strategy is not None
+    assert container.food_placement_strategy.name == "symmetrical"
+    _assert_clear_of_barriers(container.session.foods, container.world)
 
 
 # ---------------------------------------------------------------------------

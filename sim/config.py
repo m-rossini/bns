@@ -532,6 +532,80 @@ class BeanPlacementConfig:
 
 
 @dataclass
+class FoodPlacementConfig:
+    """Configuration for initial food placement.
+
+    Food morsels use the same placement strategies as beans, so their
+    distribution is configurable in the same way. ``strategy_name`` selects
+    which implementation runs (one of ``PLACEMENT_STRATEGY_NAMES``); each
+    strategy has its own dedicated config object below, and the container
+    passes only the selected strategy's config to that implementation.
+
+    The selected strategy guarantees every morsel is inside the world (with
+    its radius margin), clear of every barrier, and clear of every other
+    morsel. ``seed`` drives deterministic placement independently of
+    ``FoodConfig.seed``, which drives the morsel energy draw.
+    """
+
+    #: Which placement implementation to run (one of PLACEMENT_STRATEGY_NAMES).
+    strategy_name: str = "poisson_disc"
+    #: Seed for deterministic placement (independent of the energy draw).
+    seed: int = 1337
+
+    # Per-strategy configs. Each strategy implementation receives only its own
+    # config object; the container selects the active one by ``strategy_name``.
+    # The poisson spacing is halved relative to beans so morsels stay as dense
+    # as the old uniform-random distribution while remaining collision-free.
+    poisson_disc: PoissonDiscConfig = field(
+        default_factory=lambda: PoissonDiscConfig(base_spacing_scale=0.5)
+    )
+    symmetrical: SymmetricalConfig = field(default_factory=SymmetricalConfig)
+    colony_cluster: ColonyClusterConfig = field(default_factory=ColonyClusterConfig)
+    center_to_border: CenterToBorderConfig = field(
+        default_factory=CenterToBorderConfig
+    )
+    border_to_center: BorderToCenterConfig = field(
+        default_factory=BorderToCenterConfig
+    )
+    linear_gradient: LinearGradientConfig = field(
+        default_factory=LinearGradientConfig
+    )
+    resource_gradient: ResourceGradientConfig = field(
+        default_factory=ResourceGradientConfig
+    )
+
+    def __post_init__(self) -> None:
+        if self.strategy_name not in PLACEMENT_STRATEGY_NAMES:
+            raise ValueError(
+                f"FoodPlacementConfig.strategy_name must be one of "
+                f"{PLACEMENT_STRATEGY_NAMES}, got {self.strategy_name!r}"
+            )
+
+    def strategy_config(self, strategy_name: Optional[str] = None):
+        """Return the config object for the given strategy name.
+
+        Defaults to ``self.strategy_name``. Raises ``ValueError`` if the name
+        is unknown.
+        """
+        name = strategy_name or self.strategy_name
+        configs = {
+            "poisson_disc": self.poisson_disc,
+            "symmetrical": self.symmetrical,
+            "colony_cluster": self.colony_cluster,
+            "center_to_border": self.center_to_border,
+            "border_to_center": self.border_to_center,
+            "linear_gradient": self.linear_gradient,
+            "resource_gradient": self.resource_gradient,
+        }
+        if name not in configs:
+            raise ValueError(
+                f"Unknown placement strategy {name!r}. "
+                f"Use one of: {sorted(configs)}"
+            )
+        return configs[name]
+
+
+@dataclass
 class FixedAmountCreationConfig:
     """Create exactly ``total_beans`` beans, regardless of world area.
 
@@ -752,7 +826,9 @@ class FoodConfig:
     ``1.0`` = neutral), so the level breathes around the target instead of
     drifting. Each morsel's energy is drawn uniformly from
     ``[min_morsel_energy, max_morsel_energy]``, so rich and poor morsels
-    coexist. Morsels land anywhere (uniform random); ``color`` defaults to a
+    coexist. Morsel positions come from ``placement`` (a
+    :class:`FoodPlacementConfig`), so they are collision-free against the
+    world border, barriers and other morsels; ``color`` defaults to a
     magenta-purple with no palette conflicts and the view brightens it with
     the morsel's remaining energy.
     """
@@ -768,6 +844,8 @@ class FoodConfig:
     color: Color = (200, 80, 220)     # magenta-purple
     margin_cells: int = 1
     max_items: int = 600
+    #: Placement strategy and per-strategy config for morsel positions.
+    placement: FoodPlacementConfig = field(default_factory=FoodPlacementConfig)
 
     def __post_init__(self) -> None:
         if self.strategy_name not in FOOD_STRATEGY_NAMES and self.strategy_name is not None:
@@ -1082,6 +1160,10 @@ DEFAULT_CONFIG = SimulationConfig(
         color=(200, 80, 220),       # magenta-purple: no palette conflicts
         margin_cells=1,
         max_items=600,
+        placement=FoodPlacementConfig(
+            strategy_name="poisson_disc",
+            seed=1337,
+        ),
     ),
     environment=EnvironmentConfig(
         weather_strategy="WeatherStrategy",

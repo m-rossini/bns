@@ -48,7 +48,7 @@ must not require editing the tick loop.
 | `movement` | `MovementConfig` | How beans move and bounce. |
 | `energy` | `EnergyConfig` | Passive energy gain strategy and rates. |
 | `corpse` | `CorpseConfig` | Dead-bean food, decay, feeding and poisoning. |
-| `food` | `FoodConfig` | Renewable morsels, seasonal top-up, appetite. |
+| `food` | `FoodConfig` | Renewable morsels, seasonal top-up, appetite, placement. |
 | `environment` | `EnvironmentConfig` | Strategy names, climate gradients, microclimate. |
 | `logging` | `LoggingConfig` | Console/file logging and event sampling. |
 | `persistence` | `PersistenceConfig` | Snapshot save/load and reproducibility. |
@@ -533,6 +533,16 @@ corpse removed
 | `color` | `(200,80,220)` | Magenta-purple base; view brightens with remaining energy. |
 | `margin_cells` | `1` | Keep morsels away from the border. |
 | `max_items` | `600` | Cap on live morsels (perf guard). |
+| `placement` | `FoodPlacementConfig` | Placement strategy and per-strategy config for morsel positions. |
+
+`FoodPlacementConfig` mirrors `BeanPlacementConfig`: `strategy_name` selects
+one of `PLACEMENT_STRATEGY_NAMES`, `seed` drives deterministic placement, and
+each strategy has its own config object (`poisson_disc`, `symmetrical`,
+`colony_cluster`, `center_to_border`, `border_to_center`, `linear_gradient`,
+`resource_gradient`). The default is `poisson_disc` with
+`base_spacing_scale=0.5`, which keeps morsels as dense as the old
+uniform-random layout while guaranteeing they never overlap a barrier, the
+world border, or another morsel.
 
 Seeding sums to `initial_total_energy`; every `top_up_interval_ticks` the
 strategy spawns the deficit to `target_total_energy × abundance`:
@@ -546,11 +556,15 @@ deficit = max(0, effective_target - current_total_energy)
 `abundance` comes from the already-varied seasonal sun profile, so spring
 grows ~0.85×, summer ~1.15×, autumn ~0.7× and winter ~0.4× — the level breathes
 around the target instead of drifting, and future food systems can reuse the
-same seasonal hook. Morsels land anywhere (uniform random); snapshots store
-them, so a resumed run keeps its exact morsels. The view draws them in
+same seasonal hook. The initial seeding asks the configured placement strategy
+for the whole morsel set, so the starting distribution follows that strategy
+and is collision-free. Later top-ups use uniform random positions validated
+against the same constraints (a one-shot blue-noise layout cannot be extended
+incrementally without over-spacing the new morsels). Snapshots store the
+morsels, so a resumed run keeps its exact morsels. The view draws them in
 poor/mid/rich size tiers (three batched draw calls) with brightness floored
-so they read against any ground; the sidebar census shows morsel count and
-total food energy.
+so they read against any ground; the sidebar Food box shows morsel count,
+average energy, total energy vs target and the top-up interval.
 
 Eating (`feed_beans_on_food`, runs in the lifecycle next to corpse feeding):
 
@@ -645,7 +659,10 @@ values; the environment still runs its calendar and other strategy.
 - `implementations/placement/linear_gradient.py:LinearGradientStrategy`
 - `implementations/placement/resource_gradient.py:ResourceGradientStrategy`
 
-Selected by `BeanPlacementConfig.strategy_name` (see `PLACEMENT_STRATEGY_NAMES`).
+Selected by `BeanPlacementConfig.strategy_name` or
+`FoodPlacementConfig.strategy_name` (see `PLACEMENT_STRATEGY_NAMES`). The same
+strategies position beans and food morsels; the caller passes its own
+collision radius (bean radius or morsel radius).
 
 ### `IGenderController` (`sim/interfaces/gender.py`)
 
@@ -683,10 +700,12 @@ Selected by `EnergyConfig.strategy_name`.
 ### `IFoodSpawnStrategy` (`sim/interfaces/food.py`)
 
 - `implementations/food/random_food.py:RandomFoodSpawnStrategy` — single
-  implementation: uniform anywhere-placement, ranged morsel energies,
-  interval top-up toward `target × abundance`.
+  implementation: strategy-placed initial morsels, ranged morsel energies,
+  interval top-up toward `target × abundance` (top-ups use uniform random
+  collision-free positions).
 
-Selected by `FoodConfig.strategy_name` (`None` disables food).
+Selected by `FoodConfig.strategy_name` (`None` disables food). Positions come
+from `FoodConfig.placement`.
 
 ### `ISeasonStrategy` (`sim/interfaces/environment.py`)
 

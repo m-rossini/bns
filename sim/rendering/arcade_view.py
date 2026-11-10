@@ -33,6 +33,7 @@ import arcade
 
 from sim.components import GameSession, GameState
 from sim.config import SimulationConfig
+from sim.domain.food import seasonal_abundance as _seasonal_abundance
 from sim.domain.food import total_energy as _food_total_energy
 from sim.domain.visuals import SeasonPalette, SkyPalette
 from sim.domain.world import World
@@ -1468,13 +1469,23 @@ class ArcadeView(arcade.Window):
                 left + 16, y, _DIM, font_size=10,
             )
 
+    def _food_abundance(self, session: GameSession) -> float:
+        """Seasonal food-abundance multiplier from the environment's sun profile."""
+        env = session.environment
+        if env is None:
+            return 1.0
+        solar = env.solar
+        return _seasonal_abundance(solar.sun_intensity, solar.daylight_fraction)
+
     def _draw_food_census(self, session: GameSession, left: float, top: float,
                           width: float) -> None:
-        """Food census: morsel count, energy vs target and top-up cadence."""
+        """Food census: morsel count, energy vs the seasonal target and top-up cadence."""
         foods = getattr(session, "foods", None) or []
         config = getattr(self.sim_config, "food", None)
         target = getattr(config, "target_total_energy", 0.0) if config else 0.0
         interval = getattr(config, "top_up_interval_ticks", 0) if config else 0
+        abundance = self._food_abundance(session)
+        effective_target = target * abundance
         energy = _food_total_energy(foods)
         count = len(foods)
         average = energy / count if count else 0.0
@@ -1485,15 +1496,15 @@ class ArcadeView(arcade.Window):
             left, count_y, _TEXT, font_size=11,
         )
         self._text.draw(
-            f"Energy {energy:.0f} / {target:.0f}",
+            f"Energy {energy:.0f} / {effective_target:.0f}",
             left, energy_y, _TEXT, font_size=11,
         )
         self._bar(
             left, bar_y, width, 6,
-            energy / target if target > 0 else 0.0, _ACCENT,
+            energy / effective_target if effective_target > 0 else 0.0, _ACCENT,
         )
         self._text.draw(
-            f"Top-up every {interval} ticks",
+            f"Top-up every {interval} ticks   ·   ×{abundance:.2f}",
             left, top_up_y, _MUTED, font_size=10,
         )
 

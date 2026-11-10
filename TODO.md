@@ -114,6 +114,12 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
   baselines (`inspector_geometry`), verified by `test_ui_layout.py`.
 - Container runtime: `make check-env` reports `/usr/bin/podman`; `make test`
   (199 passed) and `make verify` both run through podman without docker.
+- Food top-up audit: a full-lifecycle test
+  (`test_full_lifecycle_restores_food_energy_at_top_up_boundary`) proves the
+  tick loop restores food energy at the interval boundary; the Food box now
+  shows the seasonal target (`target × abundance`) and the abundance
+  multiplier, so the top-up level is visible instead of comparing against the
+  raw target. `make test` → 200 passed.
 
 ## Worktrees
 

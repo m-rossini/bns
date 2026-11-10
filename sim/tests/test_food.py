@@ -326,6 +326,44 @@ def test_top_up_stays_quiet_above_target_and_respects_max_items():
     assert len(strategy.initial_food(world)) <= 3
 
 
+def test_full_lifecycle_restores_food_energy_at_top_up_boundary():
+    """The tick loop tops food back up toward the seasonal target."""
+    config = _make_config(
+        food=FoodConfig(
+            initial_total_energy=1000.0,
+            target_total_energy=1000.0,
+            top_up_interval_ticks=10,
+            min_morsel_energy=20.0,
+            max_morsel_energy=200.0,
+            max_items=1000,
+            seed=5,
+        )
+    )
+    container = Container(config)
+    session = container.session
+    session.state = GameState.PLAYING
+    session.clock.paused = False
+
+    # Simulate a hungry population: remove half the morsels.
+    del session.foods[: len(session.foods) // 2]
+    before = total_energy(session.foods)
+
+    fixed_step = 1.0 / config.tick_rate
+    for _ in range(10):
+        _step(
+            session, container.environment, container.movement_strategy,
+            container.energy_strategy, fixed_step, fixed_step, config,
+            max_ticks=1, food_strategy=container.food_strategy,
+        )
+
+    after = total_energy(session.foods)
+    assert after > before, "the lifecycle did not top food up"
+    solar = container.environment.solar
+    abundance = seasonal_abundance(solar.sun_intensity, solar.daylight_fraction)
+    effective_target = config.food.target_total_energy * abundance
+    assert after >= effective_target - config.food.max_morsel_energy
+
+
 def test_winter_grows_less_food_than_summer():
     """The seasonal multiplier orders effective targets across the year."""
     winter = seasonal_abundance(0.55, 0.34)

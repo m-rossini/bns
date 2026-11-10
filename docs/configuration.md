@@ -564,7 +564,8 @@ incrementally without over-spacing the new morsels). Snapshots store the
 morsels, so a resumed run keeps its exact morsels. The view draws them in
 poor/mid/rich size tiers (three batched draw calls) with brightness floored
 so they read against any ground; the sidebar Food box shows morsel count,
-average energy, total energy vs target and the top-up interval.
+average energy, total energy vs the seasonal target (`target × abundance`)
+and the top-up interval.
 
 Eating (`feed_beans_on_food`, runs in the lifecycle next to corpse feeding):
 

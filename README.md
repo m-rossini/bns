@@ -658,8 +658,8 @@ through.
   strategy's colour (default yellow), with a dark outline.
 - **Food** — drawn as magenta dots in three size tiers (poor/mid/rich, three
   draw calls for the whole layer) that never dim below a visible floor; the
-  sidebar Food box shows morsel count, average energy, total energy vs target
-  and the top-up interval.
+  sidebar Food box shows morsel count, average energy, total energy vs the
+  seasonal target (`target × abundance`) and the top-up interval.
 - **Controls box** — three reserved bands from `controls_geometry()`: config
   button (top), key bindings (middle), playback-speed slider (bottom). The
   sidebar reserves the same height when stacking the boxes above, so no

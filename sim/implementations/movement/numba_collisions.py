@@ -6,7 +6,12 @@ The functions operate on raw numpy arrays for maximum performance.
 
 from __future__ import annotations
 
-import numpy as np
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    NUMPY_AVAILABLE = False
+    np = None  # type: ignore
 
 try:
     from numba import njit
@@ -18,6 +23,12 @@ except ImportError:  # pragma: no cover
         def decorator(func):
             return func
         return decorator
+
+# The numba kernels operate on numpy arrays, so a missing numpy disables the
+# fast path even when numba itself is installed. Callers fall back to the pure
+# Python collision loops in ``straight_line``.
+if not NUMPY_AVAILABLE:  # pragma: no cover
+    NUMBA_AVAILABLE = False
 
 
 @njit(cache=True, fastmath=True)

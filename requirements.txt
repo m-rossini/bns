@@ -2,3 +2,8 @@ arcade>=3.3.3
 pytest>=8.0.0
 pytest-cov>=4.0.0
 coverage>=7.0.0
+
+# Optional DEBUG collision fast path: numpy + numba. When they are absent the
+# pure-Python fallback in sim/implementations/movement/straight_line.py is used
+# (collision detection only feeds DEBUG logs). The container image installs
+# numba explicitly, so the fast path is enabled there.

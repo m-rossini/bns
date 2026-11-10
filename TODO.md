@@ -120,6 +120,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
   shows the seasonal target (`target × abundance`) and the abundance
   multiplier, so the top-up level is visible instead of comparing against the
   raw target. `make test` → 200 passed.
+- numpy/numba are optional: `numba_collisions.py` degrades to the pure-Python
+  collision fallback when numpy is missing (`make run-local` crashed with
+  `ModuleNotFoundError: No module named 'numpy'`); `make install` now installs
+  the full `requirements.txt` and the regression test pins the fallback.
+  `make test` → 201 passed (local + container).
 
 ## Worktrees
 

@@ -119,6 +119,25 @@ def test_collision_work_is_skipped_when_debug_is_off(caplog):
     assert caplog.records == []
 
 
+def test_numba_collisions_degrade_without_numpy(monkeypatch):
+    """A missing numpy disables the fast path instead of crashing the import."""
+    import importlib
+    import sys
+
+    import sim.implementations.movement.numba_collisions as nc
+
+    monkeypatch.setitem(sys.modules, "numpy", None)
+    reloaded = importlib.reload(nc)
+    try:
+        assert reloaded.NUMPY_AVAILABLE is False
+        assert reloaded.NUMBA_AVAILABLE is False
+        assert reloaded.check_barrier_collisions_numba([], [], 1.0) == []
+        assert reloaded.check_bean_collisions_numba([], 1.0, 100.0, 100.0) == []
+    finally:
+        monkeypatch.undo()
+        importlib.reload(nc)
+
+
 def test_step_moves_beans_only_while_playing():
     world = _world()
     bean = _bean(x=50.0, y=50.0)

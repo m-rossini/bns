@@ -8,7 +8,7 @@ PYTHON ?= python3
 VENV := .venv
 PIP := $(VENV)/bin/pip
 PYTHON_BIN := $(VENV)/bin/python
-ARCADE_STAMP := $(VENV)/.arcade-installed
+DEPS_STAMP := $(VENV)/.deps-installed
 MAIN_MODULE := sim.main
 
 # Runtime log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
@@ -89,19 +89,21 @@ $(VENV)/bin/activate:
 
 venv: $(VENV)/bin/activate
 
-# Installed lazily; delete the stamp to force a reinstall.
-$(ARCADE_STAMP): | venv
+# Installed lazily; delete the stamp to force a reinstall. Installs the full
+# requirements.txt (numpy/numba stay optional at runtime; see the comment in
+# requirements.txt).
+$(DEPS_STAMP): requirements.txt | venv
 	$(PIP) install --upgrade pip
-	$(PIP) install arcade
-	@touch $(ARCADE_STAMP)
+	$(PIP) install -r requirements.txt
+	@touch $(DEPS_STAMP)
 
-install: $(ARCADE_STAMP)
+install: $(DEPS_STAMP)
 
-run-local: $(ARCADE_STAMP)
+run-local: $(DEPS_STAMP)
 	BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
 # Bounded headless run (no window, no display server needed)
-run-headless: $(ARCADE_STAMP)
+run-headless: $(DEPS_STAMP)
 	BEAN_HEADLESS=1 BEAN_HEADLESS_FRAMES=$${BEAN_HEADLESS_FRAMES:-600} \
 		BEAN_LOG_LEVEL=$(LOG_LEVEL) $(PYTHON_BIN) -m $(MAIN_MODULE)
 
@@ -306,7 +308,7 @@ help:
 	@echo ""
 	@echo "Local development (run these in this order):"
 	@echo "  1. make venv         Create the Python virtual environment (.venv)"
-	@echo "  2. make install      Install dependencies (arcade) into .venv"
+	@echo "  2. make install      Install dependencies (requirements.txt) into .venv"
 	@echo "  3. make run-local    Run the simulation locally (opens the window)"
 	@echo "     make run-headless Run bounded headless locally (no window)"
 	@echo "  If 'make venv' fails, install the venv module:"

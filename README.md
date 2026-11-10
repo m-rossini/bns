@@ -31,7 +31,10 @@ make verify             # headless, foreground, exits with the logs
 make run-container-ui   # windowed through the host X11 socket
 ```
 
-Requires Python 3.10+ and `arcade` (installed by `make install`).
+Requires Python 3.10+ and the dependencies in `requirements.txt`
+(installed by `make install`). `numpy`/`numba` are an optional fast path for
+DEBUG collision logging — when absent the pure-Python fallback is used and
+the app still runs.
 
 ---
 

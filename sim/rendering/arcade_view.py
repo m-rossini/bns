@@ -6,7 +6,9 @@ Never mutates domain state.
 Layout
 ------
 * Left: a full-height sidebar with stacked information boxes (time, day,
-  season, environment, inspector, weather field, controls).
+  season, environment, food, population, weather field, controls).
+  Clicking a world cell pins a small floating inspector popup next to it;
+  the popup has its own close button.
 * Right: the world, using the full height of the window.
 * All colours come from the environment strategies (season palette, sky
   palette); the view only owns neutral UI chrome.
@@ -33,6 +35,7 @@ import arcade
 
 from sim.components import GameSession, GameState
 from sim.config import SimulationConfig
+from sim.domain.food import population_scale as _population_scale
 from sim.domain.food import seasonal_abundance as _seasonal_abundance
 from sim.domain.food import total_energy as _food_total_energy
 from sim.domain.visuals import SeasonPalette, SkyPalette
@@ -112,8 +115,11 @@ _TIME_BOX_H = 92.0
 _DAY_BOX_H = 96.0
 _SEASON_BOX_H = 84.0
 _ENVIRONMENT_BOX_H = 128.0
-_INSPECTOR_BOX_H = 128.0
 _FOOD_BOX_H = 100.0
+#: Beans census ("Population"): always visible, drawn before the flexible
+#: weather box so a short window squeezes weather, never the population.
+#: 160 px fits the gender rows plus the corpses line and the extinction note.
+_CENSUS_BOX_H = 160.0
 
 # Height of the bottom-anchored "Controls" box: title, config button, five
 # key rows, then the playback-speed slider in its own band. The sidebar
@@ -128,16 +134,21 @@ _CONTROLS_BOX_H = (
 
 #: Smallest window height that fits every always-visible sidebar box plus the
 #: bottom-anchored Controls box. ``main`` uses this for the default window.
+#: The weather box is flexible (it takes the true leftover and hides on short
+#: windows); everything else is guaranteed. Clicking a world cell pins a
+#: floating inspector popup, so no sidebar space is reserved for it.
 SIDEBAR_MIN_HEIGHT = (
     2 * _MARGIN
     + _TIME_BOX_H
     + _DAY_BOX_H
     + _SEASON_BOX_H
     + _ENVIRONMENT_BOX_H
-    + _INSPECTOR_BOX_H
     + _FOOD_BOX_H
+    + _CENSUS_BOX_H
     + 6 * _GAP
     + _CONTROLS_BOX_H
+    + 80.0  # weather minimum: two census rows so the field still reads
+    + _GAP
     + 4.0  # breathing room so the last box never touches the Controls gap
 )
 
@@ -184,21 +195,70 @@ def _config_rows(obj) -> List[Tuple[str, str]]:
     return rows
 
 
-def inspector_geometry(left: float, width: float, box_top: float):
-    """Layout of the Inspector box rows.
+#: Floating inspector popup size. Every row owns its own y band, so rows
+#: can never overlap however the panel is placed. Tall enough for the cell,
+#: beans, food, barrier, temperature and readings rows.
+_INSPECTOR_W = 250.0
+_INSPECTOR_H = 176.0
 
-    Returns ``(cell_y, contents_y, temperature_y, readings_y, condition_y)``.
-    The large temperature baseline and the small RH/pressure/light baseline
-    are distinct so the two lines can never overlap, and every row stays
-    inside the box (``_INSPECTOR_BOX_H``).
+
+def inspector_popup_geometry(
+    anchor_x: float, anchor_y: float,
+    sw: float, sh: float,
+    width: float = _INSPECTOR_W, height: float = _INSPECTOR_H,
+):
+    """Place the floating inspector popup near a world anchor point.
+
+    Returns ``(left, top, close_rect)`` in logical coordinates. The panel
+    prefers the right of the anchor, falls back to the left when crowded,
+    and is always clamped inside the viewport with a margin. ``close_rect``
+    is the 18×18 X button in the panel's top-right corner.
     """
+    left = anchor_x + 14.0
+    if left + width > sw - _MARGIN:
+        left = anchor_x - 14.0 - width
+    left = max(_MARGIN, min(left, sw - _MARGIN - width))
+    top = max(height + _MARGIN, min(anchor_y + height / 2.0, sh - _MARGIN))
+    close_rect = (left + width - 26.0, top - 26.0, 18.0, 18.0)
+    return left, top, close_rect
+
+
+def inspector_popup_rows(left: float, top: float):
+    """Y baselines of the popup rows, top to bottom, strictly decreasing."""
     return (
-        box_top - 38.0,    # cell coordinates
-        box_top - 62.0,    # contents (BEAN/BARRIER/EMPTY)
-        box_top - 90.0,    # large temperature
-        box_top - 114.0,   # RH / pressure / light
-        box_top - 62.0,    # condition, right-aligned
+        top - 34.0,    # cell coordinates (+ weather, right-aligned)
+        top - 56.0,    # beans in the cell
+        top - 78.0,    # food in the cell
+        top - 100.0,   # barrier, or open ground
+        top - 132.0,   # large temperature
+        top - 156.0,   # RH / pressure / light
     )
+
+
+def cell_contents(beans, foods, world, cell):
+    """Beans, food morsels and barrier pinned to one cell.
+
+    Membership is by cell index (the same grid the orange marker uses), so
+    the popup agrees with the selection exactly. Returns
+    ``(cell_beans, cell_foods, barrier_or_None)``.
+    """
+    col, row = cell
+    key = (col, row)
+    cell_beans = [
+        b for b in beans or [] if world.cell_index(b.x, b.y) == key
+    ]
+    cell_foods = [
+        f for f in foods or [] if world.cell_index(f.x, f.y) == key
+    ]
+    wx, wy = world.cell_center(col, row)
+    barrier = None
+    for b in getattr(world, "barriers", None) or []:
+        if b.kind == "rect" and (
+            b.x <= wx <= b.x + b.width and b.y <= wy <= b.y + b.height
+        ):
+            barrier = b
+            break
+    return cell_beans, cell_foods, barrier
 
 
 def food_geometry(left: float, width: float, box_top: float):
@@ -368,6 +428,12 @@ class ArcadeView(arcade.Window):
 
         self._hover_cell: Optional[Tuple[int, int]] = None
         self._selected_cell: Optional[Tuple[int, int]] = None
+        #: Close-button rect of the floating inspector popup (logical coords),
+        #: or None when no popup is shown. Clicking it unpins the selection.
+        self._inspector_close_rect: Optional[Tuple[float, float, float, float]] = None
+        #: Whole floating inspector popup rect (logical coords), or None.
+        #: Clicks inside it (outside the close button) keep the selection.
+        self._inspector_panel_rect: Optional[Tuple[float, float, float, float]] = None
         self._slider_rect: Optional[Tuple[float, float, float, float]] = None
         self._slider_dragging = False
         self._config_rect: Optional[Tuple[float, float, float, float]] = None
@@ -528,6 +594,7 @@ class ArcadeView(arcade.Window):
         self.clear(_shade(self._sky_color(session), 0.55))
         self._draw_world(session)
         self._draw_sidebar(session)
+        self._draw_inspector_popup(session)
 
     def draw_paused(self, session: GameSession) -> None:
         sw, sh = self._viewport_size()
@@ -1242,82 +1309,6 @@ class ArcadeView(arcade.Window):
                     font_size=10,
                 )
 
-        # ---- Inspector ------------------------------------------------
-        h = _INSPECTOR_BOX_H
-        slot = take(h)
-        if slot is not None:
-            top, bottom = slot
-            self._box(left, top, width, h, "Inspector")
-            cell_y, contents_y, temperature_y, readings_y, condition_y = (
-                inspector_geometry(left, width, top)
-            )
-            if self._selected_cell is not None and env is not None:
-                col, row = self._selected_cell
-                wx, wy = self._cell_center((col, row))
-                condition = env.weather_at(wx, wy)
-                self._text.draw(
-                    f"cell ({col}, {row})   ·   x {wx:.0f}  y {wy:.0f}",
-                    left + 12, cell_y, _MUTED, font_size=11,
-                )
-                # Cell contents: bean / barrier / empty
-                beans = getattr(session, "beans", None) or []
-                bean_at = None
-                for b in beans:
-                    if abs(b.x - wx) < 1.0 and abs(b.y - wy) < 1.0:
-                        bean_at = b
-                        break
-                barriers = getattr(world, "barriers", None) or []
-                barrier_at = None
-                for b in barriers:
-                    if b.kind == "rect":
-                        if (b.x <= wx <= b.x + b.width and b.y <= wy <= b.y + b.height):
-                            barrier_at = b
-                            break
-                if bean_at is not None:
-                    self._text.draw(
-                        f"BEAN   ·   gender={bean_at.gender}   ·   colour={bean_at.color}",
-                        left + 12, contents_y, _ACCENT, font_size=11,
-                    )
-                elif barrier_at is not None:
-                    self._text.draw(
-                        f"BARRIER   ·   kind={barrier_at.kind}   ·   colour={barrier_at.color}",
-                        left + 12, contents_y, _MUTED, font_size=11,
-                    )
-                else:
-                    self._text.draw(
-                        "EMPTY", left + 12, contents_y, _DIM, font_size=11,
-                    )
-                # The large temperature and the small RH/pressure/light line
-                # live on separate baselines so they can never overlap.
-                self._text.draw(
-                    f"{env.temperature_at(wx, wy):.1f} °C", left + 12, temperature_y,
-                    _TEXT, font_size=22, bold=True,
-                )
-                self._text.draw(
-                    f"{env.humidity_at(wx, wy):.0%} RH   ·   "
-                    f"{env.pressure_at(wx, wy):.0f} hPa   ·   "
-                    f"{env.light_at(wx, wy):.0%} light",
-                    left + 12, readings_y, _TEXT, font_size=11,
-                )
-                self._text.draw(
-                    condition, left + width - 12, condition_y,
-                    _WEATHER_LABEL.get(condition, _TEXT), font_size=13,
-                    anchor_x="right",
-                )
-            else:
-                self._text.draw(
-                    "Click any cell in the world", left + 12, top - 44,
-                    _TEXT, font_size=13,
-                )
-                self._text.draw(
-                    "to read its temperature, light,", left + 12, top - 64,
-                    _MUTED, font_size=11,
-                )
-                self._text.draw(
-                    "humidity and pressure.", left + 12, top - 82,
-                    _MUTED, font_size=11,
-                )
-
         # ---- Food census ----------------------------------------------
         h = _FOOD_BOX_H
         slot = take(h)
@@ -1325,6 +1316,16 @@ class ArcadeView(arcade.Window):
             top, bottom = slot
             self._box(left, top, width, h, "Food")
             self._draw_food_census(session, left + 12, top, width - 24)
+
+        # ---- Beans census ("Population"): fixed, always visible ----------
+        # Drawn before the flexible weather box so a short window squeezes
+        # the weather census, never the population.
+        h = _CENSUS_BOX_H
+        slot = take(h)
+        if slot is not None:
+            top, bottom = slot
+            self._box(left, top, width, h, "Population")
+            self._draw_beans_census(session, left + 12, top - 34, width - 24)
 
         # ---- Weather field (fills the remaining stack, capped) ------------
         remaining = cursor - limit
@@ -1335,15 +1336,6 @@ class ArcadeView(arcade.Window):
             h = min(remaining, 220)
             self._box(left, top, width, h, "Weather field")
             self._draw_weather_census(session, left + 12, top - 34, width - 24, h)
-            cursor = top - h - _GAP
-
-        # ---- Beans census -------------------------------------------
-        remaining = max(0, cursor - limit)
-        if remaining >= 80:
-            top = cursor
-            h = min(remaining, 180)
-            self._box(left, top, width, h, "Beans Census")
-            self._draw_beans_census(session, left + 12, top - 34, width - 24)
             cursor = top - h - _GAP
 
         # ---- Controls (anchored to the bottom of the sidebar) ---------
@@ -1477,15 +1469,25 @@ class ArcadeView(arcade.Window):
         solar = env.solar
         return _seasonal_abundance(solar.sun_intensity, solar.daylight_fraction)
 
+    def _food_population_scale(self, session: GameSession) -> float:
+        """Living share of the starting population (same factor regrowth uses)."""
+        beans = getattr(session, "beans", None) or []
+        initial = getattr(session, "initial_female", 0) + getattr(
+            session, "initial_male", 0
+        )
+        return _population_scale(len(beans), initial)
+
     def _draw_food_census(self, session: GameSession, left: float, top: float,
                           width: float) -> None:
-        """Food census: morsel count, energy vs the seasonal target and top-up cadence."""
+        """Food census: morsel count, energy vs the seasonal target and regrowth."""
         foods = getattr(session, "foods", None) or []
         config = getattr(self.sim_config, "food", None)
         target = getattr(config, "target_total_energy", 0.0) if config else 0.0
-        interval = getattr(config, "top_up_interval_ticks", 0) if config else 0
+        fraction = getattr(config, "target_fraction", 1.0) if config else 1.0
+        jitter = getattr(config, "target_jitter", 0.0) if config else 0.0
         abundance = self._food_abundance(session)
-        effective_target = target * abundance
+        pop_scale = self._food_population_scale(session)
+        effective_target = target * abundance * pop_scale * fraction
         energy = _food_total_energy(foods)
         count = len(foods)
         average = energy / count if count else 0.0
@@ -1504,7 +1506,7 @@ class ArcadeView(arcade.Window):
             energy / effective_target if effective_target > 0 else 0.0, _ACCENT,
         )
         self._text.draw(
-            f"Top-up every {interval} ticks   ·   ×{abundance:.2f}",
+            f"Regrows every tick · ×{abundance:.2f} ×{pop_scale:.0%} ±{jitter:.0%}",
             left, top_up_y, _MUTED, font_size=10,
         )
 
@@ -1589,6 +1591,113 @@ class ArcadeView(arcade.Window):
                 f"Season: {session.environment.season if session.environment else 'N/A'}",
                 left, y, _MUTED, font_size=10,
             )
+
+    # ---- Floating inspector popup -------------------------------------
+    def _draw_inspector_popup(self, session: GameSession) -> None:
+        """Small closable popup pinned to the selected cell.
+
+        Every row owns its own y band (see ``inspector_popup_rows``), so rows
+        can never overlap. The popup closes via its X button or by clicking
+        outside the world.
+        """
+        if self._selected_cell is None:
+            self._inspector_close_rect = None
+            self._inspector_panel_rect = None
+            return
+        env = session.environment
+        world = session.world
+        if env is None or world is None:
+            self._inspector_close_rect = None
+            self._inspector_panel_rect = None
+            return
+        col, row = self._selected_cell
+        wx, wy = world.cell_center(col, row)
+
+        sw, sh = self._viewport_size()
+        anchor_x, anchor_y = self._world_to_screen(wx, wy)
+        left, top, close_rect = inspector_popup_geometry(
+            anchor_x, anchor_y, sw, sh
+        )
+        bottom = top - _INSPECTOR_H
+        self._inspector_panel_rect = (left, bottom, _INSPECTOR_W, _INSPECTOR_H)
+        self._inspector_close_rect = close_rect
+
+        self._panel(left, bottom, _INSPECTOR_W, _INSPECTOR_H)
+        self._text.draw(
+            "INSPECTOR", left + 12, top - 16, _DIM, font_size=10, bold=True,
+        )
+        arcade.draw_lbwh_rectangle_outline(
+            close_rect[0], close_rect[1], close_rect[2], close_rect[3], _MUTED, 1,
+        )
+        self._text.draw(
+            "X", close_rect[0] + 9, close_rect[1] + 4, _MUTED, font_size=10,
+            anchor_x="center", bold=True,
+        )
+
+        cell_y, beans_y, food_y, ground_y, temperature_y, readings_y = (
+            inspector_popup_rows(left, top)
+        )
+        condition = env.weather_at(wx, wy)
+        self._text.draw(
+            f"cell ({col}, {row})", left + 12, cell_y, _MUTED, font_size=11,
+        )
+        self._text.draw(
+            condition, left + _INSPECTOR_W - 12, cell_y,
+            _WEATHER_LABEL.get(condition, _TEXT), font_size=11,
+            anchor_x="right",
+        )
+
+        # Census the whole cell by membership: every bean and morsel whose
+        # position falls in this cell is counted, not just the first match.
+        cell_beans, cell_foods, barrier_at = cell_contents(
+            getattr(session, "beans", None),
+            getattr(session, "foods", None),
+            world,
+            (col, row),
+        )
+        if cell_beans:
+            females = sum(1 for b in cell_beans if b.gender == "female")
+            males = len(cell_beans) - females
+            energy = sum(
+                b.phenotype.current_energy for b in cell_beans
+                if b.phenotype is not None
+            )
+            self._text.draw(
+                f"BEANS ×{len(cell_beans)} · {females}F {males}M · {energy:.0f} E",
+                left + 12, beans_y, _ACCENT, font_size=11,
+            )
+        else:
+            self._text.draw("no beans", left + 12, beans_y, _DIM, font_size=11)
+
+        if cell_foods:
+            self._text.draw(
+                f"FOOD ×{len(cell_foods)} · "
+                f"{sum(f.energy for f in cell_foods):.0f} E",
+                left + 12, food_y, _TEXT, font_size=11,
+            )
+        else:
+            self._text.draw("no food", left + 12, food_y, _DIM, font_size=11)
+
+        if barrier_at is not None:
+            self._text.draw(
+                f"BARRIER · {barrier_at.kind}", left + 12, ground_y,
+                _MUTED, font_size=11,
+            )
+        else:
+            self._text.draw(
+                "open ground", left + 12, ground_y, _DIM, font_size=11,
+            )
+
+        self._text.draw(
+            f"{env.temperature_at(wx, wy):.1f} °C", left + 12, temperature_y,
+            _TEXT, font_size=22, bold=True,
+        )
+        self._text.draw(
+            f"{env.humidity_at(wx, wy):.0%} RH   ·   "
+            f"{env.pressure_at(wx, wy):.0f} hPa   ·   "
+            f"{env.light_at(wx, wy):.0%} light",
+            left + 12, readings_y, _TEXT, font_size=11,
+        )
 
     def _draw_sun_track(self, session: GameSession, left: float, bottom: float,
                         width: float, height: float) -> None:
@@ -1729,6 +1838,19 @@ class ArcadeView(arcade.Window):
         if self.session.state not in (GameState.PLAYING, GameState.PAUSED):
             return
         sx, sy = self._mouse_to_screen(x, y)
+        # Floating inspector popup is topmost: X unpins the selection,
+        # other clicks inside it keep the popup open.
+        if self._inspector_close_rect is not None and _point_in_rect(
+            sx, sy, self._inspector_close_rect
+        ):
+            self._selected_cell = None
+            self._inspector_close_rect = None
+            self._inspector_panel_rect = None
+            return
+        if self._inspector_panel_rect is not None and _point_in_rect(
+            sx, sy, self._inspector_panel_rect
+        ):
+            return
         # Config button (in Controls box): opens the separate config window.
         if self._config_rect is not None and _point_in_rect(
             sx, sy, self._config_rect

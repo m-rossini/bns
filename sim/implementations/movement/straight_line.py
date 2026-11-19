@@ -11,6 +11,11 @@ Energy integration:
 - Beans consume energy: metabolic_rate + drag_coefficient * speed² per tick
 - Bouncing off edges costs extra energy (collision penalty)
 - Beans with energy <= 0 become dormant (brown, no movement)
+- Rest: each bean eases toward an environment-driven target speed — full
+  cruise by day and in comfort, down toward ``rest_speed_fraction × speed``
+  at night, in the cold, in the heat, and when hungry (at most
+  ``genotype.acceleration`` per second). Dawn resilience is genetic: deep
+  sleepers keep sleeping into brighter light; low energy deepens any rest
 """
 
 from __future__ import annotations
@@ -33,6 +38,25 @@ from sim.implementations.movement.numba_collisions import (
 from sim.random import random_direction, get_rng
 
 logger = get_logger("movement.straight_line")
+
+
+# Activity thresholds: below the night mark beans fully rest, above the day
+# mark they run at full activity, ramping linearly between. Dawn-resilient
+# genotypes shift the day mark later (they keep sleeping into brighter light).
+# Heat mirrors the cold ramp: above full comfort beans go sluggish again, so
+# hot bright middays also slow the herd. Time of day, season and weather flow
+# through automatically — light encodes the sun arc, weather and daylight
+# fraction; temperature encodes season, weather and the climate gradient.
+_NIGHT_LIGHT = 0.10      # light_at or below: full rest
+_DAY_LIGHT = 0.60        # light_at or above: full activity (before resilience)
+_RESILIENCE_DAY_SHIFT = 0.30  # how much later resilient beans wake up
+_COLD_TEMP_C = 2.0       # temperature at or below: fully sluggish
+_COMFORT_TEMP_C = 12.0   # temperature at or above: no cold slowdown
+_COMFORT_MAX_C = 28.0    # temperature at or below: no heat slowdown
+_HEAT_MAX_C = 38.0       # temperature at or above: fully sluggish from heat
+# Floor of the energy scaling: hunger dims vigor, but even an empty bean keeps
+# most of it, so the day/night rhythm stays visible instead of washing out.
+_ENERGY_VIGOR_FLOOR = 0.60
 
 
 # Energy cost for bouncing off world edges
@@ -72,11 +96,11 @@ class StraightLineMovementStrategy(IMovementStrategy):
     # ------------------------------------------------------------------
     # Update
     # ------------------------------------------------------------------
-    def update(self, beans: Sequence[Bean], world: IWorld, dt: float) -> None:
+    def update(self, beans: Sequence[Bean], world: IWorld, dt: float, environment=None) -> None:
         if not beans or dt <= 0.0:
             return
         self._seed_velocities(beans)
-        self._move(beans, world, dt)
+        self._move(beans, world, dt, environment)
         # Collision detection only feeds DEBUG logging for now (there is no
         # response), so skip the spatial work entirely unless DEBUG is on.
         if logger.isEnabledFor(logging.DEBUG):
@@ -100,7 +124,39 @@ class StraightLineMovementStrategy(IMovementStrategy):
                     bean.phenotype.velocity = (bean.vx, bean.vy)
                     bean.phenotype.current_speed = speed
 
-    def _move(self, beans: Sequence[Bean], world: IWorld, dt: float) -> None:
+    def _target_speed(self, bean: Bean, environment=None) -> float:
+        """Cruise speed scaled by light, temperature, genes and energy.
+
+        Vigor is the most limiting of the daylight ramp (shifted later by the
+        bean's own dawn resilience, so deep sleepers keep sleeping past dawn),
+        the cold ramp and the heat ramp. Low energy deepens sleep: vigor is
+        scaled by the bean's remaining energy share, so hungry beans conserve
+        instead of sprinting. Without an environment (unit tests) beans cruise.
+        """
+        cruise = self.config.speed
+        if environment is None:
+            return cruise
+        light = environment.light_at(bean.x, bean.y)
+        temp = environment.temperature_at(bean.x, bean.y)
+        genotype = bean.genotype if bean.phenotype is not None else None
+        resilience = 0.0
+        if genotype is not None:
+            resilience = max(0.0, min(1.0, genotype.dawn_resilience))
+        day_light = _DAY_LIGHT + resilience * _RESILIENCE_DAY_SHIFT
+        light_vigor = (light - _NIGHT_LIGHT) / (day_light - _NIGHT_LIGHT)
+        cold_vigor = (temp - _COLD_TEMP_C) / (_COMFORT_TEMP_C - _COLD_TEMP_C)
+        heat_vigor = (_HEAT_MAX_C - temp) / (_HEAT_MAX_C - _COMFORT_MAX_C)
+        vigor = max(0.0, min(1.0, light_vigor, cold_vigor, heat_vigor))
+        phenotype = bean.phenotype
+        if phenotype is not None and genotype is not None and genotype.energy_capacity > 0:
+            energy_share = max(
+                0.0, min(1.0, phenotype.current_energy / genotype.energy_capacity)
+            )
+            vigor *= _ENERGY_VIGOR_FLOOR + (1.0 - _ENERGY_VIGOR_FLOOR) * energy_share
+        floor = self.config.rest_speed_fraction
+        return cruise * (floor + (1.0 - floor) * vigor)
+
+    def _move(self, beans: Sequence[Bean], world: IWorld, dt: float, environment=None) -> None:
         radius = self.bean_radius
         min_x, max_x = radius, max(radius, world.width - radius)
         min_y, max_y = radius, max(radius, world.height - radius)
@@ -112,8 +168,32 @@ class StraightLineMovementStrategy(IMovementStrategy):
             if bean.phenotype is not None and bean.phenotype.is_dormant:
                 continue
 
-            # Current speed from velocity
+            # Current speed from velocity, eased toward the environmental
+            # target (cruise by day, rest fraction at night or in the cold)
+            # at most genotype.acceleration per second, so beans slow down
+            # into rest and wake up gradually.
             speed = math.hypot(bean.vx, bean.vy) if bean.vx is not None and bean.vy is not None else 0.0
+            target = self._target_speed(bean, environment)
+            if target != speed:
+                if bean.genotype is not None and dt > 0.0:
+                    max_delta = bean.genotype.acceleration * dt
+                else:
+                    max_delta = math.inf
+                if speed < target:
+                    speed = min(target, speed + max_delta)
+                else:
+                    speed = max(target, speed - max_delta)
+                magnitude = math.hypot(bean.vx or 0.0, bean.vy or 0.0)
+                if magnitude > 1e-9:
+                    scale = speed / magnitude
+                    bean.vx = (bean.vx or 0.0) * scale
+                    bean.vy = (bean.vy or 0.0) * scale
+                elif target > 0.0:
+                    bean.vx, bean.vy = (
+                        self.unit_direction[0] * target,
+                        self.unit_direction[1] * target,
+                    )
+                    speed = target
 
             x = bean.x + (bean.vx or 0.0) * dt
             y = bean.y + (bean.vy or 0.0) * dt

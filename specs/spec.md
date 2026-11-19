@@ -81,7 +81,7 @@ bns/
     │   ├── creation.py        # IBeanCreationStrategy
     │   ├── environment.py     # ICalendar, ISeasonStrategy, IDayNightStrategy,
     │   │                      # IWeatherStrategy, IEnvironment
-    │   ├── food.py            # IFoodSpawnStrategy
+    │   ├── food.py            # IFoodStrategy
     │   ├── gender.py          # IGenderController
     │   ├── movement.py        # IMovementStrategy
     │   ├── placement.py       # IPlacementStrategy, ISpawnController
@@ -440,15 +440,18 @@ container; they do not create them.
 ### 5.6 Movement strategy
 
 - `StraightLineMovementStrategy` — seeds every bean's velocity from the global
-  `MovementConfig.direction` and `MovementConfig.speed` (world units/s), then
-  moves it in a straight line. Each bean keeps its own velocity, so bounces are
-  independent.
+  `MovementConfig.direction` and cruise `MovementConfig.speed`, then moves it
+  in a straight line, easing toward an environment-driven target (full cruise
+  by day/in comfort, `rest_speed_fraction` floor at night/in the cold/in the
+  heat/when hungry, dawn resilience genetic) at most
+  `genotype.acceleration` per second. Each bean keeps its
+  own velocity, so bounces are independent.
 - On a world edge the bean reflects and clamps inside the world; `bean.bounced`
   is logged at DEBUG.
 - Collisions are detected after the move: `bean.collided_barrier` and
   `bean.collided_bean` are separate events, also at DEBUG. No collision
   response yet.
-- `main._step` calls `update(beans, world, fixed_step)` once per simulation
+- `main._step` calls `update(beans, world, fixed_step, environment=...)` once per simulation
   tick, and only while the session is `PLAYING`.
 
 ---
@@ -472,8 +475,9 @@ Screens:
 Layout:
 
 - A fixed left sidebar (`300..360` px, ~30 % of the viewport) with stacked
-  boxes: **Time, Day, Season, Environment, Inspector, Weather field,
-  Controls**.
+  boxes: **Time, Day, Season, Environment, Food, Population, Weather field,
+  Controls**. Clicking a world cell pins a small floating inspector popup
+  next to it (closed via its X button or by clicking outside the world).
 - The world uses the remaining area and the full height; it never sits under a
   box.
 - Day and season progress are separate boxes, not a joined bar.
@@ -538,7 +542,7 @@ correct screenshot.
 | PLAYING | `Q` / `Esc` | → END, reason `user quit` |
 | PAUSED | `P` | → PLAYING, unpause clock |
 | PAUSED | `Q` / `Esc` | → END, reason `user quit` |
-| END | `SPACE` | restart: fresh clock, environment reset |
+| END | `SPACE` | clean restart: fresh clock, environment reset, freshly spawned beans and reseeded food |
 | END | `Q` / `Esc` | set `exit_requested`; the loop closes the window |
 
 `KeyboardInput.set_time_scale(value)` clamps `GameClock.time_scale` to
@@ -601,7 +605,7 @@ Pure-Python dataclasses, no YAML/JSON. `DEFAULT_CONFIG` is a
 | `SeasonConfig` | name, colours, `ground_gradient`, climate baseline, `sun_intensity`, `daylight_fraction`, weather weights |
 | `DayNightConfig` | sun/moon, shading, thresholds, sky colours |
 | `WeatherConfig` | interval, seed, front count/radius/drift, coverage, condition offsets |
-| `FoodConfig` | `strategy_name`, `seed`, `initial/target_total_energy`, `top_up_interval_ticks`, morsel range/radius/colour/cap, `placement` |
+| `FoodConfig` | `strategy_name`, `seed`, `initial/target_total_energy`, `target_fraction`, `target_jitter`, `tick_candidates`, `spoilage_per_tick`, morsel range/radius/colour/cap, `placement` |
 | `EnvironmentConfig` | strategy names, four climate gradients, `microclimate` |
 | `LoggingConfig` | level, format, date format, business/readings switches |
 | `SimulationConfig` | all of the above + `tick_rate=30.0`, `debug=False` |
@@ -738,15 +742,22 @@ placement strategies to guarantee these invariants.
 ```python
 MovementConfig(
     strategy_name="straight_line",
-    speed=60.0,                 # world units per second
+    speed=45.0,                 # full cruise, world units per second
     direction=(1.0, 0.0),       # global direction vector
     bounce_on_edges=True,
+    rest_speed_fraction=0.5,     # activity floor at night / in the cold
 )
 ```
 
 `StraightLineMovementStrategy` seeds each bean's `vx`/`vy` from that global
-direction and speed on its first update, then mutates `Bean.x`/`Bean.y` in
-place every tick. Edges reflect the movement and log `bean.bounced` at DEBUG.
+direction and cruise speed on its first update, then mutates `Bean.x`/`Bean.y`
+in place every tick. Each tick the velocity eases toward an
+environment-driven target — full cruise by day and in comfort, down toward
+`rest_speed_fraction × cruise` at night, in the cold, in the heat, or when
+hungry (most limiting wins, at most `genotype.acceleration` per second) — so
+beans slow down into rest and wake up gradually. Dawn resilience is genetic:
+deep sleepers keep sleeping into brighter light. Edges reflect
+the movement and log `bean.bounced` at DEBUG.
 Barrier collisions reflect the bean and push it out of the obstacle; bean-bean
 collisions are detected and emit `bean.collided_bean` at DEBUG but have no
 physical response yet. Movement only runs while the session is `PLAYING`.
@@ -806,13 +817,19 @@ and no further decay or feeding occurs. It emits `session.extinct`.
 
 `FoodConfig` seeds `initial_total_energy` at tick 0 as morsels placed by a
 configurable `FoodPlacementConfig` (`RandomFoodSpawnStrategy`, `seed=None` =
-fresh energies every run); every `top_up_interval_ticks` the deficit to
-`target_total_energy × clamp(sun_intensity × (0.4 + daylight_fraction))` is
-spawned, so spring/summer grow more and winter less. The initial morsels use
+fresh energies every run); afterwards every tick regrows from the
+resource-gradient field toward
+`target_total_energy × clamp(sun_intensity × (0.4 + daylight_fraction)) ×
+population_scale × target_fraction`, wobbled per tick by
+`±target_jitter` (`alive / initial`, so per-capita food stays roughly flat;
+`target_fraction` defaults to 0.5 so the level breathes around half the
+configured target),
+so spring/summer grow more and winter less. The initial morsels use
 the selected placement strategy (the same strategies as beans, default
 `poisson_disc` at half bean spacing), so they never overlap a barrier, the
-world border, or another morsel; top-ups use uniform random collision-free
-positions. Morsel energies are drawn from
+world border, or another morsel; regrowth spawns where the gradient field
+is rich, validated collision-free. Each tick also spoils morsels by
+`spoilage_per_tick` (default `0.0` = off). Morsel energies are drawn from
 `[min_morsel_energy, max_morsel_energy]` (default `20..200`) at fixed
 `food_radius`, capped by `max_items`. Colour defaults to magenta-purple
 `(200, 80, 220)` with no palette conflicts, brightened by remaining energy.
@@ -822,8 +839,8 @@ On contact a bean takes
 absorbs `intake × phenotype.efficiency`, and banks `energy_eaten_total` /
 `energy_absorbed_total`. `digestion_capacity` is a ranged gene
 (`GenotypeConfig (40, 120)`); the remainder stays on the morsel and depleted
-morsels are removed. Snapshots store morsels; restart clears them like
-corpses.
+morsels are removed. Snapshots store morsels plus the strategy's rng/id
+state (deterministic replay); restart reseeds everything like corpses.
 
 ### 9.12 Lifespan, senescence and old age
 
@@ -928,7 +945,7 @@ Events: `app.start`, `app.window_created`, `app.window_closing`, `app.stop`,
 `environment.day_changed`, `environment.season_changed`,
 `environment.weather_changed`, `environment.reading` (DEBUG),
 `weather.field_rebuilt`, `weather.front` (DEBUG), `season.palette` (DEBUG),
-`food.seeded`, `food.topped_up`,
+`food.seeded`, `food.topped_up` (DEBUG),
 `ui.cell_inspected`, `bean.bounced` (DEBUG), `bean.collided_barrier` (DEBUG),
 `bean.collided_bean` (DEBUG), `spawn.positions_batch`, `spawn.shortfall`.
 
@@ -1051,10 +1068,11 @@ Environment variables:
   coverage (default 1% of cells), spans 3..8 cells per direction, fresh layout
   every run (`seed=None`), validated on `World.add_barrier`. A default run
   creates 3–4 large yellow barriers.
-- Food spawn strategy (`IFoodSpawnStrategy` + `RandomFoodSpawnStrategy`):
+- Food strategy (`IFoodStrategy` + `RandomFoodSpawnStrategy`):
   magenta morsels with ranged energies, strategy-placed initial morsels
-  (`FoodPlacementConfig`), seasonal top-up toward a target level, nibble
-  feeding capped by the appetite gene with eaten/absorbed counters.
+  (`FoodPlacementConfig`), per-tick gradient-gated regrowth toward a seasonal
+  target, per-tick spoilage, nibble feeding capped by the appetite gene with
+  eaten/absorbed counters.
 - Bean creation & gender: `IBeanCreationStrategy` with
   `DensityBasedCreationStrategy` (original area × density × variance) and
   `FixedAmountCreationStrategy` (exact configured total), plus
@@ -1074,8 +1092,9 @@ Environment variables:
 - Positional temperature, humidity, pressure and light with configurable
   gradients (N/S, W/E, centre-out, out-centre, diagonals).
 - Rendering: start/playing/paused/end screens, animated sky, seasons, per-cell
-  weather, HUD sidebar, cell-aligned grid honouring `cell_size`, pinned
-  inspector, barrier and food drawing, playback-speed slider.
+  weather, HUD sidebar, cell-aligned grid honouring `cell_size`, closable
+  floating inspector popup, always-visible Population box, barrier and food
+  drawing, playback-speed slider.
 - `WorldLayout`: single source of truth for draw + hit-test; pointer/click
   align exactly with the selected cell and orange marker.
 - Default 1:1 window sizing; integer-snapped cell rectangles.

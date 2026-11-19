@@ -75,10 +75,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending
 - Coverage push (pending PR): 177 tests pass, TOTAL 80%. Every module is >=75%
   except `rendering/arcade_view.py` (15%): it subclasses `arcade.Window`, so
   all draw paths need a display and cannot run headless (no xvfb locally).
-- Food system (pending PR): `IFoodSpawnStrategy` + `RandomFoodSpawnStrategy`,
-  `FoodConfig`, magenta morsels anywhere, seasonal top-up toward target,
+- Food system (pending PR): `IFoodStrategy` + `RandomFoodSpawnStrategy`,
+  `FoodConfig`, magenta morsels anywhere, gradient-gated per-tick regrowth
+  toward a seasonal target plus per-tick spoilage,
   nibble feeding capped by the new `digestion_capacity` gene with
-  eaten/absorbed phenotype counters; 11 new behavior tests, 188 pass total.
+  eaten/absorbed phenotype counters; behavior tests, 188 pass total.
 - Food visibility + counters (pending PR): morsels drawn in poor/mid/rich size
   tiers (3 draw calls) with a brightness floor; sidebar census and end screen
   show morsel count plus total food energy.

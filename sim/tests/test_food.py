@@ -11,8 +11,9 @@ import random
 
 import pytest
 
-from sim.components import GameState
+from sim.components import GameSession, GameState
 from sim.config import (
+    BarrierConfig,
     BeanPlacementConfig,
     EnergyConfig,
     EnvironmentConfig,
@@ -30,6 +31,7 @@ from sim.domain.beans import Bean
 from sim.domain.food import (
     Food,
     feed_beans_on_food,
+    population_scale,
     seasonal_abundance,
     total_energy,
 )
@@ -41,7 +43,7 @@ from sim.domain.genotype import (
 from sim.implementations.food import RandomFoodSpawnStrategy
 from sim.implementations.placement import build_placement_strategy
 from sim.implementations.placement.symmetrical import SymmetricalStrategy
-from sim.main import _step
+from sim.main import _advance_life, _step
 from sim.persistence import (
     load_snapshot,
     restore_snapshot,
@@ -69,6 +71,7 @@ def _season(**overrides):
 def _make_config(**overrides):
     cfg = SimulationConfig(
         world=WorldConfig(width=200.0, height=200.0, cell_size=10.0),
+        barriers=BarrierConfig(seed=4242),  # deterministic layout, no entropy flake
         seasons=[_season()],
         bean_placement=BeanPlacementConfig(
             strategy_name="poisson_disc",
@@ -132,17 +135,203 @@ def test_initial_seeding_sums_to_the_configured_amount():
         config.initial_total_energy + 200.0
 
 
-def test_container_seeds_food_and_disabled_strategy_seeds_none():
-    """The container owns the initial morsels; None disables the system."""
+def test_container_seeds_food_and_none_strategy_is_rejected():
+    """The container owns the initial morsels; None is not a valid strategy."""
     container = Container(_make_config())
 
     assert container.session.foods
     assert total_energy(container.session.foods) >= \
         container.config.food.initial_total_energy
 
-    off = Container(_make_config(food=FoodConfig(strategy_name=None)))
-    assert off.session.foods == []
-    assert off.food_strategy is None
+    with pytest.raises(ValueError):
+        FoodConfig(strategy_name=None)
+
+
+def test_population_scale_follows_living_share():
+    """Full population regrows to target; half population to half target."""
+    assert population_scale(10, 10) == pytest.approx(1.0)
+    assert population_scale(5, 10) == pytest.approx(0.5)
+    assert population_scale(0, 10) == pytest.approx(0.0)
+    assert population_scale(5, 0) == pytest.approx(1.0)  # unknown start
+    assert population_scale(0, 0) == pytest.approx(1.0)
+
+
+def test_regrowth_stops_at_scaled_target():
+    """population_scale shrinks the effective target for a smaller population."""
+    config = FoodConfig(
+        initial_total_energy=0.0,
+        target_total_energy=1000.0,
+        target_fraction=1.0,  # isolate the population scale
+        target_jitter=0.0,
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        max_items=1000,
+        tick_candidates=8,
+        seed=5,
+    )
+    world = Container(_make_config()).world
+    strategy = RandomFoodSpawnStrategy(config)
+
+    foods: list = []
+    for tick in range(1, 41):
+        foods = foods + strategy.top_up(
+            foods, world, tick=tick, abundance=1.0, population_scale=0.5
+        )
+        if total_energy(foods) >= 500.0:
+            break
+
+    assert total_energy(foods) == pytest.approx(500.0)
+    assert len({food.id for food in foods}) == len(foods)
+
+
+def test_lifecycle_scales_regrowth_with_living_population():
+    """_advance_life passes alive/initial as the population scale."""
+    from sim.main import _advance_life
+
+    seen = {}
+
+    class StubFood:
+        def top_up(self, foods, world, tick, abundance=1.0, population_scale=1.0):
+            seen["scale"] = population_scale
+            return []
+
+        def decay(self, foods):
+            return 0
+
+    container = Container(_make_config())
+    session = container.session
+    initial = len(session.beans)
+    assert initial > 1
+    for bean in session.beans[: initial // 2]:
+        bean.phenotype.current_energy = 0.0
+
+    _advance_life(session, container.config, StubFood())
+
+    alive = len(session.beans)
+    assert alive == initial - initial // 2
+    assert seen["scale"] == pytest.approx(alive / initial)
+
+
+def test_regrowth_steers_to_a_share_of_target():
+    """The default fraction keeps food trending to half the configured target."""
+    config = FoodConfig(
+        initial_total_energy=0.0,
+        target_total_energy=1000.0,
+        target_jitter=0.0,  # isolate the fraction from the wobble
+        min_morsel_energy=20.0,
+        max_morsel_energy=200.0,
+        max_items=1000,
+        tick_candidates=8,
+        seed=5,
+    )
+    assert config.target_fraction == 0.5
+    world = Container(_make_config()).world
+    strategy = RandomFoodSpawnStrategy(config)
+
+    foods: list = []
+    for tick in range(1, 61):
+        foods = foods + strategy.top_up(foods, world, tick=tick, abundance=1.0)
+        if total_energy(foods) >= 500.0:
+            break
+
+    assert total_energy(foods) == pytest.approx(500.0)
+
+
+def test_non_positive_target_fraction_is_rejected():
+    with pytest.raises(ValueError):
+        FoodConfig(target_fraction=0.0)
+    with pytest.raises(ValueError):
+        FoodConfig(target_fraction=-1.0)
+
+
+def test_target_jitter_moves_the_level():
+    """The same seed regrows to a different level with jitter on vs off."""
+    world = Container(_make_config()).world
+
+    def grown_total(jitter):
+        config = FoodConfig(
+            initial_total_energy=0.0,
+            target_total_energy=1000.0,
+            target_fraction=1.0,
+            min_morsel_energy=20.0,
+            max_morsel_energy=200.0,
+            max_items=1000,
+            tick_candidates=8,
+            seed=5,
+            target_jitter=jitter,
+        )
+        strategy = RandomFoodSpawnStrategy(config)
+        foods: list = []
+        for tick in range(1, 6):
+            foods = foods + strategy.top_up(foods, world, tick=tick)
+        return total_energy(foods)
+
+    pinned = grown_total(0.0)
+    wobbled = grown_total(0.3)
+    assert wobbled != pytest.approx(pinned)
+    assert 1000.0 * (1.0 - 0.3) - 200.0 <= wobbled <= 1000.0 * (1.0 + 0.3)
+
+
+def test_target_jitter_out_of_range_is_rejected():
+    with pytest.raises(ValueError):
+        FoodConfig(target_jitter=-0.1)
+    with pytest.raises(ValueError):
+        FoodConfig(target_jitter=1.0)
+
+
+def test_decay_spoils_morsels_and_counts_depleted():
+    """Spoilage shaves energy in place and reports fully-depleted morsels."""
+    strategy = RandomFoodSpawnStrategy(FoodConfig(spoilage_per_tick=5.0))
+    foods = [
+        Food(id=1, x=10.0, y=10.0, radius=4.0, energy=12.0, initial_energy=12.0),
+        Food(id=2, x=20.0, y=20.0, radius=4.0, energy=3.0, initial_energy=3.0),
+        Food(id=3, x=30.0, y=30.0, radius=4.0, energy=0.0, initial_energy=9.0),
+    ]
+
+    assert strategy.decay(foods) == 1
+    assert foods[0].energy == pytest.approx(7.0)
+    assert foods[1].energy == pytest.approx(0.0)
+    assert foods[2].energy == pytest.approx(0.0)
+    # The reference energy never moves, so the ratio still renders spoilage.
+    assert foods[0].initial_energy == pytest.approx(12.0)
+
+
+def test_zero_spoilage_leaves_food_untouched():
+    """The default rate disables spoilage without touching the list."""
+    strategy = RandomFoodSpawnStrategy(FoodConfig(spoilage_per_tick=0.0))
+    foods = [
+        Food(id=1, x=10.0, y=10.0, radius=4.0, energy=12.0, initial_energy=12.0),
+    ]
+
+    assert strategy.decay(foods) == 0
+    assert foods[0].energy == pytest.approx(12.0)
+
+
+def test_lifecycle_removes_fully_spoiled_morsels():
+    """Morsels spoiled to zero disappear the same way eaten ones do."""
+    from sim.main import _advance_life
+
+    config = _make_config(
+        food=FoodConfig(spoilage_per_tick=10000.0, max_items=1000, seed=5)
+    )
+    container = Container(config)
+    session = container.session
+    assert session.foods
+    initial_ids = {food.id for food in session.foods}
+
+    _advance_life(session, container.config, container.food_strategy)
+
+    remaining_ids = {food.id for food in session.foods}
+    assert remaining_ids.isdisjoint(initial_ids), (
+        "spoiled morsels must be gone (regrowth may add new ones)"
+    )
+
+
+def test_advance_life_crashes_on_missing_food_strategy():
+    """A None food strategy must fail fast, never silently skip the top-up."""
+    session = GameSession(state=GameState.PLAYING)
+    with pytest.raises(ValueError, match="food_strategy is required"):
+        _advance_life(session, SimulationConfig(), None)
 
 
 def test_unknown_food_strategy_is_rejected():
@@ -205,7 +394,8 @@ def test_top_up_never_overlaps_barriers_or_existing_morsels():
     config = FoodConfig(
         initial_total_energy=2000.0,
         target_total_energy=2000.0,
-        top_up_interval_ticks=10,
+        target_fraction=1.0,  # isolate placement: keep a real deficit
+        target_jitter=0.0,
         min_morsel_energy=20.0,
         max_morsel_energy=200.0,
         max_items=1000,
@@ -280,15 +470,17 @@ def test_container_uses_configured_food_placement():
 # ---------------------------------------------------------------------------
 
 
-def test_top_up_only_fires_on_interval_and_covers_the_deficit():
-    """Off-interval ticks add nothing; on-interval ticks refill to target."""
+def test_top_up_decides_every_tick_from_the_gradient_field():
+    """Every tick samples the field; rich ticks spawn, poor ticks stay quiet."""
     config = FoodConfig(
         initial_total_energy=1000.0,
         target_total_energy=1000.0,
-        top_up_interval_ticks=10,
+        target_fraction=1.0,  # isolate the per-tick gradient decision
+        target_jitter=0.0,  # isolate the gradient from the wobble
         min_morsel_energy=20.0,
         max_morsel_energy=200.0,
         max_items=1000,
+        tick_candidates=8,
         seed=5,
     )
     world = Container(_make_config()).world
@@ -296,21 +488,33 @@ def test_top_up_only_fires_on_interval_and_covers_the_deficit():
     foods = strategy.initial_food(world)
     del foods[: len(foods) // 2]  # simulate a hungry population
 
-    assert strategy.top_up(foods, world, tick=7) == []
-    before = total_energy(foods)
-    added = strategy.top_up(foods, world, tick=10, abundance=1.0)
-
-    assert added
-    assert total_energy(foods + added) >= 1000.0
-    assert total_energy(added) <= 1000.0 - before + 200.0
-    assert len({food.id for food in foods + added}) == len(foods) + len(added)
+    # No interval to wait for: consecutive ticks keep regrowing while below
+    # target, and every spawn lands on a rich, collision-free spot.
+    grown = []
+    foods_now = list(foods)
+    for tick in range(1, 6):
+        added = strategy.top_up(foods_now, world, tick=tick, abundance=1.0)
+        grown.extend(added)
+        foods_now = foods_now + added
+        if total_energy(foods_now) >= 1000.0:
+            break
+    assert grown, "no tick spawned food on a depleted world"
+    grad = config.placement.resource_gradient
+    for morsel in grown:
+        richness = strategy._richness(
+            morsel.x, morsel.y, grad.noise_frequency
+        )
+        assert richness >= grad.threshold - 1e-9, (
+            f"morsel spawned on a poor spot (richness={richness:.3f})"
+        )
+    assert total_energy(foods_now) >= 1000.0 or len(foods_now) >= config.max_items
+    assert len({food.id for food in foods_now}) == len(foods_now)  # ids unique
 
 
 def test_top_up_stays_quiet_above_target_and_respects_max_items():
     """No deficit means no morsels; the item cap is never exceeded."""
     config = FoodConfig(
         target_total_energy=100.0,
-        top_up_interval_ticks=10,
         max_items=3,
         seed=5,
     )
@@ -330,9 +534,8 @@ def test_full_lifecycle_restores_food_energy_at_top_up_boundary():
     """The tick loop tops food back up toward the seasonal target."""
     config = _make_config(
         food=FoodConfig(
-            initial_total_energy=1000.0,
+            initial_total_energy=400.0,
             target_total_energy=1000.0,
-            top_up_interval_ticks=10,
             min_morsel_energy=20.0,
             max_morsel_energy=200.0,
             max_items=1000,
@@ -360,7 +563,9 @@ def test_full_lifecycle_restores_food_energy_at_top_up_boundary():
     assert after > before, "the lifecycle did not top food up"
     solar = container.environment.solar
     abundance = seasonal_abundance(solar.sun_intensity, solar.daylight_fraction)
-    effective_target = config.food.target_total_energy * abundance
+    effective_target = (
+        config.food.target_total_energy * abundance * config.food.target_fraction
+    )
     assert after >= effective_target - config.food.max_morsel_energy
 
 
@@ -442,6 +647,21 @@ def test_appetite_is_drawn_per_bean_from_its_range():
     assert len(set(capacities)) > 1
     assert create_default_phenotype(DEFAULT_GENOTYPE).digestion_capacity == \
         DEFAULT_GENOTYPE.digestion_capacity
+
+
+def test_dawn_resilience_is_drawn_per_bean_from_its_range():
+    """dawn_resilience is a ranged gene: 0 wakes at first light, 1 sleeps in."""
+    ranges = GenotypeConfig()
+    rng = random.Random(3)
+
+    values = [
+        draw_genotype(rng, ranges, (0, 0, 255)).dawn_resilience
+        for _ in range(50)
+    ]
+
+    assert all(0.0 <= value <= 1.0 for value in values)
+    assert len(set(values)) > 1
+    assert DEFAULT_GENOTYPE.dawn_resilience == 0.0
 
 
 def test_snapshots_keep_food_and_feeding_counters(tmp_path):

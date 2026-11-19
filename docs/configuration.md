@@ -397,11 +397,12 @@ Each bean then receives a genotype drawn from `GenotypeConfig`:
 |---|---|---|
 | `energy_capacity` | `(800, 1200)` | Maximum stored energy. |
 | `metabolic_rate` | `(0.5, 2.0)` | Passive energy cost per second. |
-| `drag_coefficient` | `(0.005, 0.02)` | Quadratic movement cost. |
+| `drag_coefficient` | `(0.004, 0.014)` | Quadratic movement cost. |
 | `max_speed` | `(40, 80)` | Speed ceiling (world units/s). |
 | `acceleration` | `(15, 45)` | Speed-change capability. |
 | `digestion_efficiency` | `(0.35, 0.75)` | Fraction of corpse energy converted. |
 | `digestion_capacity` | `(40.0, 120.0)` | Max food energy taken per contact (appetite). |
+| `dawn_resilience` | `(0.0, 1.0)` | 0 wakes at first light, 1 sleeps through dawn. |
 | `max_age_ticks` | species cap `3120` | Hard species ceiling. |
 | `lifespan_fraction_floor` | `0.50` | Lower clamp for the inherited fraction. |
 | `lifespan_tiers` | `0.70..1.00` by `0.05` | Discrete lifespan cohorts. |
@@ -456,13 +457,23 @@ stops the rest of the frame. Corpses are left untouched.
 | Field | Default | Meaning |
 |---|---|---|
 | `strategy_name` | `"straight_line"` | Current movement implementation. |
-| `speed` | `60.0` | Initial speed in world units/s. |
+| `speed` | `45.0` | Cruise speed in world units/s. |
 | `random_initial_direction` | `True` | Random direction per bean. |
 | `direction` | `(1,0)` | Global direction when random is off. |
 | `bounce_on_edges` | `True` | Reflect at world edges. |
+| `rest_speed_fraction` | `0.5` | Cruise-speed fraction at full rest. |
 
 `StraightLineMovementStrategy` seeds `vx/vy` from the global RNG on first move,
-then applies constant velocity with edge/barrier reflection. Each bounce costs
+then steers the velocity magnitude toward an environment-driven target at most
+`genotype.acceleration` per second. Vigor is the most limiting of three ramps:
+daylight (full rest at light ≤ 0.10, full activity at light ≥ 0.60, shifted
+later by the bean's own `dawn_resilience` gene so deep sleepers keep sleeping
+past dawn), cold (fully sluggish at ≤ 2 °C, unhindered at ≥ 12 °C) and heat
+(fully sluggish at ≥ 38 °C, unhindered at ≤ 28 °C, so hot middays also slow
+the herd). Low energy deepens any rest (vigor scaled by remaining energy
+share), so hungry beans conserve instead of sprinting. Beans slow down into
+rest and wake up gradually instead of changing speed instantly; season and
+time of day flow through the readings automatically. Each bounce costs
 `10` energy. Per-tick cost:
 
 ```
@@ -523,11 +534,14 @@ corpse removed
 
 | Field | Default | Meaning |
 |---|---|---|
-| `strategy_name` | `"random"` | `None` disables food; `"random"` = `RandomFoodSpawnStrategy`. |
+| `strategy_name` | `"random"` | Required (food has no off mode); `"random"` = `RandomFoodSpawnStrategy`. |
 | `seed` | `None` | `None` = fresh morsels every run; int = reproducible. |
 | `initial_total_energy` | `20000.0` | Food energy seeded at tick 0. |
-| `target_total_energy` | `20000.0` | Level the top-up steers towards. |
-| `top_up_interval_ticks` | `300` | Ticks between top-ups (10 s at 30 Hz). |
+| `target_total_energy` | `20000.0` | Pool size regrowth steers toward (before shares). |
+| `target_fraction` | `0.5` | Share of the target the level breathes around. |
+| `target_jitter` | `0.05` | Per-tick relative wobble on the target (±5%). |
+| `tick_candidates` | `8` | Spots sampled per tick for regrowth. |
+| `spoilage_per_tick` | `0.0` | Energy each morsel loses per tick (`0` = no spoilage). |
 | `min_morsel_energy`, `max_morsel_energy` | `20.0`, `200.0` | Per-morsel energy draw range. |
 | `food_radius` | `4.0` | Morsel radius (energy density varies, size does not). |
 | `color` | `(200,80,220)` | Magenta-purple base; view brightens with remaining energy. |
@@ -544,28 +558,42 @@ each strategy has its own config object (`poisson_disc`, `symmetrical`,
 uniform-random layout while guaranteeing they never overlap a barrier, the
 world border, or another morsel.
 
-Seeding sums to `initial_total_energy`; every `top_up_interval_ticks` the
-strategy spawns the deficit to `target_total_energy × abundance`:
+Seeding sums to `initial_total_energy`; afterwards every tick samples up to
+`tick_candidates` spots on the resource-gradient field and spawns a morsel
+wherever the field is rich (noise >= threshold) while the world sits below
+`target_total_energy × abundance × population_scale × target_fraction`:
 
 ```
 abundance = clamp(sun_intensity * (0.4 + daylight_fraction), 0.15, 1.6)
-effective_target = target_total_energy * abundance
+population_scale = alive / initial  (1.0 when the starting headcount is unknown)
+effective_target = target_total_energy * abundance * population_scale * target_fraction
 deficit = max(0, effective_target - current_total_energy)
 ```
+
+Each tick the target itself wobbles by `±target_jitter` (uniform draw from the
+strategy's own rng, so snapshots replay it exactly), which keeps the level
+breathing instead of parked on a flat line.
+
+Regrowth follows the living share of the starting population, so per-capita
+food stays roughly flat instead of overfeeding a dying world.
 
 `abundance` comes from the already-varied seasonal sun profile, so spring
 grows ~0.85×, summer ~1.15×, autumn ~0.7× and winter ~0.4× — the level breathes
 around the target instead of drifting, and future food systems can reuse the
 same seasonal hook. The initial seeding asks the configured placement strategy
 for the whole morsel set, so the starting distribution follows that strategy
-and is collision-free. Later top-ups use uniform random positions validated
-against the same constraints (a one-shot blue-noise layout cannot be extended
-incrementally without over-spacing the new morsels). Snapshots store the
-morsels, so a resumed run keeps its exact morsels. The view draws them in
+and is collision-free. Later regrowth tests candidate spots against the
+resource-gradient field (stable per placement seed, so rich patches persist)
+and spawns where the field is rich; spawned positions are validated against
+the same collision constraints. Each tick also spoils every morsel by
+`spoilage_per_tick` (default `0.0` = off); spoiled-out morsels are removed
+like eaten ones. Snapshots store the morsels plus the strategy's rng/id
+state, so a resumed run keeps its exact morsels and replays
+deterministically. The view draws them in
 poor/mid/rich size tiers (three batched draw calls) with brightness floored
 so they read against any ground; the sidebar Food box shows morsel count,
 average energy, total energy vs the seasonal target (`target × abundance`)
-and the top-up interval.
+and the per-tick regrowth note.
 
 Eating (`feed_beans_on_food`, runs in the lifecycle next to corpse feeding):
 
@@ -698,15 +726,16 @@ Selected by `CreationConfig.strategy_name`.
 
 Selected by `EnergyConfig.strategy_name`.
 
-### `IFoodSpawnStrategy` (`sim/interfaces/food.py`)
+### `IFoodStrategy` (`sim/interfaces/food.py`)
 
 - `implementations/food/random_food.py:RandomFoodSpawnStrategy` — single
   implementation: strategy-placed initial morsels, ranged morsel energies,
   interval top-up toward `target × abundance` (top-ups use uniform random
   collision-free positions).
 
-Selected by `FoodConfig.strategy_name` (`None` disables food). Positions come
-from `FoodConfig.placement`.
+Selected by `FoodConfig.strategy_name` (required; `None` raises). Positions come
+from `FoodConfig.placement`. A `None` strategy anywhere in the loop raises
+`ValueError` instead of silently skipping the top-up.
 
 ### `ISeasonStrategy` (`sim/interfaces/environment.py`)
 

@@ -20,7 +20,11 @@ from sim.config import DEFAULT_CONFIG, SimulationConfig
 from sim.container import Container
 from sim.domain.corpse import corpse_from_bean, decay_corpses, feed_beans
 from sim.domain.environment import Environment
-from sim.domain.food import feed_beans_on_food, seasonal_abundance
+from sim.domain.food import (
+    feed_beans_on_food,
+    population_scale,
+    seasonal_abundance,
+)
 from sim.domain.genotype import apply_senescence
 from sim.input.keyboard import KeyboardInput
 from sim.observability import (
@@ -46,7 +50,7 @@ logger = get_logger("main")
 def _advance_life(
     session: GameSession,
     config: SimulationConfig,
-    food_strategy=None,
+    food_strategy,
 ) -> bool:
     """Age beans, turn the dead into corpses, then decay and feed.
 
@@ -55,10 +59,17 @@ def _advance_life(
     reaches its inherited ``genotype.max_age_ticks``; both paths produce a
     corpse. Survivors have their senescence ``condition`` refreshed.
 
+    ``food_strategy`` is required: a missing strategy would silently skip the
+    top-up and starve the world, so ``None`` raises instead of degrading.
+
     Returns ``True`` when the last living bean died. In that case corpse decay
     and feeding are skipped: extinction stops *everything* immediately, even
     though corpses may still remain.
     """
+    if food_strategy is None:
+        raise ValueError(
+            "food_strategy is required: food top-up must never be silently skipped"
+        )
     corpse_cfg = config.corpse
 
     for bean in session.beans:
@@ -121,6 +132,7 @@ def _advance_life(
         session.corpses = [c for c in session.corpses if c.energy > 0.0]
 
     if session.beans and session.foods:
+        food_strategy.decay(session.foods)
         feed_beans_on_food(
             session.beans,
             session.foods,
@@ -128,7 +140,7 @@ def _advance_life(
         )
         session.foods = [f for f in session.foods if f.energy > 0.0]
 
-    if food_strategy is not None and session.beans and session.world is not None:
+    if session.beans and session.world is not None:
         abundance = 1.0
         environment = session.environment
         if environment is not None:
@@ -136,9 +148,20 @@ def _advance_life(
             abundance = seasonal_abundance(
                 solar.sun_intensity, solar.daylight_fraction
             )
+        # Regrowth follows the living share of the starting population, so
+        # per-capita food stays roughly flat instead of overfeeding a dying
+        # world (or starving a booming one, once reproduction exists).
+        initial = getattr(session, "initial_female", 0) + getattr(
+            session, "initial_male", 0
+        )
+        pop_scale = population_scale(len(session.beans), initial)
         session.foods.extend(
             food_strategy.top_up(
-                session.foods, session.world, session.clock.tick, abundance
+                session.foods,
+                session.world,
+                session.clock.tick,
+                abundance,
+                population_scale=pop_scale,
             )
         )
     return False
@@ -153,7 +176,8 @@ def _step(
     fixed_step: float,
     config: SimulationConfig = DEFAULT_CONFIG,
     max_ticks: int = 5,
-    food_strategy=None,
+    *,
+    food_strategy,
 ) -> int:
     """Advance the pause-aware clock and every system that depends on it."""
     # Once the session has ended, nothing may move: not the clock, not the
@@ -161,6 +185,11 @@ def _step(
     # check the state.
     if session.state == GameState.END:
         return 0
+
+    if food_strategy is None:
+        raise ValueError(
+            "food_strategy is required: food top-up must never be silently skipped"
+        )
 
     ticks_executed = advance_clock(
         session.clock, real_dt, fixed_step, max_ticks=max_ticks
@@ -194,7 +223,8 @@ def _step(
             and session.state == GameState.PLAYING
             and session.world is not None
         ):
-            movement_strategy.update(session.beans, session.world, fixed_step)
+            movement_strategy.update(session.beans, session.world, fixed_step,
+                                       environment=environment)
 
         # Lifecycle: deaths -> corpses, decay, feeding.
         if session.state == GameState.PLAYING:
@@ -225,7 +255,8 @@ def run_headless(
     fixed_step: float,
     config: SimulationConfig,
     max_ticks: int = 5,
-    food_strategy=None,
+    *,
+    food_strategy,
 ) -> None:
     """Run a bounded number of deterministic frames without a window."""
     frames = int(os.environ.get("BEAN_HEADLESS_FRAMES", "600"))
@@ -389,7 +420,7 @@ def main() -> None:
         logging.shutdown()
         return
 
-    view.set_input_handler(KeyboardInput(session))
+    view.set_input_handler(KeyboardInput(session, on_restart=container.restart))
 
     last_time = time.perf_counter()
 
@@ -402,6 +433,7 @@ def main() -> None:
             _step(
                 session, environment, movement_strategy, energy_strategy, real_dt, fixed_step,
                 config, max_ticks=max_ticks,
+                food_strategy=container.food_strategy,
             )
 
         if session.exit_requested:

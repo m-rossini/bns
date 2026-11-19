@@ -40,6 +40,10 @@ class FixedEnergyStrategy(IEnergyStrategy):
             gains[bean.id] = self.config.energy_per_tick * dt
         return gains
 
+    def reset(self) -> None:
+        """Stateless strategy: nothing to reset for a clean restart."""
+        return None
+
 
 class PerDayEnergyStrategy(IEnergyStrategy):
     """Lump sum energy gain at day boundaries."""
@@ -73,3 +77,7 @@ class PerDayEnergyStrategy(IEnergyStrategy):
                 continue
             gains[bean.id] = self.config.energy_per_day
         return gains
+
+    def reset(self) -> None:
+        """Reset day tracking so a clean restart gains energy on its first day."""
+        self._last_day_tick = -1

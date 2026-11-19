@@ -37,6 +37,18 @@ def total_energy(foods: Sequence[Food]) -> float:
     return sum(food.energy for food in foods)
 
 
+def population_scale(alive: int, initial: int) -> float:
+    """Share of the starting population still alive, as a food-scale factor.
+
+    Regrowth targets shrink with the population so per-capita food stays
+    roughly constant instead of overfeeding a dying world. ``1.0`` when the
+    starting population is unknown (never divide by zero, never boost).
+    """
+    if initial <= 0:
+        return 1.0
+    return max(0.0, min(1.0, alive / initial))
+
+
 def seasonal_abundance(sun_intensity: float, daylight_fraction: float) -> float:
     """Seasonal food-abundance multiplier from the season's sun profile.
 

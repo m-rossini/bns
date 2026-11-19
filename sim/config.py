@@ -648,7 +648,7 @@ class GenotypeConfig:
 
     energy_capacity: Tuple[float, float] = (800.0, 1200.0)
     metabolic_rate: Tuple[float, float] = (0.5, 2.0)
-    drag_coefficient: Tuple[float, float] = (0.005, 0.02)
+    drag_coefficient: Tuple[float, float] = (0.004, 0.014)
     max_speed: Tuple[float, float] = (40.0, 80.0)
     acceleration: Tuple[float, float] = (15.0, 45.0)
     #: Fraction of a corpse's food energy the bean can convert to its own
@@ -658,6 +658,8 @@ class GenotypeConfig:
     #: phenotype carries the effective value; absorbed energy is further
     #: scaled by digestion efficiency.
     digestion_capacity: Tuple[float, float] = (40.0, 120.0)
+    #: Dawn resilience range: 0 wakes at first light, 1 sleeps through dawn.
+    dawn_resilience: Tuple[float, float] = (0.0, 1.0)
 
     # Lifespan: a hard species ceiling plus a per-bean inherited fraction of
     # it. Every bean draws one tier and then a small jitter, so lifespans form
@@ -735,19 +737,29 @@ class CreationConfig:
 class MovementConfig:
     """Bean movement rules.
 
-    ``speed`` is in world units per second. Each bean gets its own initial
-    velocity (random direction by default) so they bounce around independently.
-    Collisions are detected and logged but do not change the motion yet.
+    ``speed`` is the full-cruise speed in world units per second. Each bean gets
+    its own initial velocity (random direction by default) so they bounce
+    around independently. Collisions are detected and logged but do not change
+    the motion yet.
+
+    Activity: the movement target eases between full cruise and
+    ``rest_speed_fraction × speed`` following local light (day/night) and
+    temperature (warmth/cold) at the bean's position, at most
+    ``genotype.acceleration`` per second, so beans slow down into rest and wake
+    up gradually. Season and time of day flow through the environment readings
+    automatically. ``rest_speed_fraction`` is the activity floor, never zero.
     """
 
     strategy_name: str = "straight_line"
-    speed: float = 60.0
+    speed: float = 45.0
     #: If True (default), each bean gets a random initial direction.
     #: If False, all beans start with the global ``direction`` vector.
     random_initial_direction: bool = True
     #: Global direction vector used when ``random_initial_direction=False``.
     direction: Tuple[float, float] = (1.0, 0.0)
     bounce_on_edges: bool = True
+    #: Cruise-speed fraction at full rest (0 < fraction <= 1).
+    rest_speed_fraction: float = 0.5
 
     def __post_init__(self) -> None:
         if self.strategy_name not in MOVEMENT_STRATEGY_NAMES:
@@ -760,6 +772,10 @@ class MovementConfig:
         dx, dy = self.direction
         if dx == 0.0 and dy == 0.0:
             raise ValueError("MovementConfig.direction cannot be the zero vector")
+        if not 0.0 < self.rest_speed_fraction <= 1.0:
+            raise ValueError(
+                "MovementConfig.rest_speed_fraction must be in (0, 1]"
+            )
 
 
 @dataclass
@@ -820,11 +836,12 @@ class CorpseConfig:
 class FoodConfig:
     """Renewable food morsels: spawn amounts, energy values and looks.
 
-    ``initial_total_energy`` seeds the world at tick 0; every
-    ``top_up_interval_ticks`` the strategy spawns the deficit to
-    ``target_total_energy × abundance`` (abundance is the seasonal multiplier,
-    ``1.0`` = neutral), so the level breathes around the target instead of
-    drifting. Each morsel's energy is drawn uniformly from
+    ``initial_total_energy`` seeds the world at tick 0; afterwards every tick
+    samples up to ``tick_candidates`` spots on the resource-gradient field and
+    spawns a morsel wherever the field is rich (noise >= threshold) while the
+    world is below ``target_total_energy × abundance`` (abundance is the
+    seasonal multiplier, ``1.0`` = neutral), so the level breathes around the
+    target instead of drifting. Each morsel's energy is drawn uniformly from
     ``[min_morsel_energy, max_morsel_energy]``, so rich and poor morsels
     coexist. Morsel positions come from ``placement`` (a
     :class:`FoodPlacementConfig`), so they are collision-free against the
@@ -833,13 +850,30 @@ class FoodConfig:
     the morsel's remaining energy.
     """
 
-    strategy_name: Optional[str] = "random"
+    strategy_name: str = "random"      # required: food has no "off" mode
     seed: Optional[int] = None       # None = fresh morsels every run
     initial_total_energy: float = 20000.0
     target_total_energy: float = 20000.0
-    top_up_interval_ticks: int = 300
+    #: Share of the target the level breathes around (0 < fraction). The
+    #: regrowth target is ``target_total_energy × abundance ×
+    #: population_scale × target_fraction``, so the default 0.5 keeps food
+    #: trending to half the configured target.
+    target_fraction: float = 0.5
+    #: Per-tick relative wobble on the regrowth target, drawn uniformly from
+    #: ``[-target_jitter, +target_jitter]`` (0 = pinned target). Keeps the
+    #: level breathing instead of parked on a flat line.
+    target_jitter: float = 0.05
+    #: Candidate spots sampled per tick. Each tick the strategy tests up to
+    #: this many positions on the resource-gradient field and spawns a morsel
+    #: wherever the field is rich (noise >= threshold) while the world is
+    #: below ``target_total_energy × abundance``.
+    tick_candidates: int = 8
     min_morsel_energy: float = 20.0
     max_morsel_energy: float = 200.0
+    #: Energy each morsel loses per tick to spoilage (floored at zero).
+    #: ``0.0`` disables spoilage; the lifecycle removes fully-spoiled morsels
+    #: the same way it removes fully-eaten ones.
+    spoilage_per_tick: float = 0.0
     food_radius: float = 4.0
     color: Color = (200, 80, 220)     # magenta-purple
     margin_cells: int = 1
@@ -848,23 +882,31 @@ class FoodConfig:
     placement: FoodPlacementConfig = field(default_factory=FoodPlacementConfig)
 
     def __post_init__(self) -> None:
-        if self.strategy_name not in FOOD_STRATEGY_NAMES and self.strategy_name is not None:
+        if self.strategy_name not in FOOD_STRATEGY_NAMES:
             raise ValueError(
                 f"Unknown food strategy {self.strategy_name!r}. "
-                "Use None or one of: " + ", ".join(sorted(FOOD_STRATEGY_NAMES))
+                "Food is required; use one of: " + ", ".join(sorted(FOOD_STRATEGY_NAMES))
             )
         if self.initial_total_energy < 0.0:
             raise ValueError("FoodConfig.initial_total_energy cannot be negative")
         if self.target_total_energy < 0.0:
             raise ValueError("FoodConfig.target_total_energy cannot be negative")
-        if self.top_up_interval_ticks < 1:
-            raise ValueError("FoodConfig.top_up_interval_ticks must be >= 1")
+        if self.target_fraction <= 0.0:
+            raise ValueError("FoodConfig.target_fraction must be positive")
+        if not 0.0 <= self.target_jitter < 1.0:
+            raise ValueError(
+                "FoodConfig.target_jitter must be in [0, 1)"
+            )
+        if self.tick_candidates < 1:
+            raise ValueError("FoodConfig.tick_candidates must be >= 1")
         if self.min_morsel_energy < 0.0:
             raise ValueError("FoodConfig.min_morsel_energy cannot be negative")
         if self.min_morsel_energy > self.max_morsel_energy:
             raise ValueError(
                 "FoodConfig.min_morsel_energy cannot exceed max_morsel_energy"
             )
+        if self.spoilage_per_tick < 0.0:
+            raise ValueError("FoodConfig.spoilage_per_tick cannot be negative")
         if self.food_radius <= 0.0:
             raise ValueError("FoodConfig.food_radius must be positive")
         if self.max_items < 0:
@@ -1136,9 +1178,10 @@ DEFAULT_CONFIG = SimulationConfig(
     ),
     movement=MovementConfig(
         strategy_name="straight_line",
-        speed=60.0,
+        speed=45.0,
         direction=(1.0, 0.0),
         bounce_on_edges=True,
+        rest_speed_fraction=0.5,
     ),
     corpse=CorpseConfig(
         basal_energy=200.0,
@@ -1153,7 +1196,9 @@ DEFAULT_CONFIG = SimulationConfig(
         seed=None,                  # fresh morsels every run
         initial_total_energy=20000.0,
         target_total_energy=20000.0,
-        top_up_interval_ticks=300,  # 10 s at 30 ticks/s
+        target_fraction=0.5,        # breathe around half the configured target
+        target_jitter=0.05,         # ±5% per-tick wobble on the target
+        tick_candidates=8,          # spots sampled per tick for regrowth
         min_morsel_energy=20.0,
         max_morsel_energy=200.0,
         food_radius=4.0,

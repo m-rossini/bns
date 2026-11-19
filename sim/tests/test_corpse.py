@@ -3,7 +3,7 @@
 import pytest
 
 from sim.components import GameClock, GameSession, GameState
-from sim.config import CorpseConfig, SimulationConfig
+from sim.config import CorpseConfig, FoodConfig, SimulationConfig
 from sim.domain.beans import Bean
 from sim.domain.corpse import (
     Corpse,
@@ -16,6 +16,13 @@ from sim.domain.genotype import (
     create_default_phenotype,
 )
 from sim.main import _advance_life, _step
+
+
+def _food_strategy():
+    """A real food strategy for lifecycle tests (food itself is not under test)."""
+    from sim.implementations.food import RandomFoodSpawnStrategy
+
+    return RandomFoodSpawnStrategy(FoodConfig())
 
 
 def _bean(bean_id=1, x=10.0, y=10.0, energy=100.0, efficiency=0.5, gender="female"):
@@ -112,7 +119,7 @@ def test_dead_bean_becomes_corpse():
     session = GameSession()
     session.beans = [bean]
 
-    _advance_life(session, cfg)
+    _advance_life(session, cfg, _food_strategy())
 
     assert session.beans == []
     assert len(session.corpses) == 1
@@ -129,7 +136,7 @@ def test_advance_life_decays_and_removes_corpses():
         Corpse(id=1, x=0.0, y=0.0, initial_energy=1.0, energy=1.0, source_bean_id=1)
     ]
 
-    _advance_life(session, cfg)
+    _advance_life(session, cfg, _food_strategy())
 
     assert session.corpses == []
 
@@ -147,6 +154,7 @@ def test_extinction_freezes_everything_even_with_corpses():
     ticks = _step(
         session, None, None, None,
         real_dt=1.0, fixed_step=1.0, config=cfg,
+        food_strategy=_food_strategy(),
     )
 
     assert ticks == 1
@@ -160,6 +168,7 @@ def test_extinction_freezes_everything_even_with_corpses():
     assert _step(
         session, None, None, None,
         real_dt=1.0, fixed_step=1.0, config=cfg,
+        food_strategy=_food_strategy(),
     ) == 0
     assert session.clock.tick == frozen_tick
     assert corpse.energy == 200.0

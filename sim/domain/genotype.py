@@ -33,6 +33,10 @@ class Genotype:
     #: Appetite: energy units the bean can take from one food contact.
     digestion_capacity: float = 80.0
 
+    # Sleep: how stubbornly this bean sleeps through dawn. 0 wakes at first
+    # light; 1 needs nearly full daylight to stir.
+    dawn_resilience: float = 0.0
+
     # Lifespan: an absolute tick cap inherited from the species ceiling.
     # ``senescence_start_fraction`` is the share of that cap after which
     # condition starts declining.
@@ -109,6 +113,7 @@ DEFAULT_GENOTYPE = Genotype(
     acceleration=30.0,            # Max speed change per second
     base_color=(0, 0, 255),       # Blue default
     dormant_color=(139, 69, 19),  # Brown
+    dawn_resilience=0.0,          # Wakes at first light
     max_age_ticks=3120,
     senescence_start_fraction=0.70,
 )
@@ -163,6 +168,7 @@ def draw_genotype(
         dormant_color=dormant_color,
         digestion_efficiency=rng.uniform(*ranges.digestion_efficiency),
         digestion_capacity=rng.uniform(*ranges.digestion_capacity),
+        dawn_resilience=rng.uniform(*ranges.dawn_resilience),
         max_age_ticks=max(1, round(ranges.max_age_ticks * lifespan_fraction)),
         senescence_start_fraction=ranges.senescence_start_fraction,
     )

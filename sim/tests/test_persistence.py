@@ -57,6 +57,7 @@ def _advance(container, config: SimulationConfig, ticks: int) -> None:
             fixed_step=step,
             config=config,
             max_ticks=1,
+            food_strategy=container.food_strategy,
         )
         if session.state == GameState.END:
             break

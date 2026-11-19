@@ -40,8 +40,11 @@ def _emit(session: GameSession, event: str, level: int = logging.INFO, **fields)
 
 
 class KeyboardInput:
-    def __init__(self, session: GameSession):
+    def __init__(self, session: GameSession, on_restart=None):
         self.session = session
+        # Clean-restart hook (e.g. Container.restart): respawns a brand-new
+        # run instead of reusing any previous state.
+        self.on_restart = on_restart
 
     def handle_keypress(self, key: int) -> None:
         """Handle a key press and mutate session state accordingly."""
@@ -128,8 +131,16 @@ class KeyboardInput:
 
     def _restart(self, session: GameSession) -> None:
         _emit(session, "session.restart", previous_reason=session.end_reason)
+        if self.on_restart is not None:
+            # Clean start: the container respawns everything from scratch
+            # (new clock, reset environment, freshly spawned beans and food).
+            self.on_restart()
+            return
+        # Fallback when no restart hook is wired (e.g. unit tests): reset
+        # the clock and environment so the session can start over.
         session.state = GameState.START
         session.clock = session.clock.__class__()  # fresh clock
+        session.clock.paused = True
         session.end_reason = None
         session.exit_requested = False
         session.start_time = 0.0

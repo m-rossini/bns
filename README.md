@@ -126,19 +126,26 @@ without touching `tick_rate` or sim-time progression (`clock.tick`).
   `spawn.finished`.
 
 - **Bean movement** — `StraightLineMovementStrategy` gives every bean the
-  configured global direction and speed (world units/s), updates `Bean.x/y` in
-  place and reflects on the world edges. Each bean keeps its own velocity after
-  the first update, so bounces are independent. Collisions with barriers and
+  configured global direction and cruise speed (world units/s), updates
+  `Bean.x/y` in place and reflects on the world edges. Each bean keeps its
+  own velocity after the first update, so bounces are independent. Beans
+  ease toward an environment-driven pace — full cruise by day and in comfort,
+slower at night, in the cold, in the heat, or when hungry (appetite for rest
+is partly genetic: `dawn_resilience`).
+  down to a configurable fraction at night or in the cold — instead of
+  changing speed instantly. Collisions with barriers and
   with other beans are detected and logged as separate events but do not
   change the motion yet. Movement runs only while the session is `PLAYING`.
-- **Food** — renewable magenta morsels (`IFoodSpawnStrategy` +
-  `RandomFoodSpawnStrategy`): tick-0 seeding plus interval top-ups toward a
-  seasonal target, so total food energy breathes around the configured level.
-  The initial morsels are placed by a configurable `FoodPlacementConfig`
+- **Food** — renewable magenta morsels (`IFoodStrategy` +
+  `RandomFoodSpawnStrategy`): tick-0 seeding plus per-tick gradient-gated
+  regrowth toward a seasonal target, so total food energy breathes around the
+  configured level. The initial morsels are placed by a configurable
+  `FoodPlacementConfig`
   (the same placement strategies as beans), so they never overlap a barrier,
-  the world border, or another morsel; top-ups use uniform random
-  collision-free positions. Beans nibble on contact up to their appetite gene
-  and bank eaten/absorbed lifetime counters.
+  the world border, or another morsel; regrowth spawns where the
+  resource-gradient field is rich, validated collision-free, and every tick
+  spoils morsels by `spoilage_per_tick`. Beans nibble on contact up to their
+  appetite gene and bank eaten/absorbed lifetime counters.
 
 
 ---
@@ -485,14 +492,17 @@ the corpse disappears. Corpses that decay to zero are removed without feeding.
 ### Renewable food
 
 Morsels (`sim/domain/food.py`) are the renewable food source, spawned by an
-`IFoodSpawnStrategy` (`RandomFoodSpawnStrategy`): tick-0 seeding sums to
-`initial_total_energy`, then every `top_up_interval_ticks` the deficit to
-`target_total_energy × abundance` is spawned, so the level breathes around the
-target. `abundance` comes from the seasonal sun profile (bright long days grow
-more, dim short days less). Initial morsels are placed by the configurable
+`IFoodStrategy` (`RandomFoodSpawnStrategy`): tick-0 seeding sums to
+`initial_total_energy`, then every tick up to `tick_candidates` spots are
+sampled on the resource-gradient field and morsels spawn where the field is
+rich, while the world sits below `target_total_energy × abundance × population_scale × target_fraction`, wobbled ±`target_jitter` per tick (default half, ±5%), so the
+level breathes around the target. `abundance` comes from the seasonal sun
+profile (bright long days grow more, dim short days less). Initial morsels
+are placed by the configurable
 `FoodPlacementConfig` (the same strategies as beans, default `poisson_disc`),
-so they never overlap a barrier, the border, or another morsel; top-ups use
-uniform random collision-free positions. Per-morsel energies are drawn from
+so they never overlap a barrier, the border, or another morsel; regrowth
+positions are validated collision-free. Each tick also spoils every morsel by
+`spoilage_per_tick` (default `0.0` = off). Per-morsel energies are drawn from
 `[min_morsel_energy, max_morsel_energy]`; their colour is magenta-purple
 (`(200,80,220)`, no palette conflicts), brightened by remaining energy.
 
@@ -582,7 +592,7 @@ LOG_DIR=/tmp/bean-logs make run-container
 | `ui.cell_inspected` | click | cell, x/y, weather, temperature, humidity, pressure, light |
 | `barrier.generated` | wiring | count, density, target/covered cells, min/max span, color |
 | `food.seeded` | wiring | count, total energy, target |
-| `food.topped_up` | top-up tick | count, energy, tick, abundance |
+| `food.topped_up` | DEBUG, regrowth tick | count, energy, tick, abundance |
 | `bean.bounced` | DEBUG, bean hits a world edge | bean_id, edge, x, y |
 | `bean.collided_barrier` | DEBUG, bean overlaps a barrier (logging only) | bean_id, barrier_id, x, y |
 | `bean.collided_bean` | DEBUG, two beans overlap (logging only) | bean_id, other_id, x, y |
@@ -640,19 +650,26 @@ through.
 `ArcadeView` extends `arcade.Window` and implements `IRenderer`.
 
 - **Layout** — a fixed left sidebar (`300..360 px`) holds stacked boxes: Time,
-  Day, Season, Environment, Inspector, Food, Weather field, Beans Census,
+  Day, Season, Environment, Food, Population, Weather field,
   Controls. The world uses the full height on the right and never sits under a
-  box. The default window height is at least `SIDEBAR_MIN_HEIGHT` so the Food
-  box and Controls always fit.
+  box. The default window height is at least `SIDEBAR_MIN_HEIGHT` so every
+  always-visible box (including Population) plus Controls fit; Weather field
+  takes the leftover and hides on short windows.
 - **WorldLayout** — a single layout object (`sim/rendering/layout.py`) owns the
   world → screen projection and the cell grid. Both drawing (grid, cells,
   markers, barriers) and hit-testing (mouse motion/press) use this one layout,
   so the selected cell, the orange marker and the cursor always agree. Cell
   rectangles are integer-snapped so they land on whole pixels.
 - **Day and season bars are separate** boxes, not a joined bar.
-- **Inspector** — click a cell to pin it. The orange outline and the readings
-  use the same integer cell index, so they always agree. A crosshair marks the
-  cell centre.
+- **Inspector popup** — click a cell to pin a small floating panel next to it:
+  cell and weather, every bean in the cell (count, genders, stored energy),
+  every food morsel (count, energy), barrier or open ground, then temperature,
+  humidity, pressure and light, each on its own row so nothing overlaps.
+  The orange outline and the readings use the same integer cell index, so they
+  always agree. A crosshair marks the cell centre. Close it with its X button
+  or by clicking outside the world.
+- **Population** — initial/alive/dead counts by gender plus corpses remaining;
+  always visible (drawn before the flexible Weather field).
 - **Grid** — one line per cell boundary, derived from `world.cell_size` and
   `world.cols` / `world.rows`. The drawn world spans `cols*cell_size` by
   `rows*cell_size`, so lines always land on cell edges. Cells are drawn in
@@ -662,7 +679,8 @@ through.
 - **Food** — drawn as magenta dots in three size tiers (poor/mid/rich, three
   draw calls for the whole layer) that never dim below a visible floor; the
   sidebar Food box shows morsel count, average energy, total energy vs the
-  seasonal target (`target × abundance`) and the top-up interval.
+  seasonal, population-scaled target (`target × abundance × pop_share`) and
+  the per-tick regrowth note.
 - **Controls box** — three reserved bands from `controls_geometry()`: config
   button (top), key bindings (middle), playback-speed slider (bottom). The
   sidebar reserves the same height when stacking the boxes above, so no

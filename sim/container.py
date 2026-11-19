@@ -42,7 +42,7 @@ from sim.implementations.weather import WeatherStrategy
 from sim.interfaces.energy import IEnergyStrategy
 from sim.interfaces.barrier import IBarrierStrategy
 from sim.interfaces.creation import IBeanCreationStrategy
-from sim.interfaces.food import IFoodSpawnStrategy
+from sim.interfaces.food import IFoodStrategy
 from sim.interfaces.gender import IGenderController
 from sim.interfaces.movement import IMovementStrategy
 from sim.interfaces.environment import (
@@ -82,12 +82,10 @@ class Container:
         )
         self.spawn_controller: ISpawnController = self._build_spawn_controller(config)
         self.beans = self._spawn_beans()
-        self.food_placement_strategy: Optional[IPlacementStrategy] = (
+        self.food_placement_strategy: IPlacementStrategy = (
             build_placement_strategy(config.food.placement)
-            if config.food.strategy_name is not None
-            else None
         )
-        self.food_strategy: Optional[IFoodSpawnStrategy] = (
+        self.food_strategy: IFoodStrategy = (
             self._build_food_strategy(config)
         )
         self._place_food()
@@ -143,10 +141,14 @@ class Container:
     # ------------------------------------------------------------------
     def _build_food_strategy(
         self, config: SimulationConfig
-    ) -> Optional[IFoodSpawnStrategy]:
+    ) -> IFoodStrategy:
         name = config.food.strategy_name
         if name is None:
-            return None
+            raise ValueError(
+                "Food strategy is required: FoodConfig.strategy_name must not "
+                "be None (food has no 'off' mode; a missing strategy would "
+                "silently starve the world)"
+            )
         if name == "random":
             return RandomFoodSpawnStrategy(
                 config.food,
@@ -154,15 +156,49 @@ class Container:
             )
         raise ValueError(
             f"Unknown food strategy {name!r}. "
-            f"Use None or one of: {sorted(FOOD_STRATEGY_NAMES)}"
+            f"Use one of: {sorted(FOOD_STRATEGY_NAMES)}"
         )
 
     def _place_food(self) -> None:
         """Seed the initial food morsels and store them in the session."""
-        if self.food_strategy is None:
-            self.session.foods = []
-            return
         self.session.foods = self.food_strategy.initial_food(self.world)
+
+    def restart(self) -> None:
+        """Clean restart: new run state as if the app just launched.
+
+        Nothing is reused: fresh clock (configured playback speed), reset
+        environment and energy-strategy state, freshly spawned beans (new
+        positions, genders, genotypes) and freshly seeded food (the food
+        strategy is rebuilt so a configured seed replays deterministically).
+        The session returns to START; SPACE begins the new run.
+        """
+        from sim.components import GameClock, GameState
+        from sim.time.game_clock import initial_time_scale
+
+        session = self.session
+        session.state = GameState.START
+        session.clock = GameClock(
+            time_scale=initial_time_scale(
+                self.config.time.initial_time_scale,
+                vmin=self.config.time.time_scale_min,
+                vmax=self.config.time.time_scale_max,
+            )
+        )
+        session.clock.paused = True
+        session.end_reason = None
+        session.exit_requested = False
+        session.start_time = 0.0
+        session.pause_time = 0.0
+        session.deaths_old_age = 0
+        session.deaths_starvation = 0
+        if self.environment is not None:
+            self.environment.reset()
+        reset = getattr(self.energy_strategy, "reset", None)
+        if callable(reset):
+            reset()
+        self.food_strategy = self._build_food_strategy(self.config)
+        self._place_food()
+        self.beans = self._spawn_beans()
 
     # ------------------------------------------------------------------
     # Bean placement

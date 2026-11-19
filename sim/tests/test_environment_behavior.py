@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 from sim.config import (
+    BarrierConfig,
     BeanPlacementConfig,
     EnvironmentConfig,
     PoissonDiscConfig,
@@ -45,6 +46,7 @@ def _season(**overrides):
 def _make_config(**overrides):
     cfg = SimulationConfig(
         world=WorldConfig(width=200.0, height=200.0, cell_size=10.0),
+        barriers=BarrierConfig(seed=4242),  # deterministic layout, no entropy flake
         seasons=[_season()],
         bean_placement=BeanPlacementConfig(
             strategy_name="poisson_disc",

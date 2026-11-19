@@ -14,6 +14,7 @@ from dataclasses import replace
 
 from sim.components import GameState
 from sim.config import (
+    BarrierConfig,
     BeanPlacementConfig,
     EnvironmentConfig,
     PersistenceConfig,
@@ -31,6 +32,7 @@ from sim.main import _advance_life, _save_on_exit, run_headless
 def _make_config(**overrides):
     cfg = SimulationConfig(
         world=WorldConfig(width=200.0, height=200.0, cell_size=10.0),
+        barriers=BarrierConfig(seed=4242),  # deterministic layout, no entropy flake
         seasons=[
             SeasonConfig(
                 name="Spring", ground_color=(96, 170, 88),
@@ -75,7 +77,7 @@ def test_corpses_decay_while_neighbours_feed():
                energy=200.0, source_bean_id=999, gender="female")
     )
 
-    extinct = _advance_life(session, container.config)
+    extinct = _advance_life(session, container.config, container.food_strategy)
 
     assert extinct is False
     assert session.corpses[0].energy < 200.0  # decay happened
@@ -99,7 +101,8 @@ def test_extinction_freezes_decay_and_feeding():
     # No energy income this tick, so every zero-energy bean starves at once.
     # real_dt covers a full fixed step so the clock actually advances one tick.
     _step(session, container.environment, container.movement_strategy,
-          None, 1.0 / 30.0, 1.0 / 30.0, container.config, max_ticks=1)
+          None, 1.0 / 30.0, 1.0 / 30.0, container.config, max_ticks=1,
+          food_strategy=container.food_strategy)
 
     assert session.state == GameState.END
     assert session.end_reason == "extinction"
@@ -115,11 +118,42 @@ def test_headless_run_works_without_an_environment(monkeypatch):
     run_headless(
         session, None, container.movement_strategy,
         container.energy_strategy, 1.0 / 30.0, container.config,
-        max_ticks=1,
+        max_ticks=1, food_strategy=container.food_strategy,
     )
 
     assert session.state == GameState.PLAYING
     assert session.clock.tick > 0
+
+
+def test_restart_respawns_beans_and_food():
+    """SPACE on END re-seeds a full new world instead of resuming an empty one."""
+    from sim.input.keyboard import KEY_SPACE, KeyboardInput
+    from sim.main import _step
+
+    container = Container(_make_config())
+    session = container.session
+    session.state = GameState.PLAYING
+    session.clock.paused = False
+    for bean in session.beans:
+        bean.phenotype.current_energy = 0.0
+    step = 1.0 / container.config.tick_rate
+    for _ in range(5):
+        _step(session, container.environment, container.movement_strategy,
+              container.energy_strategy, step, step, container.config,
+              max_ticks=5, food_strategy=container.food_strategy)
+        if session.state == GameState.END:
+            break
+    assert session.state == GameState.END
+    assert session.beans == []
+
+    keyboard = KeyboardInput(session, on_restart=container.restart)
+    keyboard.handle_keypress(KEY_SPACE)
+
+    assert session.state == GameState.START
+    assert session.clock.tick == 0
+    assert session.beans, "restart must respawn beans"
+    assert session.foods, "restart must reseed food"
+    assert all(b.phenotype.current_energy > 0 for b in session.beans)
 
 
 def test_save_on_exit_disabled_writes_nothing(tmp_path):
@@ -167,6 +201,7 @@ def test_headless_run_stops_early_on_extinction(monkeypatch):
     run_headless(
         session, container.environment, container.movement_strategy,
         no_income, 1.0 / 30.0, container.config, max_ticks=1,
+        food_strategy=container.food_strategy,
     )
 
     assert session.state == GameState.END

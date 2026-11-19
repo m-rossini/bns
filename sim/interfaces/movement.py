@@ -26,5 +26,15 @@ class IMovementStrategy(ABC):
         """Strategy identifier used for config selection."""
 
     @abstractmethod
-    def update(self, beans: Sequence[Bean], world: IWorld, dt: float) -> None:
-        """Advance every bean by ``dt`` seconds, in place."""
+    def update(
+        self,
+        beans: Sequence[Bean],
+        world: IWorld,
+        dt: float,
+        environment=None,
+    ) -> None:
+        """Advance every bean by ``dt`` seconds, in place.
+
+        ``environment`` (when given) lets the strategy pace beans by local
+        conditions such as light and temperature; without it beans cruise.
+        """

@@ -1,13 +1,25 @@
 """Tests for bean movement strategies and the per-tick integration."""
 
 import logging
+import math
+from dataclasses import replace
+
+import pytest
 
 from sim.components import Barrier, GameClock, GameSession, GameState
-from sim.config import MovementConfig
+from sim.config import FoodConfig, MovementConfig
 from sim.domain.beans import Bean
+from sim.domain.genotype import DEFAULT_GENOTYPE, create_default_phenotype
 from sim.domain.world import World
 from sim.implementations.movement import StraightLineMovementStrategy
 from sim.main import _step
+
+
+def _food_strategy():
+    """A real food strategy for step tests (food itself is not under test)."""
+    from sim.implementations.food import RandomFoodSpawnStrategy
+
+    return RandomFoodSpawnStrategy(FoodConfig())
 
 
 def _world(width=200.0, height=200.0) -> World:
@@ -16,6 +28,188 @@ def _world(width=200.0, height=200.0) -> World:
 
 def _bean(bean_id=1, x=100.0, y=100.0) -> Bean:
     return Bean(id=bean_id, x=x, y=y, gender="male", color=(0, 0, 255))
+
+
+def _resting_config(**overrides):
+    values = dict(
+        speed=60.0,
+        direction=(1.0, 0.0),
+        random_initial_direction=False,
+        rest_speed_fraction=0.5,
+    )
+    values.update(overrides)
+    return MovementConfig(**values)
+
+
+class _StubEnv:
+    """Fixed light/temperature readings for movement pacing tests."""
+
+    def __init__(self, light: float, temperature: float):
+        self._light = light
+        self._temperature = temperature
+
+    def light_at(self, x: float, y: float) -> float:
+        return self._light
+
+    def temperature_at(self, x: float, y: float) -> float:
+        return self._temperature
+
+
+def _rested_bean(bean_id=1, speed=60.0, resilience=0.0, energy_share=1.0):
+    """Bean with an energy genotype; speed is the starting velocity."""
+    genotype = replace(
+        DEFAULT_GENOTYPE, acceleration=30.0, dawn_resilience=resilience,
+        energy_capacity=1e12,
+    )
+    phenotype = create_default_phenotype(genotype)
+    phenotype.current_speed = speed
+    phenotype.velocity = (speed, 0.0)
+    phenotype.current_energy = genotype.energy_capacity * energy_share
+    return Bean(
+        id=bean_id, x=100.0, y=100.0, gender="male", color=(0, 0, 255),
+        vx=float(speed), vy=0.0, genotype=genotype, phenotype=phenotype,
+    )
+
+
+def test_night_eases_speed_down_gradually():
+    """Darkness eases beans down toward half cruise in bounded steps."""
+    world = _world(width=1000.0, height=1000.0)
+    bean = _rested_bean(bean_id=1)
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    night = _StubEnv(light=0.0, temperature=20.0)
+    dt = 0.1  # acceleration budget: 30 * 0.1 = 3.0 per tick
+
+    speeds = []
+    for _ in range(12):
+        strategy.update([bean], world, dt=dt, environment=night)
+        speeds.append(math.hypot(bean.vx, bean.vy))
+
+    assert speeds[0] < 60.0
+    assert speeds[0] >= 60.0 - 3.0 - 1e-9  # one bounded step, no jump
+    for before, after in zip(speeds, speeds[1:]):
+        assert after <= before + 1e-9
+        assert before - after <= 3.0 + 1e-9
+    assert speeds[-1] == pytest.approx(30.0)
+
+
+def test_warm_day_holds_cruise_speed():
+    """Bright warm light keeps beans at full cruise."""
+    world = _world(width=1000.0, height=1000.0)
+    bean = _rested_bean(bean_id=1)
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    day = _StubEnv(light=1.0, temperature=20.0)
+
+    strategy.update([bean], world, dt=0.1, environment=day)
+
+    assert math.hypot(bean.vx, bean.vy) == pytest.approx(60.0)
+
+
+def test_cold_slows_beans_despite_daylight():
+    """Cold is the binding constraint: bright but freezing means rest pace."""
+    world = _world(width=1000.0, height=1000.0)
+    bean = _rested_bean(bean_id=1)
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    cold_day = _StubEnv(light=1.0, temperature=0.0)
+    dt = 0.1
+
+    speeds = []
+    for _ in range(12):
+        strategy.update([bean], world, dt=dt, environment=cold_day)
+        speeds.append(math.hypot(bean.vx, bean.vy))
+
+    assert speeds[-1] == pytest.approx(30.0)
+
+
+def test_wake_up_accelerates_gradually():
+    """Dawn eases beans back to cruise in bounded steps, never jumping."""
+    world = _world(width=1000.0, height=1000.0)
+    bean = _rested_bean(bean_id=1, speed=30.0)
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    day = _StubEnv(light=1.0, temperature=20.0)
+    dt = 0.1
+
+    speeds = []
+    for _ in range(12):
+        strategy.update([bean], world, dt=dt, environment=day)
+        speeds.append(math.hypot(bean.vx, bean.vy))
+
+    assert speeds[0] > 30.0
+    assert speeds[0] <= 30.0 + 3.0 + 1e-9
+    for before, after in zip(speeds, speeds[1:]):
+        assert after >= before - 1e-9
+        assert after - before <= 3.0 + 1e-9
+    assert speeds[-1] == pytest.approx(60.0)
+
+
+def test_no_environment_means_cruise():
+    """Without readings (unit tests) beans hold cruise speed."""
+    world = _world(width=1000.0, height=1000.0)
+    bean = _rested_bean(bean_id=1)
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+
+    strategy.update([bean], world, dt=0.1)
+
+    assert math.hypot(bean.vx, bean.vy) == pytest.approx(60.0)
+
+
+def test_resilient_beans_keep_sleeping_past_dawn():
+    """At moderate morning light a deep sleeper targets less than a light one."""
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    dawn = _StubEnv(light=0.7, temperature=20.0)
+
+    light_sleeper = _rested_bean(bean_id=1, resilience=0.0)
+    deep_sleeper = _rested_bean(bean_id=2, resilience=1.0)
+
+    assert strategy._target_speed(light_sleeper, dawn) == pytest.approx(60.0)
+    # day mark shifts 0.60 -> 0.90: vigor (0.7-0.1)/0.8 = 0.75.
+    assert strategy._target_speed(deep_sleeper, dawn) == pytest.approx(52.5)
+
+
+def test_heat_slows_beans_despite_bright_light():
+    """A hot midday forces siesta pace even at full daylight."""
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    heatwave = _StubEnv(light=1.0, temperature=35.0)
+    bean = _rested_bean(bean_id=1)
+
+    # heat vigor (38-35)/10 = 0.3 -> 60 * (0.5 + 0.5 * 0.3).
+    assert strategy._target_speed(bean, heatwave) == pytest.approx(39.0)
+
+
+def test_hunger_deepens_sleep():
+    """Same dawn, same genes: the emptier bean targets a slower pace."""
+    strategy = StraightLineMovementStrategy(
+        _resting_config(), bean_radius=5.0
+    )
+    dawn = _StubEnv(light=0.7, temperature=20.0)
+
+    full = _rested_bean(bean_id=1, energy_share=1.0)
+    hungry = _rested_bean(bean_id=2, energy_share=0.1)
+
+    assert strategy._target_speed(full, dawn) == pytest.approx(60.0)
+    # vigor 1.0 scaled by 0.6 + 0.4 * 0.1 = 0.64.
+    assert strategy._target_speed(hungry, dawn) == pytest.approx(60.0 * (0.5 + 0.5 * 0.64))
+
+
+def test_rest_config_validation():
+    """The rest fraction must slow beans down without stopping them."""
+    with pytest.raises(ValueError):
+        MovementConfig(rest_speed_fraction=0.0)
+    with pytest.raises(ValueError):
+        MovementConfig(rest_speed_fraction=1.5)
 
 
 def test_bean_moves_in_place_along_the_global_direction():
@@ -149,10 +343,12 @@ def test_step_moves_beans_only_while_playing():
     )
     fixed_step = 1.0
 
-    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step,
+          food_strategy=_food_strategy())
     assert bean.x == 60.0
 
     session.state = GameState.PAUSED
     session.clock.paused = True
-    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step)
+    _step(session, None, strategy, None, real_dt=fixed_step, fixed_step=fixed_step,
+          food_strategy=_food_strategy())
     assert bean.x == 60.0

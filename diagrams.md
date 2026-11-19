@@ -228,6 +228,9 @@ classDiagram
     class RandomFoodSpawnStrategy {
         +initial_food(world) list[Food]
         +top_up(foods, world, tick, abundance) list[Food]
+        +decay(foods) int
+        +get_state() dict
+        +set_state(state) None
         -_placement: IPlacementStrategy
     }
 
@@ -341,7 +344,7 @@ classDiagram
     class Container {
         +config: SimulationConfig
         +barrier_strategy: BarrierStrategy
-        +food_strategy: IFoodSpawnStrategy
+        +food_strategy: IFoodStrategy
         +world: World
         +calendar: Calendar
         +environment: Environment
@@ -381,7 +384,7 @@ classDiagram
     class IGenderController {
         <<interface>>
     }
-    class IFoodSpawnStrategy {
+    class IFoodStrategy {
         <<interface>>
     }
     class ISpawnController {
@@ -415,7 +418,7 @@ classDiagram
     GenderController ..|> IGenderController
     DensityBasedCreationStrategy ..|> IBeanCreationStrategy
     FixedAmountCreationStrategy ..|> IBeanCreationStrategy
-    RandomFoodSpawnStrategy ..|> IFoodSpawnStrategy
+    RandomFoodSpawnStrategy ..|> IFoodStrategy
     StraightLineMovementStrategy ..|> IMovementStrategy
     FixedEnergyStrategy ..|> IEnergyStrategy
     PerDayEnergyStrategy ..|> IEnergyStrategy
@@ -689,7 +692,8 @@ flowchart LR
         BAR[_draw_barriers<br/>strategy colour]
         G[_draw_grid<br/>one line per cell boundary]
         SEL[_draw_selection<br/>integer cell index]
-        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Inspector,<br/>Weather field, Controls<br/>button + keys + slider]
+        SB[_draw_sidebar<br/>Time, Day, Season,<br/>Environment, Food, Population,<br/>Weather field, Controls<br/>button + keys + slider]
+        POP[_draw_inspector_popup<br/>floating, closable<br/>beans + food census]
         CW[ConfigWindow<br/>separate arcade.Window<br/>generated from dataclasses]
         TX[_TextCache<br/>arcade.Text objects]
     end
@@ -703,6 +707,7 @@ flowchart LR
     E --> V
     V --> L --> WL --> W --> BAR --> G --> SEL
     V --> SB
+    V --> POP
     W --> TX
     SB --> TX
     SB -->|C / button| CW
@@ -745,7 +750,7 @@ sequenceDiagram
         Env-->>V: readings
         V->>Log: event=ui.cell_inspected cell=(c,r) ...
         V->>V: draw orange outline + crosshair at cell centre
-        V->>V: sidebar Inspector reads the same cell
+        V->>V: inspector popup reads the same cell (X closes it)
     end
 ```
 
@@ -828,11 +833,12 @@ classDiagram
     }
 
     class FoodConfig {
-        +strategy_name: str | None
+        +strategy_name: str
         +seed: int | None
         +initial_total_energy: float
         +target_total_energy: float
-        +top_up_interval_ticks: int
+        +tick_candidates: int
+        +spoilage_per_tick: float
         +max_items: int
         +placement: FoodPlacementConfig
     }

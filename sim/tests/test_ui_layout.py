@@ -6,6 +6,7 @@ never overlap again, regardless of sidebar width.
 """
 
 from sim.rendering.arcade_view import (
+    _CENSUS_BOX_H,
     _CONTROLS_BOX_H,
     _DAY_BOX_H,
     _END_HINT_GAP,
@@ -14,7 +15,8 @@ from sim.rendering.arcade_view import (
     _ENVIRONMENT_BOX_H,
     _FOOD_BOX_H,
     _GAP,
-    _INSPECTOR_BOX_H,
+    _INSPECTOR_H,
+    _INSPECTOR_W,
     _KEY_COUNT,
     _KEY_ROW_H,
     _MARGIN,
@@ -23,8 +25,11 @@ from sim.rendering.arcade_view import (
     SIDEBAR_MIN_HEIGHT,
     controls_geometry,
     end_screen_hint_offset,
+    _config_rows,
+    cell_contents,
     food_geometry,
-    inspector_geometry,
+    inspector_popup_geometry,
+    inspector_popup_rows,
 )
 
 MARGIN = 12.0
@@ -195,41 +200,103 @@ def test_growing_stat_lists_push_the_hint_down():
 
 
 # ---------------------------------------------------------------------------
-# Sidebar boxes: Food census and Inspector rows
+# Sidebar boxes: Food census rows and the always-visible Population box
 # ---------------------------------------------------------------------------
 
 
 def test_sidebar_min_height_fits_every_always_visible_box():
-    """The default window is tall enough for the Food box and Controls."""
+    """The default window fits Time..Food, Population, Controls and weather."""
     expected = (
         2 * _MARGIN
         + _TIME_BOX_H
         + _DAY_BOX_H
         + _SEASON_BOX_H
         + _ENVIRONMENT_BOX_H
-        + _INSPECTOR_BOX_H
         + _FOOD_BOX_H
+        + _CENSUS_BOX_H
         + 6 * _GAP
         + _CONTROLS_BOX_H
+        + 80.0  # weather census minimum
+        + _GAP
     )
     assert SIDEBAR_MIN_HEIGHT >= expected
 
 
-def test_inspector_rows_never_overlap():
-    """The large temperature and the small readings line stay separate."""
-    box_top = 800.0
-    cell_y, contents_y, temperature_y, readings_y, condition_y = (
-        inspector_geometry(12.0, 276.0, box_top)
-    )
+def test_config_window_lists_new_food_and_sleep_fields():
+    """Recently added knobs must show up in the generated config window."""
+    from dataclasses import fields, is_dataclass
 
-    # Rows are ordered top to bottom and fit inside the box.
-    assert cell_y > contents_y > temperature_y > readings_y
-    assert readings_y >= box_top - _INSPECTOR_BOX_H
+    from sim.config import DEFAULT_CONFIG
 
-    # The 22px temperature text and the 11px readings line never share a band.
+    keys = set()
+    for section in fields(DEFAULT_CONFIG):
+        value = getattr(DEFAULT_CONFIG, section.name)
+        if is_dataclass(value):
+            for key, _ in _config_rows(value):
+                keys.add(f"{section.name}.{key}")
+
+    for expected in (
+        "food.target_fraction",
+        "food.target_jitter",
+        "food.spoilage_per_tick",
+        "food.tick_candidates",
+        "movement.rest_speed_fraction",
+        "creation.genotype_ranges.dawn_resilience",
+    ):
+        assert expected in keys, f"{expected} missing from the config window"
+
+
+def test_inspector_popup_rows_never_overlap():
+    """The popup rows are ordered top to bottom and stay inside the panel."""
+    left, top, close_rect = inspector_popup_geometry(500.0, 400.0, 1560.0, 1000.0)
+    rows = inspector_popup_rows(left, top)
+
+    # Six rows: cell, beans, food, barrier, temperature, readings.
+    assert len(rows) == 6
+    # Rows are strictly ordered top to bottom and inside the panel.
+    assert all(a > b for a, b in zip(rows, rows[1:]))
+    assert rows[-1] >= top - _INSPECTOR_H
+    # The 22px temperature text and the 11px readings never share a band.
+    cell_y, beans_y, food_y, ground_y, temperature_y, readings_y = rows
     assert temperature_y - readings_y >= 22
-    # The condition label aligns with the contents row.
-    assert condition_y == contents_y
+    # Close button sits inside the panel's top-right corner.
+    cx, cy, cw, ch = close_rect
+    assert left <= cx and cx + cw <= left + _INSPECTOR_W
+    assert top - _INSPECTOR_H <= cy and cy + ch <= top
+
+
+def test_inspector_popup_clamps_inside_viewport():
+    """Crowded anchors still land fully on screen."""
+    sw, sh = 1560.0, 1000.0
+    for anchor in [(10.0, 10.0), (1550.0, 990.0), (1550.0, 10.0), (780.0, 990.0)]:
+        left, top, close_rect = inspector_popup_geometry(*anchor, sw, sh)
+        assert 12.0 <= left <= sw - 12.0 - _INSPECTOR_W
+        assert _INSPECTOR_H + 12.0 <= top <= sh - 12.0
+
+
+def test_cell_contents_counts_beans_and_food_by_membership():
+    """The popup censuses the whole cell, not just the first match."""
+    from sim.domain.beans import Bean
+    from sim.domain.food import Food
+    from sim.domain.world import World
+
+    world = World(width=200.0, height=200.0, cell_size=10.0)
+    beans = [
+        Bean(id=1, x=15.0, y=15.0, gender="female", color=(255, 0, 0)),
+        Bean(id=2, x=16.0, y=14.0, gender="male", color=(0, 0, 255)),
+        Bean(id=3, x=150.0, y=150.0, gender="female", color=(255, 0, 0)),
+    ]
+    foods = [
+        Food(id=1, x=12.0, y=18.0, radius=4.0, energy=50.0, initial_energy=50.0),
+        Food(id=2, x=180.0, y=20.0, radius=4.0, energy=30.0, initial_energy=30.0),
+    ]
+    cell = world.cell_index(15.0, 15.0)
+
+    in_beans, in_foods, barrier = cell_contents(beans, foods, world, cell)
+
+    assert {b.id for b in in_beans} == {1, 2}
+    assert [f.id for f in in_foods] == [1]
+    assert barrier is None
 
 
 def test_food_rows_fit_inside_box():

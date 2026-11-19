@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from sim.components import GameClock, GameSession, GameState
-from sim.config import GenotypeConfig, SimulationConfig
+from sim.config import FoodConfig, GenotypeConfig, SimulationConfig
 from sim.domain.beans import Bean
 from sim.domain.genotype import (
     DEFAULT_GENOTYPE,
@@ -15,7 +15,13 @@ from sim.domain.genotype import (
     draw_genotype,
     apply_senescence,
 )
+from sim.implementations.food import RandomFoodSpawnStrategy
 from sim.main import _advance_life, _step
+
+
+def _food_strategy():
+    """A real food strategy for lifecycle tests (food itself is not under test)."""
+    return RandomFoodSpawnStrategy(FoodConfig())
 
 
 def _bean(genotype, energy=500.0, age=0):
@@ -78,7 +84,7 @@ def test_old_age_death_becomes_corpse_and_is_counted(caplog):
     session.beans = [bean]
 
     with caplog.at_level(logging.INFO, logger="bean.main"):
-        extinct = _advance_life(session, SimulationConfig())
+        extinct = _advance_life(session, SimulationConfig(), _food_strategy())
 
     assert extinct is True
     assert session.beans == []
@@ -99,6 +105,7 @@ def test_living_bean_ages_exactly_once_per_tick_without_movement():
     _step(
         session, None, None, None,
         real_dt=1.0, fixed_step=1.0, config=SimulationConfig(),
+        food_strategy=_food_strategy(),
     )
 
     assert bean.phenotype.age == 1

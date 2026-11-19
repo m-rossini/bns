@@ -267,6 +267,7 @@ def save_snapshot(
         "beans": [_encode_bean(bean) for bean in session.beans],
         "corpses": [_encode_value(corpse) for corpse in session.corpses],
         "foods": [_encode_value(food) for food in session.foods],
+        "food_strategy": _encode_value(container.food_strategy.get_state()),
     }
 
     destination = Path(path)
@@ -351,6 +352,15 @@ def restore_snapshot(
     rng_state = payload.get("rng_state")
     if rng_state is not None:
         sim_random.get_rng().setstate(_decode_rng_state(rng_state))
+
+    food_state = payload.get("food_strategy")
+    if food_state is not None:
+        container.food_strategy.set_state(
+            {
+                "rng_state": _decode_rng_state(food_state["rng_state"]),
+                "next_id": int(food_state["next_id"]),
+            }
+        )
 
     log_event(
         logger,
